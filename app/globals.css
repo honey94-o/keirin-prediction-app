@@ -1,8 +1,17 @@
 @import "tailwindcss";
 
+/*
+ * このアプリは白背景カード＋濃緑ヘッダーの単一（ライト）デザインで作られており、
+ * ダークモード対応のコンポーネントは無い。システムがダークモードの場合に
+ * body直下の文字色だけ自動で白くなると、白背景カード内の未指定文字が
+ * 白文字/白背景で見えなくなるバグが起きるため、常にライト配色に固定する。
+ */
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* select等のネイティブUIがOSのダークモードに引きずられて
+     白文字/白背景になるのを防ぐ（常にライト配色でレンダリングさせる） */
+  color-scheme: light;
 }
 
 @theme inline {
@@ -10,13 +19,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {

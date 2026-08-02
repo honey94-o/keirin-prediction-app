@@ -585,10 +585,40 @@ def save_to_db(
         client.close()
 
 
+def resolve_venue_index_by_name(venue_name: str) -> int:
+    """本日発売中の開催場一覧から、名前（部分一致）でインデックスを解決する。
+
+    公式サイトの表示ラベルは「京王」のような略称のため、
+    フルネーム（「京王閣」等）で渡された場合も互いの部分一致で照合する。
+    """
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(user_agent=USER_AGENT)
+        try:
+            venues = list_today_venues(page)
+        finally:
+            browser.close()
+
+    matches = [
+        v for v in venues
+        if venue_name in v["label"] or v["label"] in venue_name
+    ]
+    if not matches:
+        today_list = ", ".join(f"{v['index']}:{v['label']}" for v in venues)
+        raise RuntimeError(
+            f"'{venue_name}' は本日発売中の開催場に見つかりません。本日の一覧: {today_list}"
+        )
+    if len(matches) > 1:
+        candidates = ", ".join(f"{v['index']}:{v['label']}" for v in matches)
+        raise RuntimeError(f"'{venue_name}' に複数の候補があり特定できません: {candidates}")
+    return matches[0]["index"]
+
+
 def main():
     parser = argparse.ArgumentParser(description="KEIRIN.JPから1レース分のデータを取得")
     parser.add_argument("--list-venues", action="store_true", help="本日発売中の開催場一覧を表示")
     parser.add_argument("--venue-index", type=int, help="開催場のインデックス（--list-venuesで確認）")
+    parser.add_argument("--venue-name", type=str, help="開催場名（例: 京王閣）。--venue-indexの代わりに指定可")
     parser.add_argument("--race-no", type=int, help="レース番号")
     args = parser.parse_args()
 
@@ -601,11 +631,16 @@ def main():
             browser.close()
         return
 
-    if args.venue_index is None or args.race_no is None:
+    venue_index = args.venue_index
+    if venue_index is None and args.venue_name:
+        venue_index = resolve_venue_index_by_name(args.venue_name)
+        print(f"開催場名 '{args.venue_name}' → インデックス {venue_index} に解決しました")
+
+    if venue_index is None or args.race_no is None:
         parser.print_help()
         return
 
-    race, bank_info, histories = scrape_one_race(args.venue_index, args.race_no)
+    race, bank_info, histories = scrape_one_race(venue_index, args.race_no)
     print(f"取得: {race.keirinjo_name} {race.race_no}R ({race.kaisai_date}) "
           f"選手{len(race.entries)}名 / 結果{len(race.results)}件 / オッズ{len(race.odds)}件 / "
           f"バンク情報{'更新' if bank_info else 'キャッシュ利用'} / 選手履歴{len(histories)}件")

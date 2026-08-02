@@ -1,16 +1,16 @@
 name: Scrape keirin race data
 
-# 手動実行（workflow_dispatch）を基本とする。
+# 手動実行（workflow_dispatch）を基本とする。Next.jsアプリの「レース取得」画面から
+# GitHub APIでこのワークフローをトリガーする（lib/actions.ts の triggerScrapeAction）。
 # スケジュール実行はデフォルトで無効にしている（下のcronはコメントアウト）。
 # 有効化する場合も、KEIRIN.JPへの節度あるアクセス（低頻度・個人利用の範囲）を
 # 必ず維持すること。全開催場×全レースを高頻度に回すような使い方はしない。
 on:
   workflow_dispatch:
     inputs:
-      venue_index:
-        description: "開催場のインデックス（--list-venuesで確認）"
+      venue_name:
+        description: "開催場名（例: 京王閣）"
         required: true
-        default: "0"
       race_no:
         description: "レース番号"
         required: true
@@ -40,4 +40,4 @@ jobs:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
         run: |
-          python keirin_scraper.py --venue-index "${{ github.event.inputs.venue_index }}" --race-no "${{ github.event.inputs.race_no }}"
+          python keirin_scraper.py --venue-name "${{ github.event.inputs.venue_name }}" --race-no "${{ github.event.inputs.race_no }}"
