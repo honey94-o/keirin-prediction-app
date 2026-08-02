@@ -37,6 +37,27 @@ export async function getRacesForEvent(kaisaiDate: string, jocd: string): Promis
   return result.rows as unknown as RaceRow[];
 }
 
+export interface TodayVenues {
+  names: string[];
+  syncedDate: string | null; // YYYYMMDD。一度も同期されていなければnull
+}
+
+/**
+ * 本日発売中の開催場名一覧（GitHub Actions側でキャッシュ済みのもの）を取得する。
+ * synced_dateが今日でない場合は「古いキャッシュ」として扱えるよう日付も返す
+ * （UI側で「本日分に更新してください」等の案内に使う）。
+ */
+export async function getTodayVenues(): Promise<TodayVenues> {
+  const result = await getDb().execute(
+    "SELECT venue_name, synced_date FROM today_venues ORDER BY venue_name"
+  );
+  const rows = result.rows as unknown as { venue_name: string; synced_date: string }[];
+  return {
+    names: rows.map((r) => r.venue_name),
+    syncedDate: rows[0]?.synced_date ?? null,
+  };
+}
+
 export async function getRacer(snum: string): Promise<RacerRow | undefined> {
   const result = await getDb().execute({
     sql: "SELECT * FROM racers WHERE snum = ?",

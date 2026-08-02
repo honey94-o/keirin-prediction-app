@@ -1,6 +1,8 @@
 import { getScoreWeights } from "../../lib/repository";
 import { WeightSettingsForm } from "../../components/WeightSettingsForm";
 
+export const dynamic = "force-dynamic";
+
 export default async function SettingsPage() {
   const weights = await getScoreWeights();
 

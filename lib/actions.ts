@@ -7,7 +7,6 @@ import type { ScoreWeights } from "./types";
 
 const GITHUB_REPO_OWNER = "honey94-o";
 const GITHUB_REPO_NAME = "keirin-prediction-app";
-const GITHUB_WORKFLOW_FILE = "scrape.yml";
 
 export interface TriggerScrapeResult {
   ok: boolean;
@@ -17,20 +16,20 @@ export interface TriggerScrapeResult {
 /**
  * Vercelのサーバーレス関数はPlaywright（ブラウザ自動化）を直接実行できないため、
  * GitHub ActionsのワークフローをGitHub APIでトリガーする方式にしている。
- * 実行は非同期（GitHub Actions側で1〜2分程度かかる）ため、この関数は
- * 「開始できたか」までしか分からない。完了後はレース一覧を再読み込みして確認する。
+ * 実行は非同期（GitHub Actions側で数十秒〜数分かかる）ため、この関数は
+ * 「開始できたか」までしか分からない。完了後は該当画面を再読み込みして確認する。
  */
-export async function triggerScrapeAction(
-  venueName: string,
-  raceNo: number
-): Promise<TriggerScrapeResult> {
+async function dispatchWorkflow(
+  workflowFile: string,
+  inputs: Record<string, string>
+): Promise<{ status: number; body: string }> {
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
-    return { ok: false, message: "GITHUB_TOKENが未設定です（サーバー設定を確認してください）" };
+    return { status: 0, body: "GITHUB_TOKENが未設定です（サーバー設定を確認してください）" };
   }
 
   const res = await fetch(
-    `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/workflows/${GITHUB_WORKFLOW_FILE}/dispatches`,
+    `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/workflows/${workflowFile}/dispatches`,
     {
       method: "POST",
       headers: {
@@ -38,22 +37,42 @@ export async function triggerScrapeAction(
         Accept: "application/vnd.github+json",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        ref: "master",
-        inputs: { venue_name: venueName, race_no: String(raceNo) },
-      }),
+      body: JSON.stringify({ ref: "master", inputs }),
     }
   );
 
-  if (res.status === 204) {
+  return { status: res.status, body: res.status === 204 ? "" : await res.text() };
+}
+
+export async function triggerScrapeAction(
+  venueName: string,
+  raceNo: number
+): Promise<TriggerScrapeResult> {
+  const { status, body } = await dispatchWorkflow("scrape.yml", {
+    venue_name: venueName,
+    race_no: String(raceNo),
+  });
+
+  if (status === 204) {
     return {
       ok: true,
       message: `${venueName} ${raceNo}Rの取得を開始しました。1〜2分後にレース一覧に反映されます。`,
     };
   }
+  return { ok: false, message: `取得開始に失敗しました (${status}): ${body.slice(0, 200)}` };
+}
 
-  const body = await res.text();
-  return { ok: false, message: `取得開始に失敗しました (${res.status}): ${body.slice(0, 200)}` };
+/** 本日の開催場一覧キャッシュを更新するワークフローをトリガーする。 */
+export async function triggerVenueSyncAction(): Promise<TriggerScrapeResult> {
+  const { status, body } = await dispatchWorkflow("sync-venues.yml", {});
+
+  if (status === 204) {
+    return {
+      ok: true,
+      message: "本日の開催場一覧を更新中です。30秒〜1分後にこのページを開き直してください。",
+    };
+  }
+  return { ok: false, message: `更新開始に失敗しました (${status}): ${body.slice(0, 200)}` };
 }
 
 /** 現在のスコアを発走前の予想としてスナップショット保存する。 */

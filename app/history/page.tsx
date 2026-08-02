@@ -2,6 +2,10 @@ import Link from "next/link";
 import { getRaceIdsWithPrediction } from "../../lib/repository";
 import { getRaceResultSummary, getOverallAccuracyStats } from "../../lib/accuracy";
 
+// レース結果はGitHub Actions（Next.jsの外）からTursoへ書き込まれるため、
+// 静的生成だと反映されない。常に最新を読むよう動的レンダリングを強制する。
+export const dynamic = "force-dynamic";
+
 function formatDate(kaisaiDate: string): string {
   const y = kaisaiDate.slice(0, 4);
   const m = kaisaiDate.slice(4, 6);

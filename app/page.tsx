@@ -1,6 +1,11 @@
 import Link from "next/link";
-import { getAllRaces } from "../lib/repository";
+import { getAllRaces, getTodayVenues } from "../lib/repository";
 import { ScrapeTriggerForm } from "../components/ScrapeTriggerForm";
+
+// GitHub Actions（スクレイパー・開催場同期）がNext.jsの外からTursoを直接更新するため、
+// ビルド時の静的生成のままだと新しいレースや開催場一覧が反映されない。
+// 常に最新のDBを読むよう動的レンダリングを強制する。
+export const dynamic = "force-dynamic";
 
 function formatDate(kaisaiDate: string): string {
   const y = kaisaiDate.slice(0, 4);
@@ -11,6 +16,7 @@ function formatDate(kaisaiDate: string): string {
 
 export default async function Home() {
   const races = await getAllRaces();
+  const todayVenues = await getTodayVenues();
 
   // 開催日＋開催場ごとにグルーピング
   const groups = new Map<string, typeof races>();
@@ -24,7 +30,7 @@ export default async function Home() {
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
       <h1 className="text-lg font-bold mb-4">レース一覧</h1>
 
-      <ScrapeTriggerForm />
+      <ScrapeTriggerForm todayVenues={todayVenues.names} syncedDate={todayVenues.syncedDate} />
 
       {races.length === 0 ? (
         <p className="text-center text-gray-500 mt-8">
