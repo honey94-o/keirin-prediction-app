@@ -582,6 +582,31 @@ export function generateScenarios(
     });
   }
 
+  // ④ 単騎一撃：ライン人数1（単騎）の選手は隊列上不利になりやすくライン評価が
+  //   低く出るが、個人の実力（脚質実力・データ統計）が高ければ距離や間隔に関わらず
+  //   単独でも上位に飛び込んでくることがある。ライン評価を除いた個人力で選ぶ
+  const soloCandidate = [...scored]
+    .filter((s) => {
+      if (usedAxes.has(s.entry.car_num) || s.entry.line_group == null) return false;
+      const lineSize = scored.filter((o) => o.entry.line_group === s.entry.line_group).length;
+      return lineSize === 1;
+    })
+    .sort(
+      (a, b) =>
+        b.kyakushitsuScore.score + b.statsScore.score - (a.kyakushitsuScore.score + a.statsScore.score)
+    )[0];
+  if (soloCandidate) {
+    usedAxes.add(soloCandidate.entry.car_num);
+    specs.push({
+      label: "単騎一撃",
+      axis: soloCandidate,
+      reason: `単騎（ラインの後ろ盾なし）で隊列上は不利だが、${soloCandidate.entry.class_rank ?? ""}・勝率${
+        soloCandidate.entry.syouritu ?? "不明"
+      }％と個人力は高く、展開次第で単独でも上位に飛び込む可能性がある。`,
+      priorityLineGroup: null,
+    });
+  }
+
   // 3連単の買い目は全パターン合計で20点以内に収める（1パターンあたりに均等配分）
   const perScenarioBudget = Math.floor(SANRENTAN_MAX_POINTS / specs.length);
 
