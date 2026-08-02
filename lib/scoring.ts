@@ -399,6 +399,29 @@ function generateSanrentanFormation(
 }
 
 /**
+ * 3連単の組み合わせ一覧（例: ["1-3-6","1-3-7",...]）を、
+ * 「軸-2着候補-3着候補」の桁連結表記（例: "1-37-123567"）に変換する。
+ * 全組み合わせが単一の1着（軸）を共有していない場合（3連複ボックス等）はnullを返す。
+ */
+export function formatFormationNotation(combinations: string[]): string | null {
+  if (combinations.length === 0) return null;
+
+  const parsed = combinations.map((c) => c.split("-").map(Number));
+  const axis = parsed[0][0];
+  if (!parsed.every((p) => p[0] === axis)) return null;
+
+  const seconds = new Set<number>();
+  const thirds = new Set<number>();
+  for (const [, second, third] of parsed) {
+    seconds.add(second);
+    thirds.add(third);
+  }
+
+  const sortedJoin = (s: Set<number>) => [...s].sort((a, b) => a - b).join("");
+  return `${axis}-${sortedJoin(seconds)}-${sortedJoin(thirds)}`;
+}
+
+/**
  * 総合スコア順（降順）の車番配列から3連単フォーメーション・3連複ボックスを生成する。
  * predictionsテーブルに保存済みの過去の予想（車番と合計スコアのみ）からも
  * 同じロジックで再現できるよう、ScoredEntryではなく車番配列を受け取る形にしている。
