@@ -1,0 +1,144 @@
+export interface RaceRow {
+  id: number;
+  kaisai_date: string;
+  jocd: string;
+  keirinjo_name: string;
+  race_no: number;
+  syumoku: string | null;
+  grade_kbn: string | null;
+  kyori: number | null;
+  shukai: number | null;
+  start_time: string | null;
+  encp: string | null;
+  tenki: string | null; // レース終了後の実績値のみ（事前予報ではない）
+  husoku: number | null;
+}
+
+export interface BankInfoRow {
+  jocd: string;
+  keirinjo_name: string | null;
+  shuutyou: number | null;
+  tyokusen: string | null;
+  kant: string | null;
+  tkant: string | null;
+  home_hukuin: string | null;
+  back_hukuin: string | null;
+  center_hukuin: string | null;
+  nige_pct: number | null;
+  makuri_pct: number | null;
+  sashi_pct: number | null;
+  feature_text: string | null;
+}
+
+export interface RacerRow {
+  snum: string;
+  name: string;
+  pref: string | null;
+  class_rank: string | null;
+  prev_class_rank: string | null;
+  kyakushitsu: string | null;
+  gear_ratio: number | null;
+  heikin_tokuten: number | null;
+  syouritu: number | null;
+  rentairitu2: number | null;
+  rentairitu3: number | null;
+}
+
+export interface RacerHistoryRow {
+  race_date: string; // "MM/DD"
+  venue_abbr: string | null; // 例: "豊Ｆ２"
+  finish_positions: string; // カンマ区切り "6,5,5"
+}
+
+export interface EntryWithRacer {
+  entry_id: number;
+  race_id: number;
+  car_num: number;
+  line_group: number | null;
+  line_position: string | null;
+  snum: string;
+  name: string;
+  pref: string | null;
+  class_rank: string | null;
+  prev_class_rank: string | null;
+  kyakushitsu: string | null;
+  gear_ratio: number | null;
+  heikin_tokuten: number | null;
+  syouritu: number | null;
+  rentairitu2: number | null;
+  rentairitu3: number | null;
+}
+
+export interface OddsRow {
+  bet_type: string;
+  combination: string;
+  odds_value: number | null;
+}
+
+export interface ScoreBreakdown {
+  score: number; // 0-100
+  factors: Record<string, number | string>;
+}
+
+export interface ScoredEntry {
+  entry: EntryWithRacer;
+  lineScore: ScoreBreakdown;
+  kyakushitsuScore: ScoreBreakdown;
+  statsScore: ScoreBreakdown;
+  totalScore: number;
+  mark: "◎" | "○" | "▲" | "△" | "×";
+}
+
+export interface ScoreWeights {
+  line: number;
+  kyakushitsu: number;
+  stats: number;
+}
+
+export interface BetSuggestion {
+  betType: "3連単フォーメーション" | "3連複ボックス";
+  combinations: string[];
+}
+
+export interface PositionWinRate {
+  line_position: string;
+  races: number;
+  wins: number;
+  winRate: number; // 0-100
+}
+
+export interface PredictionRow {
+  car_num: number;
+  snum: string;
+  mark: string;
+  total_score: number;
+  line_score: number;
+  kyakushitsu_score: number;
+  stats_score: number;
+}
+
+export interface ResultRow {
+  car_num: number;
+  snum: string;
+  finish_pos: number | null;
+  kimarite: string | null;
+}
+
+export interface RaceResultSummary {
+  race: RaceRow;
+  entries: { car_num: number; name: string }[];
+  predictions: PredictionRow[];
+  results: ResultRow[];
+  honmeiHit: boolean | null; // ◎が1着だったか（結果未確定ならnull）
+  honmeiTop3: boolean | null; // ◎が3着以内だったか
+  sanrentanHit: boolean | null; // 実際の着順が◎の3連単フォーメーションに含まれていたか
+  roi: number | null; // フォーメーションを均等買いした場合の回収率(%)。オッズはスナップショット時点の参考値
+}
+
+export interface AccuracyStats {
+  totalRaces: number;
+  honmeiHitRate: number | null; // ◎の単勝的中率(%)
+  honmeiTop3Rate: number | null; // ◎の複勝的中率(%)
+  sanrentanHitRate: number | null; // 3連単フォーメーション的中率(%)
+  overallRoi: number | null; // 全レース合算の回収率(%)
+}
