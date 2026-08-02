@@ -368,26 +368,20 @@ export function scoreRace(
 const SANRENTAN_MAX_POINTS = 20;
 
 /**
- * 指定した軸（1着固定）と車番ランキングから、2着・3着の候補プール
- * （軸を除く上位M頭、同一プール）を使った「1頭軸流し」フォーメーションを生成する。
+ * 軸（1着固定）と、あらかじめ優先順に並べた候補プールから
+ * 「1頭軸流し」フォーメーションを生成する。2着・3着は同じプールを使う。
  * プールサイズMのとき点数は M×(M-1)（2着・3着に同じ車番は使えないため）。
- * 上限20点を超えない最大のMを自動選択する（M=5なら5×4=20点でちょうど上限）。
- * 出走数が少ない場合はMがそれに応じて小さくなる。
+ * maxPointsを超えない最大のMを自動選択する。
  */
-function generateSanrentanFormationForAxis(
-  axis: number,
-  ranked: number[],
-  maxPoints: number = SANRENTAN_MAX_POINTS
-): string[] {
-  const pool = ranked.filter((c) => c !== axis);
-  if (pool.length < 2) return [];
+function formationFromPool(axis: number, orderedPool: number[], maxPoints: number): string[] {
+  if (orderedPool.length < 2) return [];
 
   let poolSize = 2;
-  for (let m = 2; m <= pool.length; m++) {
+  for (let m = 2; m <= orderedPool.length; m++) {
     if (m * (m - 1) > maxPoints) break;
     poolSize = m;
   }
-  const candidates = pool.slice(0, poolSize);
+  const candidates = orderedPool.slice(0, poolSize);
 
   const combos: string[] = [];
   for (const second of candidates) {
@@ -397,6 +391,24 @@ function generateSanrentanFormationForAxis(
     }
   }
   return combos;
+}
+
+/**
+ * 指定した軸（1着固定）と車番ランキングから、2着・3着の候補プール
+ * （軸を除く総合スコア上位M頭）を使ったフォーメーションを生成する。
+ * ライン等を考慮しない単純版で、predictionsテーブルの過去スナップショット
+ * （車番と合計スコアのみ）から的中判定を再現する用途（lib/accuracy.ts）に使う。
+ */
+function generateSanrentanFormationForAxis(
+  axis: number,
+  ranked: number[],
+  maxPoints: number = SANRENTAN_MAX_POINTS
+): string[] {
+  return formationFromPool(
+    axis,
+    ranked.filter((c) => c !== axis),
+    maxPoints
+  );
 }
 
 /** ◎（総合スコア1位）を軸にした標準フォーメーション。 */
@@ -462,23 +474,43 @@ export function generateBetSuggestions(scored: ScoredEntry[]): BetSuggestion[] {
   return generateBetSuggestionsFromRanking(scored.map((s) => s.entry.car_num));
 }
 
-function buildScenarioFormation(axis: number, ranked: number[]): BetSuggestion {
-  return {
-    betType: "3連単フォーメーション",
-    combinations: generateSanrentanFormationForAxis(axis, ranked),
-  };
+/**
+ * シナリオの2着・3着候補プールを「優先ライン」のメンバーを先頭に、
+ * それ以外はスコア順で並べて返す（軸自身は除く）。
+ * 優先ラインは展開ごとに意味が異なる：
+ * - 本命／逃げ粘り込み：軸と同じライン（先頭が残れば道連れで番手・3番手も上位に来やすい）
+ * - まくり/差し一撃：軸に差される側＝本命ライン（差した後ろに残るのは元々前にいた選手たち）
+ */
+function buildLineAwarePool(
+  axisCarNum: number,
+  priorityLineGroup: number | null,
+  allScored: ScoredEntry[]
+): number[] {
+  const others = allScored.filter((s) => s.entry.car_num !== axisCarNum);
+  const byScoreDesc = (a: ScoredEntry, b: ScoredEntry) => b.totalScore - a.totalScore;
+
+  const priority = others
+    .filter((s) => priorityLineGroup != null && s.entry.line_group === priorityLineGroup)
+    .sort(byScoreDesc);
+  const rest = others
+    .filter((s) => !(priorityLineGroup != null && s.entry.line_group === priorityLineGroup))
+    .sort(byScoreDesc);
+
+  return [...priority, ...rest].map((s) => s.entry.car_num);
 }
 
 /**
  * 総合スコア最上位を機械的に軸にするだけでなく、レースの決着展開が
  * 複数ありうることを踏まえて2〜3パターンの軸候補を提示する。
+ * 2着・3着候補は「総合上位」ではなく展開・ラインから絞り込み、
+ * 全パターン合計で3連単の買い目が20点以内に収まるよう配分する。
  *
- * - 本命: 総合スコア1位がそのまま押し切る、最も無難な想定
- * - 逃げ粘り込み: ライン先頭（＝番手・3番手に信頼して守られる側）の選手が
- *   そのまま単独で粘り切る想定。先頭選手の総合スコアが本命と別なら採用
- * - まくり/差し一撃: 先頭ではない位置で、追い込み型（脚質が追・両）の選手が
- *   外から一気に差す想定。バンクの捲り決まり手率が高いほど起こりやすい
- *   （bank_infoが無い場合でも脚質だけで候補は出す）
+ * - 本命: 総合スコア1位がそのまま押し切る想定。2・3着は同じラインの仲間を優先
+ * - 逃げ粘り込み: ライン先頭の選手が単独で粘り切る想定。2・3着は道連れになりやすい
+ *   同じラインの番手・3番手を優先
+ * - まくり/差し一撃: 先頭ではない位置で追い込み型（脚質が追・両）の選手が外から
+ *   差す想定。2・3着は差される側＝本命ラインのメンバーを優先
+ *   （バンクの捲り決まり手率が高いほど根拠として言及する）
  *
  * 同じ選手が複数パターンの軸に重複する場合はその後のパターンをスキップし、
  * 実質的に異なる決着筋だけを2パターン以上出すようにしている。
@@ -489,39 +521,43 @@ export function generateScenarios(
 ): RaceScenario[] {
   if (scored.length < 3) return [];
 
-  const ranked = scored.map((s) => s.entry.car_num);
   const usedAxes = new Set<number>();
-  const scenarios: RaceScenario[] = [];
+  type ScenarioSpec = {
+    label: string;
+    axis: ScoredEntry;
+    reason: string;
+    priorityLineGroup: number | null;
+  };
+  const specs: ScenarioSpec[] = [];
 
-  // ① 本命：総合スコア1位
+  // ① 本命：総合スコア1位。同じラインの仲間が続きやすい
   const honmei = scored[0];
   usedAxes.add(honmei.entry.car_num);
-  scenarios.push({
+  specs.push({
     label: "本命",
-    axisCarNum: honmei.entry.car_num,
-    axisName: honmei.entry.name,
+    axis: honmei,
     reason: `総合スコア1位。${honmei.entry.class_rank ?? ""}・${honmei.entry.kyakushitsu ?? "-"}${
       honmei.entry.line_position ? `（${honmei.entry.line_position}）` : ""
     }で総合力が最も高い。`,
-    formation: buildScenarioFormation(honmei.entry.car_num, ranked),
+    priorityLineGroup: honmei.entry.line_group,
   });
 
-  // ② 逃げ粘り込み：ライン先頭の選手がそのまま独走で粘る想定
+  // ② 逃げ粘り込み：ライン先頭の選手がそのまま独走で粘る想定。同じラインが道連れになりやすい
   const leadCandidate = [...scored]
     .filter((s) => s.entry.line_position === "先頭" && !usedAxes.has(s.entry.car_num))
     .sort((a, b) => b.totalScore - a.totalScore)[0];
   if (leadCandidate) {
     usedAxes.add(leadCandidate.entry.car_num);
-    scenarios.push({
+    specs.push({
       label: "逃げ粘り込み",
-      axisCarNum: leadCandidate.entry.car_num,
-      axisName: leadCandidate.entry.name,
+      axis: leadCandidate,
       reason: `ライン先頭（${leadCandidate.entry.kyakushitsu ?? "-"}）。番手・3番手に守られて主導権を握りやすく、そのまま逃げ切る展開を想定。`,
-      formation: buildScenarioFormation(leadCandidate.entry.car_num, ranked),
+      priorityLineGroup: leadCandidate.entry.line_group,
     });
   }
 
-  // ③ まくり/差し一撃：先頭以外で追い込み適性（脚質が追・両）が高い選手が外から差す想定
+  // ③ まくり/差し一撃：先頭以外で追い込み適性（脚質が追・両）が高い選手が外から差す想定。
+  //    差された本命ラインのメンバーが2・3着に残りやすいとみて優先する
   const makuriCandidate = [...scored]
     .filter(
       (s) =>
@@ -536,16 +572,30 @@ export function generateScenarios(
       bankInfo?.makuri_pct != null
         ? `このバンクは捲り決着が${bankInfo.makuri_pct}%と出やすく、`
         : "";
-    scenarios.push({
+    specs.push({
       label: "まくり/差し一撃",
-      axisCarNum: makuriCandidate.entry.car_num,
-      axisName: makuriCandidate.entry.name,
+      axis: makuriCandidate,
       reason: `${bankNote}${makuriCandidate.entry.line_position ?? "単騎"}から${
         makuriCandidate.entry.kyakushitsu
       }脚質を活かして外を一気に差す展開を想定。`,
-      formation: buildScenarioFormation(makuriCandidate.entry.car_num, ranked),
+      priorityLineGroup: honmei.entry.line_group,
     });
   }
 
-  return scenarios;
+  // 3連単の買い目は全パターン合計で20点以内に収める（1パターンあたりに均等配分）
+  const perScenarioBudget = Math.floor(SANRENTAN_MAX_POINTS / specs.length);
+
+  return specs.map((spec) => {
+    const pool = buildLineAwarePool(spec.axis.entry.car_num, spec.priorityLineGroup, scored);
+    return {
+      label: spec.label,
+      axisCarNum: spec.axis.entry.car_num,
+      axisName: spec.axis.entry.name,
+      reason: spec.reason,
+      formation: {
+        betType: "3連単フォーメーション",
+        combinations: formationFromPool(spec.axis.entry.car_num, pool, perScenarioBudget),
+      },
+    };
+  });
 }
