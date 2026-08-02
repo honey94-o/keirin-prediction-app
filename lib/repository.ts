@@ -28,6 +28,15 @@ export async function getAllRaces(): Promise<RaceRow[]> {
   return result.rows as unknown as RaceRow[];
 }
 
+/** 同じ開催（同日・同開催場）の他のレース一覧。レース切り替えタブ用。 */
+export async function getRacesForEvent(kaisaiDate: string, jocd: string): Promise<RaceRow[]> {
+  const result = await getDb().execute({
+    sql: `SELECT * FROM races WHERE kaisai_date = ? AND jocd = ? ORDER BY race_no ASC`,
+    args: [kaisaiDate, jocd],
+  });
+  return result.rows as unknown as RaceRow[];
+}
+
 export async function getRacer(snum: string): Promise<RacerRow | undefined> {
   const result = await getDb().execute({
     sql: "SELECT * FROM racers WHERE snum = ?",

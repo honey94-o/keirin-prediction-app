@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { predictRace } from "../../../lib/predict";
-import { getPredictionsForRace } from "../../../lib/repository";
+import { getPredictionsForRace, getRacesForEvent } from "../../../lib/repository";
 import { recordPredictionAction } from "../../../lib/actions";
 import { CarNumberBadge } from "../../../components/CarNumberBadge";
 import { MarkBadge } from "../../../components/MarkBadge";
 import { ScoreBar } from "../../../components/ScoreBar";
+import { RaceSwitcher } from "../../../components/RaceSwitcher";
 
 function formatDate(kaisaiDate: string): string {
   const y = kaisaiDate.slice(0, 4);
@@ -27,9 +28,11 @@ export default async function RaceDetailPage({
   const { race, bankInfo, scored, betSuggestions } = prediction;
   const alreadyRecorded = (await getPredictionsForRace(raceId)).length > 0;
   const recordPredictionForRace = recordPredictionAction.bind(null, raceId);
+  const eventRaces = await getRacesForEvent(race.kaisai_date, race.jocd);
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
+      <RaceSwitcher races={eventRaces} currentRaceId={race.id} />
       <div className="mb-4">
         <h1 className="text-lg font-bold">
           {race.keirinjo_name} {race.race_no}R
