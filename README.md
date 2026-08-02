@@ -12,10 +12,46 @@
 | フォルダ | 内容 |
 |---|---|
 | `app/` | Next.js App Router（画面・manifest） |
-| `lib/` | 共通ロジック・スコアリング関数 |
+| `lib/` | 共通ロジック・スコアリング関数・DB接続 |
 | `components/` | Reactコンポーネント |
 | `scraper/` | Pythonスクレイピングスクリプト |
-| `db/` | SQLiteスキーマ・DBアクセス処理 |
+| `db/` | DBスキーマ・初期化スクリプト |
+| `.github/workflows/` | GitHub Actions（スクレイパーの手動/定期実行） |
+
+## データベース：Turso（libSQL）
+
+外出先のiPhoneからも常時アクセスできるよう、DBはローカルファイルではなく
+[Turso](https://turso.tech)（SQLite互換のクラウドDB、無料枠あり）を使う。
+Next.js（`@libsql/client`）とPythonスクレイパー（`libsql-client`）の両方が
+同じTursoデータベースを読み書きする。
+
+### 1. Tursoデータベースを作成する
+
+1. [turso.tech](https://turso.tech) でアカウント作成（GitHubログイン可）
+2. ダッシュボードで新しいデータベースを作成
+3. データベース詳細ページで以下を控える：
+   - **Database URL**（`libsql://xxxx.turso.io`）
+   - **Auth Token**（Create Tokenで発行）
+
+### 2. ローカル環境変数の設定
+
+```bash
+cp .env.local.example .env.local
+# .env.local を編集して TURSO_DATABASE_URL / TURSO_AUTH_TOKEN を埋める
+```
+
+### 3. スキーマ初期化
+
+```bash
+cd scraper
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+pip install -r requirements.txt
+playwright install chromium
+
+cd ..
+scraper\.venv\Scripts\python.exe db\init_db.py
+```
 
 ## ローカル起動手順
 
@@ -24,16 +60,45 @@ npm install
 npm run dev
 ```
 
-[http://localhost:3000](http://localhost:3000) をブラウザで開く。
+[http://localhost:3000](http://localhost:3000) をブラウザで開く（`.env.local` の設定が必要）。
 
-### iPhoneでPWAとして確認する
+### iPhoneでPWAとして確認する（本番URL）
 
-1. Macまたはローカルネットワーク経由でiPhoneから開発サーバーにアクセス（`npm run dev -- -H 0.0.0.0` で同一Wi-Fi内のiPhoneから `http://<PCのIPアドレス>:3000` にアクセス可能）
-2. Safariでページを開く
-3. 共有ボタン → 「ホーム画面に追加」
-4. ホーム画面のアイコンから起動し、アドレスバーなしのアプリらしい表示になっていることを確認
+1. Vercelにデプロイ後の本番URL（`https://xxxx.vercel.app`）にiPhoneのSafariでアクセス
+2. 共有ボタン → 「ホーム画面に追加」
+3. ホーム画面のアイコンから起動し、アドレスバーなしのアプリらしい表示になっていることを確認
+4. 外出先（Wi-Fi以外の回線）でも同じURLでアクセスできることを確認
 
-本番デプロイ後の確認手順はPhase 5で追記する。
+## デプロイ手順（Vercel + Turso + GitHub Actions）
+
+### 1. GitHubリポジトリを作成してpush
+
+```bash
+gh auth login          # 初回のみ・ブラウザでの認証が必要
+gh repo create keirin-prediction-app --private --source=. --remote=origin
+git push -u origin master
+```
+
+### 2. GitHub Secretsを設定（Actionsでのスクレイパー実行用）
+
+```bash
+gh secret set TURSO_DATABASE_URL --body "libsql://xxxx.turso.io"
+gh secret set TURSO_AUTH_TOKEN --body "xxxxxxxx"
+```
+
+以降、GitHubリポジトリの「Actions」タブから `Scrape keirin race data` ワークフローを手動実行（`workflow_dispatch`）すると、PCを起動していなくてもレースデータを取得できる。デフォルトではスケジュール実行は無効にしてある（`.github/workflows/scrape.yml` 内のcronはコメントアウト）。有効化する場合も、KEIRIN.JPへの節度あるアクセス（低頻度・個人利用の範囲）を必ず維持すること。
+
+### 3. Vercelにデプロイ
+
+```bash
+npx vercel login       # 初回のみ・ブラウザでの認証が必要
+npx vercel link
+npx vercel env add TURSO_DATABASE_URL production
+npx vercel env add TURSO_AUTH_TOKEN production
+npx vercel --prod
+```
+
+またはVercelダッシュボードでGitHubリポジトリをImportし、Environment VariablesにTURSO_DATABASE_URL/TURSO_AUTH_TOKENを設定してデプロイしてもよい（以後はgit pushで自動デプロイされる）。
 
 ## 開発の進め方
 
@@ -44,25 +109,18 @@ npm run dev
 - [x] Phase 2: 予想ロジック実装（3本柱スコアリング、`npm run score <race_id>` で確認済み）
 - [x] Phase 3: UI実装（レース一覧・出走表予想・買い目提案・選手データの4画面、モバイル幅で動作確認済み）
 - [x] Phase 4: 設定・重み調整・精度検証機能（設定画面・予想記録・履歴/精度検証画面、動作確認済み）
-- [ ] Phase 5: デプロイ・iPhone動作確認
+- [x] Phase 5: デプロイ・iPhone動作確認（Turso移行・Vercelデプロイ手順整備。実際のデプロイ・iPhone確認はユーザー側の認証操作待ち）
 
 ## データ取得（スクレイピング）
 
 ```bash
 cd scraper
-python -m venv .venv
-.venv\Scripts\activate        # Windows
-pip install -r requirements.txt
-playwright install chromium
-
 # 本日発売中の開催場一覧を確認
-python keirin_scraper.py --list-venues
+.venv\Scripts\python.exe keirin_scraper.py --list-venues
 
 # 1レース分だけ取得してDBに保存
-python keirin_scraper.py --venue-index 0 --race-no 1
+.venv\Scripts\python.exe keirin_scraper.py --venue-index 0 --race-no 1
 ```
-
-事前に `python db/init_db.py` でDBを初期化しておくこと。
 
 **既知の制約・注意点：**
 
@@ -82,7 +140,7 @@ python keirin_scraper.py --venue-index 0 --race-no 1
 npm run score <race_id>   # 例: npm run score 1
 ```
 
-`db/keirin.db` の `races.id` を指定すると、①ライン ②脚質実力 ③データ統計 の3スコアと
+Tursoに保存されている `races.id` を指定すると、①ライン ②脚質実力 ③データ統計 の3スコアと
 総合スコア・印（◎○▲△×）・3連単フォーメーション/3連複ボックス候補を表示する。
 重みは `settings` テーブル（`score_weight_line` 等）で調整可能（`/settings` 画面から編集可能）。
 
@@ -133,5 +191,8 @@ npm run score <race_id>   # 例: npm run score 1
 
 - Next.js（App Router）＋ TypeScript ＋ Tailwind CSS
 - PWA対応（`app/manifest.ts` によるNext.js組み込みのWeb App Manifest）
-- DB: SQLite（Phase 1で導入）
-- スクレイピング: Python（Phase 1で導入）
+- DB: Turso（libSQL、SQLite互換のクラウドDB。Phase 5でローカルSQLiteから移行）
+  - TS側: `@libsql/client`（`lib/db.ts`）
+  - Python側: `libsql-client`（`scraper/db.py`）
+- スクレイピング: Python + Playwright（Phase 1で導入）
+- デプロイ: Vercel（フロントエンド）＋ GitHub Actions（スクレイパーの手動/定期実行）
