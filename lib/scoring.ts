@@ -3,6 +3,7 @@ import type {
   BetSuggestion,
   EntryWithRacer,
   PositionWinRate,
+  RaceScenario,
   RacerHistoryRow,
   ScoreBreakdown,
   ScoredEntry,
@@ -367,19 +368,19 @@ export function scoreRace(
 const SANRENTAN_MAX_POINTS = 20;
 
 /**
- * ◎（総合スコア1位）を1着に固定し、2着・3着の候補プールを同じ上位M頭とする
- * 「1頭軸流し」形式で3連単フォーメーションを生成する。
+ * 指定した軸（1着固定）と車番ランキングから、2着・3着の候補プール
+ * （軸を除く上位M頭、同一プール）を使った「1頭軸流し」フォーメーションを生成する。
  * プールサイズMのとき点数は M×(M-1)（2着・3着に同じ車番は使えないため）。
  * 上限20点を超えない最大のMを自動選択する（M=5なら5×4=20点でちょうど上限）。
  * 出走数が少ない場合はMがそれに応じて小さくなる。
  */
-function generateSanrentanFormation(
+function generateSanrentanFormationForAxis(
+  axis: number,
   ranked: number[],
   maxPoints: number = SANRENTAN_MAX_POINTS
 ): string[] {
-  if (ranked.length < 3) return [];
-  const axis = ranked[0];
-  const pool = ranked.slice(1);
+  const pool = ranked.filter((c) => c !== axis);
+  if (pool.length < 2) return [];
 
   let poolSize = 2;
   for (let m = 2; m <= pool.length; m++) {
@@ -396,6 +397,15 @@ function generateSanrentanFormation(
     }
   }
   return combos;
+}
+
+/** ◎（総合スコア1位）を軸にした標準フォーメーション。 */
+function generateSanrentanFormation(
+  ranked: number[],
+  maxPoints: number = SANRENTAN_MAX_POINTS
+): string[] {
+  if (ranked.length < 3) return [];
+  return generateSanrentanFormationForAxis(ranked[0], ranked, maxPoints);
 }
 
 /**
@@ -450,4 +460,92 @@ export function generateBetSuggestionsFromRanking(ranked: number[]): BetSuggesti
 
 export function generateBetSuggestions(scored: ScoredEntry[]): BetSuggestion[] {
   return generateBetSuggestionsFromRanking(scored.map((s) => s.entry.car_num));
+}
+
+function buildScenarioFormation(axis: number, ranked: number[]): BetSuggestion {
+  return {
+    betType: "3連単フォーメーション",
+    combinations: generateSanrentanFormationForAxis(axis, ranked),
+  };
+}
+
+/**
+ * 総合スコア最上位を機械的に軸にするだけでなく、レースの決着展開が
+ * 複数ありうることを踏まえて2〜3パターンの軸候補を提示する。
+ *
+ * - 本命: 総合スコア1位がそのまま押し切る、最も無難な想定
+ * - 逃げ粘り込み: ライン先頭（＝番手・3番手に信頼して守られる側）の選手が
+ *   そのまま単独で粘り切る想定。先頭選手の総合スコアが本命と別なら採用
+ * - まくり/差し一撃: 先頭ではない位置で、追い込み型（脚質が追・両）の選手が
+ *   外から一気に差す想定。バンクの捲り決まり手率が高いほど起こりやすい
+ *   （bank_infoが無い場合でも脚質だけで候補は出す）
+ *
+ * 同じ選手が複数パターンの軸に重複する場合はその後のパターンをスキップし、
+ * 実質的に異なる決着筋だけを2パターン以上出すようにしている。
+ */
+export function generateScenarios(
+  scored: ScoredEntry[],
+  bankInfo: BankInfoRow | undefined
+): RaceScenario[] {
+  if (scored.length < 3) return [];
+
+  const ranked = scored.map((s) => s.entry.car_num);
+  const usedAxes = new Set<number>();
+  const scenarios: RaceScenario[] = [];
+
+  // ① 本命：総合スコア1位
+  const honmei = scored[0];
+  usedAxes.add(honmei.entry.car_num);
+  scenarios.push({
+    label: "本命",
+    axisCarNum: honmei.entry.car_num,
+    axisName: honmei.entry.name,
+    reason: `総合スコア1位。${honmei.entry.class_rank ?? ""}・${honmei.entry.kyakushitsu ?? "-"}${
+      honmei.entry.line_position ? `（${honmei.entry.line_position}）` : ""
+    }で総合力が最も高い。`,
+    formation: buildScenarioFormation(honmei.entry.car_num, ranked),
+  });
+
+  // ② 逃げ粘り込み：ライン先頭の選手がそのまま独走で粘る想定
+  const leadCandidate = [...scored]
+    .filter((s) => s.entry.line_position === "先頭" && !usedAxes.has(s.entry.car_num))
+    .sort((a, b) => b.totalScore - a.totalScore)[0];
+  if (leadCandidate) {
+    usedAxes.add(leadCandidate.entry.car_num);
+    scenarios.push({
+      label: "逃げ粘り込み",
+      axisCarNum: leadCandidate.entry.car_num,
+      axisName: leadCandidate.entry.name,
+      reason: `ライン先頭（${leadCandidate.entry.kyakushitsu ?? "-"}）。番手・3番手に守られて主導権を握りやすく、そのまま逃げ切る展開を想定。`,
+      formation: buildScenarioFormation(leadCandidate.entry.car_num, ranked),
+    });
+  }
+
+  // ③ まくり/差し一撃：先頭以外で追い込み適性（脚質が追・両）が高い選手が外から差す想定
+  const makuriCandidate = [...scored]
+    .filter(
+      (s) =>
+        !usedAxes.has(s.entry.car_num) &&
+        s.entry.line_position !== "先頭" &&
+        (s.entry.kyakushitsu === "追" || s.entry.kyakushitsu === "両")
+    )
+    .sort((a, b) => b.totalScore - a.totalScore)[0];
+  if (makuriCandidate) {
+    usedAxes.add(makuriCandidate.entry.car_num);
+    const bankNote =
+      bankInfo?.makuri_pct != null
+        ? `このバンクは捲り決着が${bankInfo.makuri_pct}%と出やすく、`
+        : "";
+    scenarios.push({
+      label: "まくり/差し一撃",
+      axisCarNum: makuriCandidate.entry.car_num,
+      axisName: makuriCandidate.entry.name,
+      reason: `${bankNote}${makuriCandidate.entry.line_position ?? "単騎"}から${
+        makuriCandidate.entry.kyakushitsu
+      }脚質を活かして外を一気に差す展開を想定。`,
+      formation: buildScenarioFormation(makuriCandidate.entry.car_num, ranked),
+    });
+  }
+
+  return scenarios;
 }

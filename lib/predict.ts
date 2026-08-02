@@ -6,14 +6,23 @@ import {
   getRacerHistory,
   getPositionWinRates,
 } from "./repository";
-import { scoreRace, generateBetSuggestions } from "./scoring";
-import type { BankInfoRow, BetSuggestion, RaceRow, ScoredEntry } from "./types";
+import { scoreRace, generateBetSuggestions, generateScenarios } from "./scoring";
+import type {
+  BankInfoRow,
+  BetSuggestion,
+  RaceRow,
+  RaceScenario,
+  ScoredEntry,
+} from "./types";
 
 export interface RacePrediction {
   race: RaceRow;
   bankInfo: BankInfoRow | undefined;
   scored: ScoredEntry[];
-  betSuggestions: BetSuggestion[];
+  /** 展開パターン別の予想（本命／逃げ粘り込み／まくり差し等）。2〜3パターン。 */
+  scenarios: RaceScenario[];
+  /** 3連複ボックス（展開パターンに依らない上位車番の総当たり）。 */
+  boxSuggestion: BetSuggestion | undefined;
 }
 
 /**
@@ -47,7 +56,10 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
     historyBySnum,
     positionWinRatesBySnum
   );
-  const betSuggestions = generateBetSuggestions(scored);
+  const scenarios = generateScenarios(scored, bankInfo);
+  const boxSuggestion = generateBetSuggestions(scored).find(
+    (s) => s.betType === "3連複ボックス"
+  );
 
-  return { race, bankInfo, scored, betSuggestions };
+  return { race, bankInfo, scored, scenarios, boxSuggestion };
 }

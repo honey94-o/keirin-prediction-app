@@ -25,7 +25,7 @@ export default async function RaceDetailPage({
   const prediction = await predictRace(raceId);
   if (!prediction) notFound();
 
-  const { race, bankInfo, scored, betSuggestions } = prediction;
+  const { race, bankInfo, scored, scenarios } = prediction;
   const alreadyRecorded = (await getPredictionsForRace(raceId)).length > 0;
   const recordPredictionForRace = recordPredictionAction.bind(null, raceId);
   const eventRaces = await getRacesForEvent(race.kaisai_date, race.jocd);
@@ -106,7 +106,7 @@ export default async function RaceDetailPage({
         ))}
       </div>
 
-      {betSuggestions.length === 0 && scored.length < 3 && (
+      {scenarios.length === 0 && scored.length < 3 && (
         <p className="text-xs text-gray-400 mt-4 text-center">
           出走数が少ないため買い目候補は生成されません。
         </p>

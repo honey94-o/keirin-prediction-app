@@ -100,6 +100,19 @@ export interface BetSuggestion {
   combinations: string[];
 }
 
+/**
+ * レース展開の想定パターン。総合スコア最上位を機械的に軸にするだけでなく、
+ * 「先頭が逃げ粘る」「番手やまくり適性の高い選手が差す」といった
+ * 異なる決着シナリオごとに軸選手とフォーメーションを分けて提示する。
+ */
+export interface RaceScenario {
+  label: string; // 例: "本命", "逃げ粘り込み", "まくり/差し一撃"
+  axisCarNum: number;
+  axisName: string;
+  reason: string; // なぜこの選手を軸にしたかの説明文
+  formation: BetSuggestion;
+}
+
 export interface PositionWinRate {
   line_position: string;
   races: number;

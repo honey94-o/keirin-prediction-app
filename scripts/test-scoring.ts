@@ -26,7 +26,7 @@ async function main() {
     process.exit(1);
   }
 
-  const { race, bankInfo, scored, betSuggestions } = prediction;
+  const { race, bankInfo, scored, scenarios, boxSuggestion } = prediction;
 
   console.log(`${race.keirinjo_name} ${race.race_no}R (${race.kaisai_date}) ${race.syumoku ?? ""}`);
   if (bankInfo) {
@@ -48,9 +48,14 @@ async function main() {
   }
 
   console.log();
-  for (const suggestion of betSuggestions) {
-    console.log(`${suggestion.betType} (${suggestion.combinations.length}点):`);
-    console.log(`  ${suggestion.combinations.join(", ")}`);
+  for (const scenario of scenarios) {
+    console.log(`【${scenario.label}】軸 ${scenario.axisCarNum}.${scenario.axisName} - ${scenario.reason}`);
+    console.log(`  ${scenario.formation.combinations.join(", ")}`);
+  }
+  if (boxSuggestion) {
+    console.log();
+    console.log(`${boxSuggestion.betType} (${boxSuggestion.combinations.length}点):`);
+    console.log(`  ${boxSuggestion.combinations.join(", ")}`);
   }
 }
 

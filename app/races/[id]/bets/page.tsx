@@ -15,7 +15,7 @@ export default async function RaceBetsPage({
   const prediction = await predictRace(raceId);
   if (!prediction) notFound();
 
-  const { race, scored, betSuggestions } = prediction;
+  const { race, scored, scenarios, boxSuggestion } = prediction;
   const top4 = scored.slice(0, 4);
 
   return (
@@ -26,7 +26,9 @@ export default async function RaceBetsPage({
       <h1 className="text-lg font-bold mb-1">
         {race.keirinjo_name} {race.race_no}R 買い目提案
       </h1>
-      <p className="text-xs text-gray-400 mb-4">総合スコア上位から自動生成（参考値）</p>
+      <p className="text-xs text-gray-400 mb-4">
+        展開の分かれ目ごとに複数パターンを提示（参考値）
+      </p>
 
       <div className="flex gap-2 mb-4 flex-wrap">
         {top4.map((s) => (
@@ -38,26 +40,28 @@ export default async function RaceBetsPage({
         ))}
       </div>
 
-      {betSuggestions.length === 0 ? (
+      {scenarios.length === 0 ? (
         <p className="text-sm text-gray-500">出走数が少ないため買い目候補は生成されません。</p>
       ) : (
         <div className="flex flex-col gap-4">
-          {betSuggestions.map((suggestion) => {
-            const notation =
-              suggestion.betType === "3連単フォーメーション"
-                ? formatFormationNotation(suggestion.combinations)
-                : null;
-
+          {scenarios.map((scenario) => {
+            const notation = formatFormationNotation(scenario.formation.combinations);
             return (
-              <section key={suggestion.betType} className="bg-white rounded-lg shadow-sm p-4">
-                <h2 className="font-semibold mb-2">
-                  {suggestion.betType}
-                  <span className="text-xs text-gray-400 font-normal ml-2">
-                    {suggestion.combinations.length}点
+              <section key={scenario.label} className="bg-white rounded-lg shadow-sm p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs font-semibold bg-[#0d5c3f] text-white px-2 py-0.5 rounded-full">
+                    {scenario.label}
                   </span>
-                </h2>
+                  <span className="text-sm font-semibold">
+                    軸 {scenario.axisCarNum}. {scenario.axisName}
+                  </span>
+                  <span className="text-xs text-gray-400 ml-auto">
+                    {scenario.formation.combinations.length}点
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mb-3">{scenario.reason}</p>
 
-                {notation ? (
+                {notation && (
                   <>
                     <p className="text-2xl font-bold tabular-nums font-mono text-[#0d5c3f] mb-1">
                       {notation}
@@ -66,10 +70,10 @@ export default async function RaceBetsPage({
                       軸-2着候補-3着候補（車番を連結表記。車券購入時にそのまま入力可能）
                     </p>
                   </>
-                ) : null}
+                )}
 
                 <div className="flex flex-wrap gap-2">
-                  {suggestion.combinations.map((combo) => (
+                  {scenario.formation.combinations.map((combo) => (
                     <span
                       key={combo}
                       className="px-2 py-1 rounded bg-gray-100 text-sm tabular-nums font-mono"
@@ -81,6 +85,30 @@ export default async function RaceBetsPage({
               </section>
             );
           })}
+
+          {boxSuggestion && boxSuggestion.combinations.length > 0 && (
+            <section className="bg-white rounded-lg shadow-sm p-4">
+              <h2 className="font-semibold mb-2">
+                {boxSuggestion.betType}
+                <span className="text-xs text-gray-400 font-normal ml-2">
+                  {boxSuggestion.combinations.length}点
+                </span>
+              </h2>
+              <p className="text-xs text-gray-500 mb-3">
+                展開に依らず上位{top4.length}車を総当たり（決着順を絞らない保険的な買い方）
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {boxSuggestion.combinations.map((combo) => (
+                  <span
+                    key={combo}
+                    className="px-2 py-1 rounded bg-gray-100 text-sm tabular-nums font-mono"
+                  >
+                    {combo}
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       )}
     </main>
