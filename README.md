@@ -53,6 +53,8 @@ cd ..
 scraper\.venv\Scripts\python.exe db\init_db.py
 ```
 
+**動作確認済み。**Python版`libsql-client`(0.3.1)は`libsql://`（WebSocket/Hrana）接続だと環境によってハンドシェイクに失敗することがあったため、`scraper/db.py`内で`https://`に自動変換して接続している（TypeScript側の`@libsql/client`は`libsql://`のままで問題ない）。また同クライアントのHTTPトランスポートは対話的トランザクション（BEGIN/COMMIT）に非対応のため、`keirin_scraper.py`の`save_to_db`は「race行の確定はRETURNING付きの単発execute、残りは1回のbatch()にまとめて送信」という方式にしている。
+
 ## ローカル起動手順
 
 ```bash

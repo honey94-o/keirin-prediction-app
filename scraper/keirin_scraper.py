@@ -487,97 +487,100 @@ def save_to_db(
     bank_info: BankInfo | None = None,
     histories: list[RacerHistoryEntry] | None = None,
 ) -> None:
+    # 注: PythonのlibSQL HTTPクライアントは対話的トランザクション(tx.execute)を
+    # サポートしていないため、race_idの確定(RETURNING)だけ単発execute、
+    # 残りは1回のbatch()にまとめて送る（Turso側でbatchはまとめて処理される）。
     client = get_client()
     try:
-        with client.transaction() as tx:
-            tx.execute(
-                """INSERT INTO races (kaisai_date, jocd, keirinjo_name, race_no, syumoku,
-                                       grade_kbn, kyori, shukai, start_time, encp, tenki, husoku)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-                   ON CONFLICT(kaisai_date, jocd, race_no) DO UPDATE SET
-                       syumoku=excluded.syumoku, grade_kbn=excluded.grade_kbn,
-                       kyori=excluded.kyori, shukai=excluded.shukai,
-                       start_time=excluded.start_time, encp=excluded.encp,
-                       tenki=excluded.tenki, husoku=excluded.husoku""",
-                [race.kaisai_date, race.jocd, race.keirinjo_name, race.race_no, race.syumoku,
-                 race.grade_kbn, race.kyori, race.shukai, race.start_time, race.encp,
-                 race.tenki, race.husoku],
-            )
-            race_id = tx.execute(
-                "SELECT id FROM races WHERE kaisai_date=? AND jocd=? AND race_no=?",
-                [race.kaisai_date, race.jocd, race.race_no],
-            ).rows[0][0]
+        race_result = client.execute(
+            """INSERT INTO races (kaisai_date, jocd, keirinjo_name, race_no, syumoku,
+                                   grade_kbn, kyori, shukai, start_time, encp, tenki, husoku)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+               ON CONFLICT(kaisai_date, jocd, race_no) DO UPDATE SET
+                   syumoku=excluded.syumoku, grade_kbn=excluded.grade_kbn,
+                   kyori=excluded.kyori, shukai=excluded.shukai,
+                   start_time=excluded.start_time, encp=excluded.encp,
+                   tenki=excluded.tenki, husoku=excluded.husoku
+               RETURNING id""",
+            [race.kaisai_date, race.jocd, race.keirinjo_name, race.race_no, race.syumoku,
+             race.grade_kbn, race.kyori, race.shukai, race.start_time, race.encp,
+             race.tenki, race.husoku],
+        )
+        race_id = race_result.rows[0][0]
 
-            for e in race.entries:
-                tx.execute(
-                    """INSERT INTO racers (snum, name, pref, class_rank, prev_class_rank, kyakushitsu,
-                                            heikin_tokuten, syouritu, rentairitu2, rentairitu3)
-                       VALUES (?,?,?,?,?,?,?,?,?,?)
-                       ON CONFLICT(snum) DO UPDATE SET
-                           name=excluded.name, pref=excluded.pref,
-                           class_rank=excluded.class_rank, prev_class_rank=excluded.prev_class_rank,
-                           kyakushitsu=excluded.kyakushitsu,
-                           heikin_tokuten=excluded.heikin_tokuten, syouritu=excluded.syouritu,
-                           rentairitu2=excluded.rentairitu2, rentairitu3=excluded.rentairitu3,
-                           updated_at=datetime('now')""",
-                    [e["snum"], e["name"], e.get("pref"), e.get("class_rank"), e.get("prev_class_rank"),
-                     e.get("kyakushitsu"), e.get("heikin_tokuten"), e.get("syouritu"),
-                     e.get("rentairitu2"), e.get("rentairitu3")],
-                )
-                tx.execute(
-                    """INSERT INTO entries (race_id, snum, car_num, line_group, line_position)
-                       VALUES (?,?,?,?,?)
-                       ON CONFLICT(race_id, car_num) DO UPDATE SET
-                           snum=excluded.snum, line_group=excluded.line_group,
-                           line_position=excluded.line_position""",
-                    [race_id, e["snum"], e["car_num"], e.get("line_group"), e.get("line_position")],
-                )
+        statements: list[tuple[str, list]] = []
 
-            for r in race.results:
-                tx.execute(
-                    """INSERT INTO results (race_id, snum, car_num, finish_pos, kimarite)
-                       VALUES (?,?,?,?,?)
-                       ON CONFLICT(race_id, car_num) DO UPDATE SET
-                           finish_pos=excluded.finish_pos, kimarite=excluded.kimarite""",
-                    [race_id, r["snum"], r["car_num"], r["finish_pos"], r["kimarite"]],
-                )
+        for e in race.entries:
+            statements.append((
+                """INSERT INTO racers (snum, name, pref, class_rank, prev_class_rank, kyakushitsu,
+                                        heikin_tokuten, syouritu, rentairitu2, rentairitu3)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(snum) DO UPDATE SET
+                       name=excluded.name, pref=excluded.pref,
+                       class_rank=excluded.class_rank, prev_class_rank=excluded.prev_class_rank,
+                       kyakushitsu=excluded.kyakushitsu,
+                       heikin_tokuten=excluded.heikin_tokuten, syouritu=excluded.syouritu,
+                       rentairitu2=excluded.rentairitu2, rentairitu3=excluded.rentairitu3,
+                       updated_at=datetime('now')""",
+                [e["snum"], e["name"], e.get("pref"), e.get("class_rank"), e.get("prev_class_rank"),
+                 e.get("kyakushitsu"), e.get("heikin_tokuten"), e.get("syouritu"),
+                 e.get("rentairitu2"), e.get("rentairitu3")],
+            ))
+            statements.append((
+                """INSERT INTO entries (race_id, snum, car_num, line_group, line_position)
+                   VALUES (?,?,?,?,?)
+                   ON CONFLICT(race_id, car_num) DO UPDATE SET
+                       snum=excluded.snum, line_group=excluded.line_group,
+                       line_position=excluded.line_position""",
+                [race_id, e["snum"], e["car_num"], e.get("line_group"), e.get("line_position")],
+            ))
 
-            for o in race.odds:
-                tx.execute(
-                    """INSERT INTO odds (race_id, bet_type, combination, odds_value)
-                       VALUES (?,?,?,?)""",
-                    [race_id, o["bet_type"], o["combination"], o["odds_value"]],
-                )
+        for r in race.results:
+            statements.append((
+                """INSERT INTO results (race_id, snum, car_num, finish_pos, kimarite)
+                   VALUES (?,?,?,?,?)
+                   ON CONFLICT(race_id, car_num) DO UPDATE SET
+                       finish_pos=excluded.finish_pos, kimarite=excluded.kimarite""",
+                [race_id, r["snum"], r["car_num"], r["finish_pos"], r["kimarite"]],
+            ))
 
-            if bank_info is not None:
-                tx.execute(
-                    """INSERT INTO bank_info (jocd, keirinjo_name, shuutyou, tyokusen, kant, tkant,
-                                               home_hukuin, back_hukuin, center_hukuin,
-                                               nige_pct, makuri_pct, sashi_pct, feature_text, updated_at)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
-                       ON CONFLICT(jocd) DO UPDATE SET
-                           keirinjo_name=excluded.keirinjo_name, shuutyou=excluded.shuutyou,
-                           tyokusen=excluded.tyokusen, kant=excluded.kant, tkant=excluded.tkant,
-                           home_hukuin=excluded.home_hukuin, back_hukuin=excluded.back_hukuin,
-                           center_hukuin=excluded.center_hukuin, nige_pct=excluded.nige_pct,
-                           makuri_pct=excluded.makuri_pct, sashi_pct=excluded.sashi_pct,
-                           feature_text=excluded.feature_text, updated_at=datetime('now')""",
-                    [bank_info.jocd, race.keirinjo_name, bank_info.shuutyou, bank_info.tyokusen,
-                     bank_info.kant, bank_info.tkant, bank_info.home_hukuin, bank_info.back_hukuin,
-                     bank_info.center_hukuin, bank_info.nige_pct, bank_info.makuri_pct,
-                     bank_info.sashi_pct, bank_info.feature_text],
-                )
+        for o in race.odds:
+            statements.append((
+                """INSERT INTO odds (race_id, bet_type, combination, odds_value)
+                   VALUES (?,?,?,?)""",
+                [race_id, o["bet_type"], o["combination"], o["odds_value"]],
+            ))
 
-            for h in histories or []:
-                tx.execute(
-                    """INSERT INTO racer_race_history (snum, race_date, venue_abbr, finish_positions)
-                       VALUES (?,?,?,?)
-                       ON CONFLICT(snum, race_date, venue_abbr) DO UPDATE SET
-                           finish_positions=excluded.finish_positions, scraped_at=datetime('now')""",
-                    [h.snum, h.race_date, h.venue_abbr, h.finish_positions],
-                )
+        if bank_info is not None:
+            statements.append((
+                """INSERT INTO bank_info (jocd, keirinjo_name, shuutyou, tyokusen, kant, tkant,
+                                           home_hukuin, back_hukuin, center_hukuin,
+                                           nige_pct, makuri_pct, sashi_pct, feature_text, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+                   ON CONFLICT(jocd) DO UPDATE SET
+                       keirinjo_name=excluded.keirinjo_name, shuutyou=excluded.shuutyou,
+                       tyokusen=excluded.tyokusen, kant=excluded.kant, tkant=excluded.tkant,
+                       home_hukuin=excluded.home_hukuin, back_hukuin=excluded.back_hukuin,
+                       center_hukuin=excluded.center_hukuin, nige_pct=excluded.nige_pct,
+                       makuri_pct=excluded.makuri_pct, sashi_pct=excluded.sashi_pct,
+                       feature_text=excluded.feature_text, updated_at=datetime('now')""",
+                [bank_info.jocd, race.keirinjo_name, bank_info.shuutyou, bank_info.tyokusen,
+                 bank_info.kant, bank_info.tkant, bank_info.home_hukuin, bank_info.back_hukuin,
+                 bank_info.center_hukuin, bank_info.nige_pct, bank_info.makuri_pct,
+                 bank_info.sashi_pct, bank_info.feature_text],
+            ))
 
-            tx.commit()
+        for h in histories or []:
+            statements.append((
+                """INSERT INTO racer_race_history (snum, race_date, venue_abbr, finish_positions)
+                   VALUES (?,?,?,?)
+                   ON CONFLICT(snum, race_date, venue_abbr) DO UPDATE SET
+                       finish_positions=excluded.finish_positions, scraped_at=datetime('now')""",
+                [h.snum, h.race_date, h.venue_abbr, h.finish_positions],
+            ))
+
+        if statements:
+            client.batch(statements)
     finally:
         client.close()
 

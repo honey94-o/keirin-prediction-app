@@ -37,4 +37,9 @@ def get_client() -> ClientSync:
             "TURSO_DATABASE_URL が設定されていません。.env.local を用意するか、"
             "環境変数として設定してください（README参照）。"
         )
+    # Python版libsql-client(0.3.1)はlibsql://（WebSocket/Hrana）だと
+    # 環境によってハンドシェイクに失敗することがあるため、HTTP経由に変える。
+    # TypeScript側(@libsql/client)はlibsql://のままで問題ないのでURL自体は変更しない。
+    if url.startswith("libsql://"):
+        url = "https://" + url[len("libsql://"):]
     return create_client_sync(url=url, auth_token=auth_token)
