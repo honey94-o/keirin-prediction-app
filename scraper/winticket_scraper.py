@@ -347,8 +347,24 @@ def scrape_cup(venue: str, cup_id: str, max_days: int = 4, max_races: int = 12) 
     return races
 
 
-def scrape_venue_recent(venue: str, since_date: datetime.date) -> list[RaceData]:
-    """指定開催場について、since_date以降に開始した開催(cup)を全て取得する。"""
+ALL_VENUE_SLUGS = [
+    "hakodate", "aomori", "iwakidaira", "yahiko", "maebashi", "toride", "utsunomiya",
+    "omiya", "seibuen", "keiokaku", "tachikawa", "matsudo", "chiba", "kawasaki",
+    "hiratsuka", "odawara", "ito", "shizuoka", "nagoya", "gifu", "ogaki", "toyohashi",
+    "toyama", "matsusaka", "yokkaichi", "fukui", "nara", "mukomachi", "wakayama",
+    "kishiwada", "tamano", "hiroshima", "hofu", "takamatsu", "komatsushima", "kochi",
+    "matsuyama", "kokura", "kurume", "takeo", "sasebo", "beppu", "kumamoto",
+]
+
+
+def scrape_venue_recent(
+    venue: str, since_date: datetime.date, on_race=None
+) -> list[RaceData]:
+    """指定開催場について、since_date以降に開始した開催(cup)を全て取得する。
+
+    on_raceを渡すと、レースを1件取得するたびに呼び出す（中断されても
+    それまでの取得分がDBに残るよう、逐次保存するために使う）。
+    """
     months = sorted({
         since_date.strftime("%Y%m"),
         datetime.date.today().strftime("%Y%m"),
@@ -364,23 +380,39 @@ def scrape_venue_recent(venue: str, since_date: datetime.date) -> list[RaceData]
     all_races: list[RaceData] = []
     for cup_id in target_cups:
         print(f"開催 {venue}/{cup_id} を取得中...")
-        all_races.extend(scrape_cup(venue, cup_id))
+        cup_races = scrape_cup(venue, cup_id)
+        for race in cup_races:
+            if on_race is not None:
+                on_race(race)
+        all_races.extend(cup_races)
     return all_races
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="WINTICKETから過去レースを取得してTursoに保存する")
-    parser.add_argument("--venue", required=True, help="開催場のURLスラッグ（例: iwakidaira）")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--venue", help="開催場のURLスラッグ（例: iwakidaira）")
+    group.add_argument(
+        "--all-venues", action="store_true", help="全43開催場を対象にする（節度あるアクセス間隔のため長時間かかる）"
+    )
     parser.add_argument("--days-back", type=int, default=7, help="何日前まで遡るか（デフォルト7日）")
     args = parser.parse_args()
 
     since_date = datetime.date.today() - datetime.timedelta(days=args.days_back)
-    races = scrape_venue_recent(args.venue, since_date)
+    venues = ALL_VENUE_SLUGS if args.all_venues else [args.venue]
 
-    print(f"\n合計 {len(races)} レースを取得しました。DBに保存します...")
-    for race in races:
-        save_to_db(race, bank_info=None, histories=None)
-    print("保存完了（Turso）")
+    total = 0
+    for venue in venues:
+        print(f"=== {venue} ===")
+
+        def save_one(race: RaceData) -> None:
+            save_to_db(race, bank_info=None, histories=None)
+
+        races = scrape_venue_recent(venue, since_date, on_race=save_one)
+        print(f"{venue}: {len(races)}件保存")
+        total += len(races)
+
+    print(f"\n合計 {total} レースを保存しました（Turso）")
 
 
 if __name__ == "__main__":

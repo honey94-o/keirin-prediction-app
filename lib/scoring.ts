@@ -17,6 +17,13 @@ function clamp(value: number, min = 0, max = 100): number {
 /**
  * ①ライン評価：ライン構成人数・隊列内の位置・地区の結びつきから算出する。
  * line_group/line_positionが無い（並び予想が未提供の）レースはニュートラル値を返す。
+ *
+ * 実績1000レース超のバックテストでは真の勝率が先頭18.0%＞番手13.8%＞3番手2.6%と
+ * 出ており、一見この配点（先頭5点＜番手15点）は逆転しているように見える。
+ * しかし実際に先頭優遇に変更してバックテストすると◎的中率・回収率とも悪化した
+ * （脚質評価側の「逃×先頭」を優遇する調整と情報が重複し、同じ強さを二重に
+ * 加点してしまうため）。脚質評価側（calculateKyakushitsuScore）で調整済みのため、
+ * ここは意図的に据え置いている。
  */
 export function calculateLineScore(
   entry: EntryWithRacer,
@@ -117,12 +124,17 @@ export function calculateKyakushitsuScore(
   const winRateScore = entry.syouritu != null ? clamp(entry.syouritu) : 50;
   const placeRateScore = entry.rentairitu3 != null ? clamp(entry.rentairitu3) : 50;
 
+  // 実績1000レース超のバックテスト集計（真の勝率、母数で正規化）による脚質別勝率は
+  // 逃23.4% > 両15.6% > 追7.9%と大きく差があるが、旧実装は「逃×先頭」と「追×非先頭」を
+  // 同じ100点（相性が良いという理由だけ）で評価しており、脚質そのものの強さの差を
+  // 反映できていなかった。脚質自体の強さを土台にしつつ、隊列位置との相性で調整する。
   let fitScore = 50;
-  if (entry.kyakushitsu && entry.line_position) {
-    if (entry.kyakushitsu === "逃" && entry.line_position === "先頭") fitScore = 100;
-    else if (entry.kyakushitsu === "追" && entry.line_position !== "先頭") fitScore = 100;
-    else if (entry.kyakushitsu === "両") fitScore = 70;
-    else fitScore = 40;
+  if (entry.kyakushitsu === "逃") {
+    fitScore = entry.line_position === "先頭" ? 95 : 75;
+  } else if (entry.kyakushitsu === "追") {
+    fitScore = entry.line_position !== "先頭" ? 40 : 25;
+  } else if (entry.kyakushitsu === "両") {
+    fitScore = 65;
   }
 
   const baseScore = clamp(
