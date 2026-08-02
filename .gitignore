@@ -48,3 +48,6 @@ scraper/__pycache__/
 # sqlite
 db/*.db
 db/*.db-journal
+
+.vercel
+.env*
