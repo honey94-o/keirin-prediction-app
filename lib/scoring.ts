@@ -520,8 +520,9 @@ function buildLineAwarePool(
  * - 本命: 総合スコア1位がそのまま押し切る想定。2・3着は同じラインの仲間を優先
  * - 逃げ粘り込み: ライン先頭の選手が単独で粘り切る想定。2・3着は道連れになりやすい
  *   同じラインの番手・3番手を優先
- * - まくり/差し一撃: 先頭ではない位置で追い込み型（脚質が追・両）の選手が外から
- *   差す想定。2・3着は差される側＝本命ラインのメンバーを優先
+ * - まくり/差し一撃: 先頭ではない位置で追い込み型（脚質が追・両）の選手が
+ *   自分の前を行く同ラインの先頭を差す想定。2・3着は軸自身のライン（差した後に
+ *   自分の前にいた先頭が粘って2着に残りやすい＝実績53.2%）を優先
  *   （バンクの捲り決まり手率が高いほど根拠として言及する）
  *
  * 同じ選手が複数パターンの軸に重複する場合はその後のパターンをスキップし、
@@ -569,7 +570,9 @@ export function generateScenarios(
   }
 
   // ③ まくり/差し一撃：先頭以外で追い込み適性（脚質が追・両）が高い選手が外から差す想定。
-  //    差された本命ラインのメンバーが2・3着に残りやすいとみて優先する
+  //    1000レース超のバックテストで「番手が1着だった時、2着は同ラインの先頭
+  //    （自分の前を走っていた選手がそのまま粘る）」が53.2%と最多だったため、
+  //    差された側（honmeiのライン）ではなく軸自身のラインを優先する
   const makuriCandidate = [...scored]
     .filter(
       (s) =>
@@ -590,7 +593,7 @@ export function generateScenarios(
       reason: `${bankNote}${makuriCandidate.entry.line_position ?? "単騎"}から${
         makuriCandidate.entry.kyakushitsu
       }脚質を活かして外を一気に差す展開を想定。`,
-      priorityLineGroup: honmei.entry.line_group,
+      priorityLineGroup: makuriCandidate.entry.line_group,
     });
   }
 
