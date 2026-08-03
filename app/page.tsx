@@ -1,12 +1,8 @@
 import Link from "next/link";
 import { getAllRaces, getTodayVenues } from "../lib/repository";
 import { predictRace } from "../lib/predict";
+import { HIGH_CONFIDENCE_MARGIN } from "../lib/scoring";
 import { ScrapeTriggerForm } from "../components/ScrapeTriggerForm";
-
-// 本命(1位)と2位の総合スコア差が大きいほど◎的中率が高い傾向をバックテストで確認済み
-// （scripts/diagnose-confidence.ts：10点差以上で単勝的中率81.7%、それ未満は37-46%）。
-// この閾値を「高信頼度」バッジの基準にする。
-const HIGH_CONFIDENCE_MARGIN = 10;
 
 // GitHub Actions（スクレイパー・開催場同期）がNext.jsの外からTursoを直接更新するため、
 // ビルド時の静的生成のままだと新しいレースや開催場一覧が反映されない。

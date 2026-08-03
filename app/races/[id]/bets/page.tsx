@@ -16,7 +16,7 @@ export default async function RaceBetsPage({
   const prediction = await predictRace(raceId);
   if (!prediction) notFound();
 
-  const { race, scored, scenarios, boxSuggestion } = prediction;
+  const { race, scored, scenarios, boxSuggestion, winSuggestion } = prediction;
   const top4 = scored.slice(0, 4);
   const scenarioStats = await getScenarioStats();
 
@@ -41,6 +41,23 @@ export default async function RaceBetsPage({
           </div>
         ))}
       </div>
+
+      {winSuggestion && (
+        <section className="bg-amber-50 border border-amber-200 rounded-lg shadow-sm p-4 mb-4">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-semibold bg-amber-500 text-white px-2 py-0.5 rounded-full">
+              単勝おすすめ
+            </span>
+            <span className="text-sm font-semibold">
+              軸 {winSuggestion.carNum}. {winSuggestion.name}
+            </span>
+          </div>
+          <p className="text-xs text-gray-600">
+            対抗とのスコア差が{winSuggestion.margin.toFixed(1)}点あり、この条件では単勝的中率が
+            高い傾向（実績81.7%以上）です。3連単を広げるより単勝で勝負するのもおすすめです。
+          </p>
+        </section>
+      )}
 
       {scenarios.length === 0 ? (
         <p className="text-sm text-gray-500">出走数が少ないため買い目候補は生成されません。</p>

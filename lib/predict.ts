@@ -7,7 +7,7 @@ import {
   getPositionWinRates,
   getVenueKimariteRatesWithFallback,
 } from "./repository";
-import { scoreRace, generateBetSuggestions, generateScenarios } from "./scoring";
+import { scoreRace, generateBetSuggestions, generateScenarios, HIGH_CONFIDENCE_MARGIN } from "./scoring";
 import type {
   BankInfoRow,
   BetSuggestion,
@@ -24,6 +24,11 @@ export interface RacePrediction {
   scenarios: RaceScenario[];
   /** 3連複ボックス（展開パターンに依らない上位車番の総当たり）。 */
   boxSuggestion: BetSuggestion | undefined;
+  /**
+   * 本命と対抗のスコア差がHIGH_CONFIDENCE_MARGIN以上の時だけ出す単勝おすすめ。
+   * この条件では単勝的中率81.7%以上を実績確認済み（scripts/diagnose-confidence.ts）。
+   */
+  winSuggestion: { carNum: number; name: string; margin: number } | null;
 }
 
 /**
@@ -64,5 +69,13 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
     (s) => s.betType === "3連複ボックス"
   );
 
-  return { race, bankInfo, scored, scenarios, boxSuggestion };
+  let winSuggestion: RacePrediction["winSuggestion"] = null;
+  if (scored.length >= 2) {
+    const margin = scored[0].totalScore - scored[1].totalScore;
+    if (margin >= HIGH_CONFIDENCE_MARGIN) {
+      winSuggestion = { carNum: scored[0].entry.car_num, name: scored[0].entry.name, margin };
+    }
+  }
+
+  return { race, bankInfo, scored, scenarios, boxSuggestion, winSuggestion };
 }

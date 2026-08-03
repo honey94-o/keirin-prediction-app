@@ -396,6 +396,20 @@ export function scoreRace(
 const SANRENTAN_MAX_POINTS = 20;
 
 /**
+ * 本命(1位)と対抗(2位)の総合スコア差の閾値。scripts/diagnose-confidence.tsで
+ * バックテスト済み：10点差未満は単勝的中率37〜46%、10〜20点差で81.7%（104レース）、
+ * 20点差以上で100%（8レース）と大きく跳ね上がる。
+ * この値以上なら本命の買い目を絞ってよく、レース一覧の「高信頼度」バッジにも使う。
+ */
+export const HIGH_CONFIDENCE_MARGIN = 10;
+
+/**
+ * 本命と対抗のスコア差がこの値未満なら「拮抗している」とみなし、
+ * 本命の買い目を1着・2着入れ替え可能なボックス形式（例: 1=2-3）にする。
+ */
+const LOW_MARGIN_THRESHOLD = 5;
+
+/**
  * 軸（1着固定）と、あらかじめ優先順に並べた候補プールから
  * 「1頭軸流し」フォーメーションを生成する。2着・3着は同じプールを使う。
  * プールサイズMのとき点数は M×(M-1)（2着・3着に同じ車番は使えないため）。
@@ -417,6 +431,35 @@ function formationFromPool(axis: number, orderedPool: number[], maxPoints: numbe
       if (second === third) continue;
       combos.push(`${axis}-${second}-${third}`);
     }
+  }
+  return combos;
+}
+
+/**
+ * 軸候補2頭（1着・2着を入れ替え可能）と、3着候補プールから
+ * 「2頭ボックス＋3着流し」フォーメーションを生成する（例: 1=2-3）。
+ * 本命と対抗のスコアが拮抗していて1着・2着の順序を絞りきれない時に使う。
+ * 点数は2×3着候補数。maxPointsを超えない最大の3着候補数を自動選択する。
+ */
+function formationBoxTop2(
+  axis1: number,
+  axis2: number,
+  thirdPool: number[],
+  maxPoints: number
+): string[] {
+  const candidates = thirdPool.filter((c) => c !== axis1 && c !== axis2);
+  let poolSize = 0;
+  for (let m = 1; m <= candidates.length; m++) {
+    if (m * 2 > maxPoints) break;
+    poolSize = m;
+  }
+  if (poolSize === 0) return [];
+  const thirds = candidates.slice(0, poolSize);
+
+  const combos: string[] = [];
+  for (const third of thirds) {
+    combos.push(`${axis1}-${axis2}-${third}`);
+    combos.push(`${axis2}-${axis1}-${third}`);
   }
   return combos;
 }
@@ -651,7 +694,7 @@ export function generateScenarios(
     rankedByScore.map((spec, i) => [spec.axis.entry.car_num, i + 1])
   );
 
-  return specs.map((spec) => {
+  const result = specs.map((spec) => {
     const pool = buildLineAwarePool(spec.axis.entry.car_num, spec.priorityLineGroup, scored);
     return {
       label: spec.label,
@@ -659,10 +702,43 @@ export function generateScenarios(
       axisName: spec.axis.entry.name,
       reason: spec.reason,
       formation: {
-        betType: "3連単フォーメーション",
+        betType: "3連単フォーメーション" as const,
         combinations: formationFromPool(spec.axis.entry.car_num, pool, perScenarioBudget),
       },
       likelyRank: likelyRankByCarNum.get(spec.axis.entry.car_num)!,
     };
   });
+
+  // 本命(1位)と対抗(2位)のスコア差に応じて、本命の買い目だけ調整する。
+  const taikou = scored[1];
+  const honmeiScenario = result.find((s) => s.label === "本命");
+  if (taikou && honmeiScenario) {
+    const margin = honmei.totalScore - taikou.totalScore;
+    if (margin >= HIGH_CONFIDENCE_MARGIN) {
+      // 本命が抜けているレース：買い目を絞る（この条件で単勝的中率81.7%以上を実績確認済み）
+      const pool = buildLineAwarePool(honmei.entry.car_num, honmei.entry.line_group, scored);
+      honmeiScenario.formation = {
+        betType: "3連単フォーメーション",
+        combinations: formationFromPool(honmei.entry.car_num, pool, 2),
+      };
+      honmeiScenario.reason += ` 対抗との差が${margin.toFixed(1)}点あり単勝的中率が高い傾向のため、買い目を絞っています（単勝での勝負もおすすめ）。`;
+    } else if (margin < LOW_MARGIN_THRESHOLD) {
+      // 本命・対抗が拮抗：1着・2着を入れ替え可能なボックス買いにする（例: 1=2-3）
+      const thirdPool = buildLineAwarePool(honmei.entry.car_num, honmei.entry.line_group, scored).filter(
+        (c) => c !== taikou.entry.car_num
+      );
+      honmeiScenario.formation = {
+        betType: "3連単フォーメーション",
+        combinations: formationBoxTop2(
+          honmei.entry.car_num,
+          taikou.entry.car_num,
+          thirdPool,
+          perScenarioBudget
+        ),
+      };
+      honmeiScenario.reason += ` 対抗とのスコア差が${margin.toFixed(1)}点と拮抗しているため、1着・2着を入れ替え可能な買い方にしています。`;
+    }
+  }
+
+  return result;
 }
