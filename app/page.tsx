@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getAllRaces, getTodayVenues } from "../lib/repository";
+import { getRacesByDate, getTodayVenues } from "../lib/repository";
 import { predictRace } from "../lib/predict";
 import { HIGH_CONFIDENCE_MARGIN } from "../lib/scoring";
 import { ScrapeTriggerForm } from "../components/ScrapeTriggerForm";
@@ -17,7 +17,12 @@ function formatDate(kaisaiDate: string): string {
 }
 
 export default async function Home() {
-  const races = await getAllRaces();
+  // レース一覧は当日開催分だけを表示する（過去分はscripts/backtest.tsのバックテスト
+  // 用データとしてDBには残すが、日々の予想確認には不要なため。過去の的中実績は
+  // 「履歴」画面で確認できる）。
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+  const races = await getRacesByDate(todayStr);
   const todayVenues = await getTodayVenues();
 
   // 開催日＋開催場ごとにグルーピング
@@ -28,14 +33,9 @@ export default async function Home() {
     groups.get(key)!.push(race);
   }
 
-  // 「高信頼度」バッジは本日開催中のレースだけを対象にする
-  // （全レース分を毎回予想し直すのは重いため、当日分に限定する）。
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-  const todayRaces = races.filter((r) => r.kaisai_date === todayStr);
   const highConfidenceRaceIds = new Set<number>();
   await Promise.all(
-    todayRaces.map(async (race) => {
+    races.map(async (race) => {
       const prediction = await predictRace(race.id);
       if (!prediction || prediction.scored.length < 2) return;
       const margin = prediction.scored[0].totalScore - prediction.scored[1].totalScore;
@@ -51,7 +51,7 @@ export default async function Home() {
 
       {races.length === 0 ? (
         <p className="text-center text-gray-500 mt-8">
-          レースがまだ登録されていません。上のフォームから取得してください。
+          本日のレースがまだ登録されていません。上のフォームから取得してください。
         </p>
       ) : (
         <div className="flex flex-col gap-4">

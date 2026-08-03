@@ -30,6 +30,15 @@ export async function getAllRaces(): Promise<RaceRow[]> {
   return result.rows as unknown as RaceRow[];
 }
 
+/** 指定日（YYYYMMDD）のレース一覧。レース一覧画面（`/`）は当日分だけを表示するため。 */
+export async function getRacesByDate(kaisaiDate: string): Promise<RaceRow[]> {
+  const result = await getDb().execute({
+    sql: `SELECT * FROM races WHERE kaisai_date = ? ORDER BY keirinjo_name ASC, race_no ASC`,
+    args: [kaisaiDate],
+  });
+  return result.rows as unknown as RaceRow[];
+}
+
 /** 同じ開催（同日・同開催場）の他のレース一覧。レース切り替えタブ用。 */
 export async function getRacesForEvent(kaisaiDate: string, jocd: string): Promise<RaceRow[]> {
   const result = await getDb().execute({
