@@ -29,7 +29,8 @@ from typing import Any
 
 from bs4 import BeautifulSoup, Tag
 
-from keirin_scraper import RaceData, save_to_db
+from db import get_client
+from keirin_scraper import RaceData, RacerHistoryEntry, save_to_db
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -65,6 +66,112 @@ HEADING_RE = re.compile(
 NAME_INFO_RE = re.compile(r"(SS|S1|S2|A1|A2|A3)\s*(\d+)歳\s*(\d+)期")
 CYCLIST_ID_RE = re.compile(r"/keirin/cyclist/(\d+)")
 BIB_NUM_RE = re.compile(r"(\d+)番")
+CLASS_TEXT_RE = re.compile(r"^([A-Z]+)級(\d+)班$")
+
+RACER_HISTORY_MAX_AGE_DAYS = 1  # 選手成績は日々更新されるので短めのキャッシュ
+
+
+def _convert_class_text(text: str) -> str | None:
+    """選手プロフィールページの級班表記（例: "A級2班"）をracersテーブルの
+    形式（例: "A2"）に変換する。"""
+    m = CLASS_TEXT_RE.match(text.strip())
+    if not m:
+        return None
+    return f"{m.group(1)}{m.group(2)}"
+
+
+def _days_since_update(query: str, params: tuple) -> float | None:
+    client = get_client()
+    try:
+        result = client.execute(query, list(params))
+    finally:
+        client.close()
+    if not result.rows or not result.rows[0][0]:
+        return None
+    updated = datetime.datetime.fromisoformat(result.rows[0][0])
+    return (datetime.datetime.now() - updated).total_seconds() / 86400
+
+
+def scrape_cyclist_history(cyclist_id: str) -> tuple[str | None, list[RacerHistoryEntry]]:
+    """選手プロフィールページ(/keirin/cyclist/{id})から前期級班と直近の
+    出走履歴（開催日・開催場略称・その開催内の各レース着順）を取得する。
+    """
+    status, html = _get(f"https://winticket.jp/keirin/cyclist/{cyclist_id}")
+    _sleep()
+    if status != 200:
+        return None, []
+    soup = BeautifulSoup(html, "html.parser")
+
+    prev_class_rank: str | None = None
+    dt = soup.find("dt", string="級班 (年月日)")
+    if dt is not None:
+        dd = dt.find_next_sibling("dd")
+        if dd is not None:
+            items = dd.find_all("li")
+            # 先頭が現在の級班、2番目が前期の級班（新しい順に並んでいる）
+            if len(items) >= 2:
+                text = items[1].get_text(" ", strip=True)
+                m = re.match(r"^(\S+)", text)
+                if m:
+                    prev_class_rank = _convert_class_text(m.group(1))
+
+    snum = "wt" + cyclist_id
+    histories: list[RacerHistoryEntry] = []
+    outer_list = soup.find("ul", class_=re.compile(r"^List___Wrapper"))
+    if outer_list is not None:
+        for child in outer_list.find_all(recursive=False):
+            time_tag = child.find(class_=re.compile(r"^LatestCupResultListItem___Date"))
+            venue_a = child.find("a", href=re.compile(r"/racecard/"))
+            if time_tag is None or venue_a is None:
+                continue
+            race_date = time_tag.get_text(strip=True)
+            venue_abbr = venue_a.get_text(strip=True)
+            orders = child.find_all(class_=re.compile(r"^PastRaceOrder___Order"))
+            order_texts = [o.get_text(strip=True) for o in orders]
+            # サイト側のDOMがなぜか全項目を2回ずつ描画しているため前半だけ使う
+            order_texts = order_texts[: len(order_texts) // 2]
+            if not race_date or not order_texts:
+                continue
+            histories.append(RacerHistoryEntry(
+                snum=snum,
+                race_date=race_date,
+                venue_abbr=venue_abbr,
+                finish_positions=",".join(order_texts),
+            ))
+    return prev_class_rank, histories
+
+
+def enrich_entries_with_history(entries: list[dict[str, Any]]) -> list[RacerHistoryEntry]:
+    """出走表の各選手について、前期級班・直近成績が未取得/古い場合だけ
+    プロフィールページを取得して補完する（節度あるアクセスのため選手単位で
+    鮮度をキャッシュする）。entriesのprev_class_rankはその場で書き換える。
+    """
+    all_histories: list[RacerHistoryEntry] = []
+    for entry in entries:
+        snum = entry.get("snum")
+        if not snum or not str(snum).startswith("wt") or "unknown" in str(snum):
+            continue
+        cyclist_id = str(snum)[2:]
+
+        class_age = _days_since_update(
+            "SELECT updated_at FROM racers WHERE snum=? AND prev_class_rank IS NOT NULL",
+            (snum,),
+        )
+        history_age = _days_since_update(
+            "SELECT MAX(scraped_at) FROM racer_race_history WHERE snum=?",
+            (snum,),
+        )
+        need_class = class_age is None
+        need_history = history_age is None or history_age > RACER_HISTORY_MAX_AGE_DAYS
+        if not need_class and not need_history:
+            continue
+
+        prev_class_rank, histories = scrape_cyclist_history(cyclist_id)
+        if need_class and prev_class_rank is not None:
+            entry["prev_class_rank"] = prev_class_rank
+        if need_history:
+            all_histories.extend(histories)
+    return all_histories
 
 
 def discover_cup_ids(venue: str, yyyymm: str) -> list[str]:
@@ -310,7 +417,9 @@ def parse_raceresult(html: str, race: RaceData) -> None:
                 })
 
 
-def scrape_one_race(venue: str, cup_id: str, day: int, race_no: int) -> RaceData | None:
+def scrape_one_race(
+    venue: str, cup_id: str, day: int, race_no: int
+) -> tuple[RaceData, list[RacerHistoryEntry]] | None:
     status, html = _get(f"https://winticket.jp/keirin/{venue}/racecard/{cup_id}/{day}/{race_no}")
     _sleep()
     if status == 404:
@@ -327,21 +436,27 @@ def scrape_one_race(venue: str, cup_id: str, day: int, race_no: int) -> RaceData
     if status == 200:
         parse_raceresult(html, race)
 
-    return race
+    histories = enrich_entries_with_history(race.entries)
+
+    return race, histories
 
 
-def scrape_cup(venue: str, cup_id: str, max_days: int = 4, max_races: int = 12) -> list[RaceData]:
-    races: list[RaceData] = []
+def scrape_cup(
+    venue: str, cup_id: str, max_days: int = 4, max_races: int = 12
+) -> list[tuple[RaceData, list[RacerHistoryEntry]]]:
+    races: list[tuple[RaceData, list[RacerHistoryEntry]]] = []
     for day in range(1, max_days + 1):
         day_had_race = False
         for race_no in range(1, max_races + 1):
-            race = scrape_one_race(venue, cup_id, day, race_no)
-            if race is None:
+            result = scrape_one_race(venue, cup_id, day, race_no)
+            if result is None:
                 break  # この日はrace_no件で打ち止め（race_no==1なら開催なし）
             day_had_race = True
-            races.append(race)
+            races.append(result)
+            race, histories = result
             print(f"  取得: {race.keirinjo_name} {race.race_no}R ({race.kaisai_date}) "
-                  f"選手{len(race.entries)}名 / 結果{len(race.results)}件 / オッズ{len(race.odds)}件")
+                  f"選手{len(race.entries)}名 / 結果{len(race.results)}件 / オッズ{len(race.odds)}件 / "
+                  f"選手成績補完{len(histories)}件")
         if not day_had_race:
             break  # これ以上の日程はなし
     return races
@@ -359,7 +474,7 @@ ALL_VENUE_SLUGS = [
 
 def scrape_venue_recent(
     venue: str, since_date: datetime.date, on_race=None
-) -> list[RaceData]:
+) -> list[tuple[RaceData, list[RacerHistoryEntry]]]:
     """指定開催場について、since_date以降に開始した開催(cup)を全て取得する。
 
     on_raceを渡すと、レースを1件取得するたびに呼び出す（中断されても
@@ -377,13 +492,13 @@ def scrape_venue_recent(
     since_str = since_date.strftime("%Y%m%d")
     target_cups = [c for c in cup_ids if c[:8] >= since_str]
 
-    all_races: list[RaceData] = []
+    all_races: list[tuple[RaceData, list[RacerHistoryEntry]]] = []
     for cup_id in target_cups:
         print(f"開催 {venue}/{cup_id} を取得中...")
         cup_races = scrape_cup(venue, cup_id)
-        for race in cup_races:
+        for result in cup_races:
             if on_race is not None:
-                on_race(race)
+                on_race(result)
         all_races.extend(cup_races)
     return all_races
 
@@ -405,8 +520,9 @@ def main() -> None:
     for venue in venues:
         print(f"=== {venue} ===")
 
-        def save_one(race: RaceData) -> None:
-            save_to_db(race, bank_info=None, histories=None)
+        def save_one(result: tuple[RaceData, list[RacerHistoryEntry]]) -> None:
+            race, histories = result
+            save_to_db(race, bank_info=None, histories=histories)
 
         races = scrape_venue_recent(venue, since_date, on_race=save_one)
         print(f"{venue}: {len(races)}件保存")

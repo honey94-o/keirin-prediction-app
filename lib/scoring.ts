@@ -142,12 +142,16 @@ export function calculateKyakushitsuScore(
     classRankScore * 0.25 + winRateScore * 0.3 + placeRateScore * 0.25 + fitScore * 0.2
   );
 
+  // 昇降級のスコア調整は行わない：「降級直後は新しい級で相対的に格上、昇級直後は
+  // 格上の相手と走るため苦戦」という定石で+15/-10点の調整をしていたが、選手プロフィール
+  // 補完後の7174出走の実績集計では降級12.9%・昇級13.7%とほぼ同水準（定石とは逆に
+  // 昇級側がわずかに高いくらい）で、調整の根拠が無いことが分かった。実際に外した方が
+  // ◎的中率42.7%→45.5%・複勝率72.3%→73.8%・3連複ボックス的中率35.5%→36.1%と改善した
+  // （scripts/diagnose-classchange.ts、bank_infoと同様の手順で変更前後を比較して判断）。
+  // 昇降級の判定・表示自体は参考情報として残す。
   const classChange = determineClassChange(entry);
   const adjustmentFactor = classChangeAdjustmentFactor(kaisaiDate);
-  // 降級直後：新しい級の中では相対的に格上のため加点。
-  // 昇級直後：格上の相手と走ることになるため減点。
-  const baseAdjustment = classChange === "降級" ? 15 : classChange === "昇級" ? -10 : 0;
-  const classChangeAdjustment = baseAdjustment * adjustmentFactor;
+  const classChangeAdjustment = 0; // 根拠なしと判明したため無効化（上のコメント参照）
 
   const score = clamp(baseScore + classChangeAdjustment);
 
