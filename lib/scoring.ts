@@ -8,6 +8,7 @@ import type {
   ScoreBreakdown,
   ScoredEntry,
   ScoreWeights,
+  VenueKimariteRates,
 } from "./types";
 
 function clamp(value: number, min = 0, max = 100): number {
@@ -171,18 +172,26 @@ export function calculateKyakushitsuScore(
  * 逃→バンクの「逃げ」率、追→バンクの「差し」率、両→バンクの「捲り」率を
  * それぞれ大まかな適性指標として採用する（公式に「脚質×バンク相性」の
  * 統計が存在しないための近似）。
+ *
+ * データ源は venueKimarite（自前のresults実績、開催場ごとに算出）を優先し、
+ * サンプル不足の開催場は bankInfo（KEIRIN.JPのjyoguideスクレイプ、静的値）に
+ * フォールバックする。開催場別の決まり手割合は実際には大きくばらつく
+ * （例：防府は逃57%、いわき平は差54%など）ため、この適性を反映できるかどうかで
+ * バックテストの的中率・回収率に無視できない差が出る。
  */
 function calculateBankFitScore(
   entry: EntryWithRacer,
+  venueKimarite: VenueKimariteRates | null | undefined,
   bankInfo: BankInfoRow | undefined
 ): { score: number | null; usedPct: number | null } {
-  if (!bankInfo || !entry.kyakushitsu) return { score: null, usedPct: null };
+  const source = venueKimarite ?? bankInfo;
+  if (!source || !entry.kyakushitsu) return { score: null, usedPct: null };
   const pct =
     entry.kyakushitsu === "逃"
-      ? bankInfo.nige_pct
+      ? source.nige_pct
       : entry.kyakushitsu === "追"
-        ? bankInfo.sashi_pct
-        : bankInfo.makuri_pct;
+        ? source.sashi_pct
+        : source.makuri_pct;
   if (pct == null) return { score: null, usedPct: null };
   return { score: clamp(pct), usedPct: pct };
 }
@@ -307,9 +316,10 @@ export function calculateStatsScore(
   keirinjoName: string,
   bankInfo: BankInfoRow | undefined,
   history: RacerHistoryRow[],
-  positionWinRates: PositionWinRate[]
+  positionWinRates: PositionWinRate[],
+  venueKimarite?: VenueKimariteRates | null
 ): ScoreBreakdown {
-  const bankResult = calculateBankFitScore(entry, bankInfo);
+  const bankResult = calculateBankFitScore(entry, venueKimarite, bankInfo);
   const intervalResult = calculateIntervalScore(kaisaiDate, history);
   const sameConditionResult = calculateSameConditionScore(keirinjoName, history);
   const positionResult = calculatePositionWinRateScore(entry, positionWinRates);
@@ -348,7 +358,8 @@ export function scoreRace(
   keirinjoName: string,
   bankInfo: BankInfoRow | undefined,
   historyBySnum: Record<string, RacerHistoryRow[]>,
-  positionWinRatesBySnum: Record<string, PositionWinRate[]>
+  positionWinRatesBySnum: Record<string, PositionWinRate[]>,
+  venueKimarite?: VenueKimariteRates | null
 ): ScoredEntry[] {
   const scored = entries.map((entry) => {
     const lineScore = calculateLineScore(entry, entries);
@@ -359,7 +370,8 @@ export function scoreRace(
       keirinjoName,
       bankInfo,
       historyBySnum[entry.snum] ?? [],
-      positionWinRatesBySnum[entry.snum] ?? []
+      positionWinRatesBySnum[entry.snum] ?? [],
+      venueKimarite
     );
     const totalScore =
       lineScore.score * weights.line +
@@ -530,7 +542,7 @@ function buildLineAwarePool(
  */
 export function generateScenarios(
   scored: ScoredEntry[],
-  bankInfo: BankInfoRow | undefined
+  bankInfo: BankInfoRow | VenueKimariteRates | undefined | null
 ): RaceScenario[] {
   if (scored.length < 3) return [];
 

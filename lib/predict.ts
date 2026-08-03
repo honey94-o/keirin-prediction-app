@@ -5,6 +5,7 @@ import {
   getBankInfo,
   getRacerHistory,
   getPositionWinRates,
+  getVenueKimariteRates,
 } from "./repository";
 import { scoreRace, generateBetSuggestions, generateScenarios } from "./scoring";
 import type {
@@ -36,6 +37,7 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
   const entries = await getEntriesForRace(raceId);
   const weights = await getScoreWeights();
   const bankInfo = await getBankInfo(race.jocd);
+  const venueKimarite = await getVenueKimariteRates(race.jocd);
 
   const historyEntries = await Promise.all(
     entries.map(async (e) => [e.snum, await getRacerHistory(e.snum)] as const)
@@ -54,9 +56,10 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
     race.keirinjo_name,
     bankInfo,
     historyBySnum,
-    positionWinRatesBySnum
+    positionWinRatesBySnum,
+    venueKimarite
   );
-  const scenarios = generateScenarios(scored, bankInfo);
+  const scenarios = generateScenarios(scored, venueKimarite ?? bankInfo);
   const boxSuggestion = generateBetSuggestions(scored).find(
     (s) => s.betType === "3連複ボックス"
   );

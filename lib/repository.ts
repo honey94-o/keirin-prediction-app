@@ -11,6 +11,7 @@ import type {
   ResultRow,
   ScoredEntry,
   ScoreWeights,
+  VenueKimariteRates,
 } from "./types";
 
 export async function getRace(raceId: number): Promise<RaceRow | undefined> {
@@ -94,6 +95,42 @@ export async function getBankInfo(jocd: string): Promise<BankInfoRow | undefined
     args: [jocd],
   });
   return result.rows[0] as unknown as BankInfoRow | undefined;
+}
+
+/**
+ * 開催場ごとの決まり手（逃/捲/差）割合を、自前のresults実績から直接算出する。
+ * bank_info（KEIRIN.JPのjyoguideスクレイプ）はほとんどの開催場で未取得のため、
+ * 蓄積したバックテストデータの方が実際にはカバレッジが広い。
+ * 母数がminRaces未満の開催場はサンプル不足として null を返す。
+ *
+ * minRaces=15で試したところ、母数が少ない開催場（20〜30件程度）の推定値が
+ * ノイズで振れすぎて◎的中率・回収率とも悪化した（バックテスト済み）。
+ * 40に上げると小規模開催場は素通し（ニュートラル値）になる一方、対象になった
+ * 開催場では実際に◎的中率・回収率とも据え置き比で改善したため、この値を採用。
+ */
+export async function getVenueKimariteRates(
+  jocd: string,
+  minRaces = 40
+): Promise<VenueKimariteRates | null> {
+  const result = await getDb().execute({
+    sql: `SELECT r.kimarite, COUNT(*) as c
+          FROM results r
+          JOIN races ra ON ra.id = r.race_id
+          WHERE ra.jocd = ? AND r.finish_pos = 1 AND r.kimarite IS NOT NULL
+          GROUP BY r.kimarite`,
+    args: [jocd],
+  });
+  const rows = result.rows as unknown as { kimarite: string; c: number }[];
+  const total = rows.reduce((sum, r) => sum + r.c, 0);
+  if (total < minRaces) return null;
+
+  const pct = (kimarite: string) => ((rows.find((r) => r.kimarite === kimarite)?.c ?? 0) / total) * 100;
+  return {
+    nige_pct: pct("逃"),
+    makuri_pct: pct("捲"),
+    sashi_pct: pct("差"),
+    races: total,
+  };
 }
 
 export async function getRacerHistory(snum: string): Promise<RacerHistoryRow[]> {

@@ -120,6 +120,18 @@ export interface PositionWinRate {
   winRate: number; // 0-100
 }
 
+/**
+ * 開催場ごとの決まり手（逃/捲/差）の実績割合。bank_infoテーブル（KEIRIN.JPの
+ * jyoguideスクレイプ由来、ほぼ静的）とは別に、自前のresultsデータが十分
+ * 貯まった開催場については、そちらから直接算出した実績値を優先して使う。
+ */
+export interface VenueKimariteRates {
+  nige_pct: number;
+  makuri_pct: number;
+  sashi_pct: number;
+  races: number;
+}
+
 export interface PredictionRow {
   car_num: number;
   snum: string;
