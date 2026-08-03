@@ -111,6 +111,11 @@ export interface RaceScenario {
   axisName: string;
   reason: string; // なぜこの選手を軸にしたかの説明文
   formation: BetSuggestion;
+  /**
+   * このレースにおける「展開の有力度」の順位（1が最有力）。
+   * 各シナリオの軸選手の総合スコアで比較する（詳細はgenerateScenariosのコメント参照）。
+   */
+  likelyRank: number;
 }
 
 export interface PositionWinRate {

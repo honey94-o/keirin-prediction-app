@@ -51,7 +51,7 @@ export default async function RaceBetsPage({
             const stat = scenarioStats[scenario.label];
             return (
               <section key={scenario.label} className="bg-white rounded-lg shadow-sm p-4">
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-xs font-semibold bg-[#0d5c3f] text-white px-2 py-0.5 rounded-full">
                     {scenario.label}
                   </span>
@@ -62,6 +62,23 @@ export default async function RaceBetsPage({
                     {scenario.formation.combinations.length}点
                   </span>
                 </div>
+
+                {scenario.likelyRank >= 2 && (
+                  <p className="mb-1">
+                    <span
+                      className={
+                        scenario.likelyRank === 2
+                          ? "text-xs font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full"
+                          : "text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full"
+                      }
+                    >
+                      {scenario.likelyRank === 2
+                        ? "このレースでは本命に次ぐ有力な展開"
+                        : "このレースでは可能性低め"}
+                    </span>
+                  </p>
+                )}
+
                 <p className="text-xs text-gray-500 mb-3">{scenario.reason}</p>
 
                 {stat && stat.races > 0 && (

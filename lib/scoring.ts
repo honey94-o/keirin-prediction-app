@@ -637,6 +637,16 @@ export function generateScenarios(
   // 3連単の買い目は全パターン合計で20点以内に収める（1パターンあたりに均等配分）
   const perScenarioBudget = Math.floor(SANRENTAN_MAX_POINTS / specs.length);
 
+  // このレースでどの展開が有力かの順位（1が最有力）。各シナリオの軸選手の
+  // 総合スコアを比較する。本命の軸は定義上スコア最高だが、他の展開（逃げ粘り込み
+  // ・まくり/差し一撃・単騎一撃）の軸がどれだけ本命に肉薄しているかを見ることで、
+  // 「本命が抜けているレース」か「拮抗していて他の決着もありうるレース」かを
+  // 相対的に判定できる。表示順（本命→逃げ粘り込み→…）は変えず、順位だけ付与する。
+  const rankedByScore = [...specs].sort((a, b) => b.axis.totalScore - a.axis.totalScore);
+  const likelyRankByCarNum = new Map(
+    rankedByScore.map((spec, i) => [spec.axis.entry.car_num, i + 1])
+  );
+
   return specs.map((spec) => {
     const pool = buildLineAwarePool(spec.axis.entry.car_num, spec.priorityLineGroup, scored);
     return {
@@ -648,6 +658,7 @@ export function generateScenarios(
         betType: "3連単フォーメーション",
         combinations: formationFromPool(spec.axis.entry.car_num, pool, perScenarioBudget),
       },
+      likelyRank: likelyRankByCarNum.get(spec.axis.entry.car_num)!,
     };
   });
 }
