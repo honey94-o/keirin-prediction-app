@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { getAllRaces, getTodayVenues } from "../lib/repository";
+import { predictRace } from "../lib/predict";
 import { ScrapeTriggerForm } from "../components/ScrapeTriggerForm";
+
+// 本命(1位)と2位の総合スコア差が大きいほど◎的中率が高い傾向をバックテストで確認済み
+// （scripts/diagnose-confidence.ts：10点差以上で単勝的中率81.7%、それ未満は37-46%）。
+// この閾値を「高信頼度」バッジの基準にする。
+const HIGH_CONFIDENCE_MARGIN = 10;
 
 // GitHub Actions（スクレイパー・開催場同期）がNext.jsの外からTursoを直接更新するため、
 // ビルド時の静的生成のままだと新しいレースや開催場一覧が反映されない。
@@ -25,6 +31,21 @@ export default async function Home() {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(race);
   }
+
+  // 「高信頼度」バッジは本日開催中のレースだけを対象にする
+  // （全レース分を毎回予想し直すのは重いため、当日分に限定する）。
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+  const todayRaces = races.filter((r) => r.kaisai_date === todayStr);
+  const highConfidenceRaceIds = new Set<number>();
+  await Promise.all(
+    todayRaces.map(async (race) => {
+      const prediction = await predictRace(race.id);
+      if (!prediction || prediction.scored.length < 2) return;
+      const margin = prediction.scored[0].totalScore - prediction.scored[1].totalScore;
+      if (margin >= HIGH_CONFIDENCE_MARGIN) highConfidenceRaceIds.add(race.id);
+    })
+  );
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
@@ -52,7 +73,14 @@ export default async function Home() {
                         href={`/races/${race.id}`}
                         className="flex items-center justify-between px-4 py-3 active:bg-gray-50"
                       >
-                        <span className="font-medium text-gray-900">{race.race_no}R</span>
+                        <span className="font-medium text-gray-900 flex items-center gap-1.5">
+                          {race.race_no}R
+                          {highConfidenceRaceIds.has(race.id) && (
+                            <span className="text-[10px] font-semibold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full">
+                              高信頼度
+                            </span>
+                          )}
+                        </span>
                         <span className="text-sm text-gray-500">
                           {race.syumoku ?? ""} {race.grade_kbn ?? ""}
                         </span>
