@@ -125,6 +125,13 @@ export async function getVenueKimariteRates(
   const total = rows.reduce((sum, r) => sum + r.c, 0);
   if (total < minRaces) return null;
 
+  return venueKimariteFromRows(rows);
+}
+
+function venueKimariteFromRows(
+  rows: { kimarite: string; c: number }[]
+): VenueKimariteRates {
+  const total = rows.reduce((sum, r) => sum + r.c, 0);
   const pct = (kimarite: string) => ((rows.find((r) => r.kimarite === kimarite)?.c ?? 0) / total) * 100;
   return {
     nige_pct: pct("逃"),
@@ -132,6 +139,83 @@ export async function getVenueKimariteRates(
     sashi_pct: pct("差"),
     races: total,
   };
+}
+
+const STANDARD_BANK_LENGTHS = [333, 400, 500];
+
+/**
+ * 開催場の周長（333/400/500m）を、races.kyori/shukaiの平均（1周あたり距離）
+ * から推定する。bank_infoテーブルのshuutyouはほとんどの開催場で未取得のため。
+ */
+export async function getVenueBankLength(jocd: string): Promise<number | null> {
+  const result = await getDb().execute({
+    sql: `SELECT AVG(kyori * 1.0 / shukai) as perLap FROM races
+          WHERE jocd = ? AND kyori IS NOT NULL AND shukai IS NOT NULL AND shukai > 0`,
+    args: [jocd],
+  });
+  const perLap = (result.rows[0] as unknown as { perLap: number | null })?.perLap;
+  if (perLap == null) return null;
+  let best: number | null = null;
+  let bestDiff = Infinity;
+  for (const candidate of STANDARD_BANK_LENGTHS) {
+    const diff = Math.abs(perLap - candidate);
+    if (diff < bestDiff && diff <= 20) {
+      bestDiff = diff;
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+/**
+ * 周長が同じ（333/400/500m）開催場をまとめて集計した決まり手割合。
+ * 個別開催場が母数不足（getVenueKimariteRatesのminRaces未満）の場合の
+ * 2段目のフォールバックとして使う。周長によって決まり手の傾向自体に
+ * 差がある（例：333mは400mより差し決着の比率が低い）ことをバックテストで確認済み。
+ */
+export async function getBankLengthKimariteRates(
+  bankLength: number,
+  minRaces = 100
+): Promise<VenueKimariteRates | null> {
+  const venueRows = await getDb().execute(`
+    SELECT jocd, AVG(kyori * 1.0 / shukai) as perLap
+    FROM races
+    WHERE kyori IS NOT NULL AND shukai IS NOT NULL AND shukai > 0
+    GROUP BY jocd
+  `);
+  const matchingJocds = (venueRows.rows as unknown as { jocd: string; perLap: number }[])
+    .filter((r) => Math.abs(r.perLap - bankLength) <= 20)
+    .map((r) => r.jocd);
+  if (matchingJocds.length === 0) return null;
+
+  const result = await getDb().execute({
+    sql: `SELECT r.kimarite, COUNT(*) as c
+          FROM results r
+          JOIN races ra ON ra.id = r.race_id
+          WHERE ra.jocd IN (${matchingJocds.map(() => "?").join(",")})
+            AND r.finish_pos = 1 AND r.kimarite IS NOT NULL
+          GROUP BY r.kimarite`,
+    args: matchingJocds,
+  });
+  const rows = result.rows as unknown as { kimarite: string; c: number }[];
+  const total = rows.reduce((sum, r) => sum + r.c, 0);
+  if (total < minRaces) return null;
+  return venueKimariteFromRows(rows);
+}
+
+/**
+ * 開催場別の決まり手割合を、開催場単体→同じ周長の開催場まとめ→null（ニュートラル）
+ * の順にフォールバックして取得する。
+ */
+export async function getVenueKimariteRatesWithFallback(
+  jocd: string
+): Promise<VenueKimariteRates | null> {
+  const venueSpecific = await getVenueKimariteRates(jocd);
+  if (venueSpecific) return venueSpecific;
+
+  const bankLength = await getVenueBankLength(jocd);
+  if (bankLength == null) return null;
+  return getBankLengthKimariteRates(bankLength);
 }
 
 export async function getRacerHistory(snum: string): Promise<RacerHistoryRow[]> {

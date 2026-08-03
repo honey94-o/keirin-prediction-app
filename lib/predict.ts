@@ -5,7 +5,7 @@ import {
   getBankInfo,
   getRacerHistory,
   getPositionWinRates,
-  getVenueKimariteRates,
+  getVenueKimariteRatesWithFallback,
 } from "./repository";
 import { scoreRace, generateBetSuggestions, generateScenarios } from "./scoring";
 import type {
@@ -37,7 +37,7 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
   const entries = await getEntriesForRace(raceId);
   const weights = await getScoreWeights();
   const bankInfo = await getBankInfo(race.jocd);
-  const venueKimarite = await getVenueKimariteRates(race.jocd);
+  const venueKimarite = await getVenueKimariteRatesWithFallback(race.jocd);
 
   const historyEntries = await Promise.all(
     entries.map(async (e) => [e.snum, await getRacerHistory(e.snum)] as const)
