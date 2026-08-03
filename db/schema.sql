@@ -130,6 +130,19 @@ CREATE TABLE IF NOT EXISTS today_venues (
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- 展開シナリオ（本命／逃げ粘り込み／まくり差し一撃／単騎一撃）ごとの
+-- バックテスト実績（的中率・回収率）のキャッシュ。scripts/backtest.tsを実行する
+-- たびに再集計してUPSERTする（毎回全レースを再予想し直すのは重いため、
+-- アプリ側（買い目提案画面）はこのキャッシュを読むだけにする）。
+CREATE TABLE IF NOT EXISTS scenario_stats (
+    label       TEXT PRIMARY KEY,   -- 例: "本命", "逃げ粘り込み"
+    races       INTEGER NOT NULL,   -- そのシナリオが登場したレース数
+    hits        INTEGER NOT NULL,   -- 3連単フォーメーションが的中した回数
+    stake_yen   INTEGER NOT NULL,   -- 賭け金合計（1点100円換算）
+    payout_yen  REAL NOT NULL,      -- 払戻金合計
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_predictions_race ON predictions(race_id);
 CREATE INDEX IF NOT EXISTS idx_entries_race ON entries(race_id);
 CREATE INDEX IF NOT EXISTS idx_results_race ON results(race_id);

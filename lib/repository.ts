@@ -9,6 +9,7 @@ import type {
   RacerHistoryRow,
   RacerRow,
   ResultRow,
+  ScenarioStatsRow,
   ScoredEntry,
   ScoreWeights,
   VenueKimariteRates,
@@ -256,4 +257,50 @@ export async function getRaceIdsWithPrediction(): Promise<number[]> {
     `SELECT DISTINCT race_id FROM predictions ORDER BY race_id DESC`
   );
   return (result.rows as unknown as { race_id: number }[]).map((r) => r.race_id);
+}
+
+/**
+ * 展開シナリオ別のバックテスト実績（的中率・回収率）を取得する。
+ * scripts/backtest.tsが集計してscenario_statsテーブルに保存したキャッシュを読むだけで、
+ * 買い目提案画面の表示のたびに全レースを再予想し直すことはしない。
+ */
+export async function getScenarioStats(): Promise<Record<string, ScenarioStatsRow>> {
+  const result = await getDb().execute(
+    "SELECT label, races, hits, stake_yen, payout_yen FROM scenario_stats"
+  );
+  const rows = result.rows as unknown as {
+    label: string;
+    races: number;
+    hits: number;
+    stake_yen: number;
+    payout_yen: number;
+  }[];
+  const map: Record<string, ScenarioStatsRow> = {};
+  for (const r of rows) {
+    map[r.label] = {
+      label: r.label,
+      races: r.races,
+      hits: r.hits,
+      stakeYen: r.stake_yen,
+      payoutYen: r.payout_yen,
+      hitRate: r.races > 0 ? (r.hits / r.races) * 100 : 0,
+      roi: r.stake_yen > 0 ? (r.payout_yen / r.stake_yen) * 100 : null,
+    };
+  }
+  return map;
+}
+
+/** scripts/backtest.tsから呼び、展開シナリオ別の実績をscenario_statsテーブルにUPSERTする。 */
+export async function saveScenarioStats(
+  stats: { label: string; races: number; hits: number; stakeYen: number; payoutYen: number }[]
+): Promise<void> {
+  const db = getDb();
+  const sql = `INSERT INTO scenario_stats (label, races, hits, stake_yen, payout_yen, updated_at)
+               VALUES (?,?,?,?,?,datetime('now'))
+               ON CONFLICT(label) DO UPDATE SET
+                 races=excluded.races, hits=excluded.hits, stake_yen=excluded.stake_yen,
+                 payout_yen=excluded.payout_yen, updated_at=datetime('now')`;
+  await db.batch(
+    stats.map((s) => ({ sql, args: [s.label, s.races, s.hits, s.stakeYen, s.payoutYen] }))
+  );
 }

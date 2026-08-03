@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { predictRace } from "../../../../lib/predict";
 import { formatFormationNotation } from "../../../../lib/scoring";
+import { getScenarioStats } from "../../../../lib/repository";
 import { MarkBadge } from "../../../../components/MarkBadge";
 import { CarNumberBadge } from "../../../../components/CarNumberBadge";
 
@@ -17,6 +18,7 @@ export default async function RaceBetsPage({
 
   const { race, scored, scenarios, boxSuggestion } = prediction;
   const top4 = scored.slice(0, 4);
+  const scenarioStats = await getScenarioStats();
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
@@ -46,6 +48,7 @@ export default async function RaceBetsPage({
         <div className="flex flex-col gap-4">
           {scenarios.map((scenario) => {
             const notation = formatFormationNotation(scenario.formation.combinations);
+            const stat = scenarioStats[scenario.label];
             return (
               <section key={scenario.label} className="bg-white rounded-lg shadow-sm p-4">
                 <div className="flex items-center gap-2 mb-1">
@@ -60,6 +63,22 @@ export default async function RaceBetsPage({
                   </span>
                 </div>
                 <p className="text-xs text-gray-500 mb-3">{scenario.reason}</p>
+
+                {stat && stat.races > 0 && (
+                  <p className="text-xs mb-3">
+                    <span
+                      className={
+                        stat.roi != null && stat.roi >= 100
+                          ? "text-green-700 font-semibold"
+                          : "text-gray-400"
+                      }
+                    >
+                      実績: 的中{stat.hitRate.toFixed(1)}%
+                      {stat.roi != null ? ` / 回収率${stat.roi.toFixed(0)}%` : ""}
+                      （過去{stat.races}レース中{stat.hits}回的中）
+                    </span>
+                  </p>
+                )}
 
                 {notation && (
                   <>

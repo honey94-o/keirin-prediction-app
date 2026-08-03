@@ -149,6 +149,21 @@ export interface ResultRow {
   kimarite: string | null;
 }
 
+/**
+ * 展開シナリオ（本命／逃げ粘り込み／まくり差し一撃／単騎一撃）ごとの
+ * バックテスト実績（scripts/backtest.ts が集計してscenario_statsテーブルに保存）。
+ * 買い目提案画面で各シナリオの実績的中率・回収率を表示するために使う。
+ */
+export interface ScenarioStatsRow {
+  label: string;
+  races: number;
+  hits: number;
+  stakeYen: number;
+  payoutYen: number;
+  hitRate: number; // 0-100
+  roi: number | null; // 0-100。stakeYenが0ならnull
+}
+
 export interface RaceResultSummary {
   race: RaceRow;
   entries: { car_num: number; name: string }[];

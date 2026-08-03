@@ -18,7 +18,12 @@ loadDotEnvLocal();
 
 import { getDb } from "../lib/db";
 import { predictRace } from "../lib/predict";
-import { savePrediction, getResultsForRace, getOddsForRace } from "../lib/repository";
+import {
+  savePrediction,
+  getResultsForRace,
+  getOddsForRace,
+  saveScenarioStats,
+} from "../lib/repository";
 
 interface ScenarioStat {
   races: number;
@@ -110,6 +115,21 @@ async function main() {
     }
   }
 
+  if (!jocds) {
+    // 開催場で絞り込んでいない（全レース対象の）実行結果だけをキャッシュに保存する。
+    // 一部開催場だけの実行結果で上書きすると、買い目提案画面の実績表示が偏るため。
+    await saveScenarioStats(
+      [...scenarioStats.entries()].map(([label, stat]) => ({
+        label,
+        races: stat.races,
+        hits: stat.hits,
+        stakeYen: stat.stake,
+        payoutYen: stat.payout,
+      }))
+    );
+    console.log("シナリオ別実績を scenario_stats テーブルに保存しました。\n");
+  }
+
   console.log(`◎（本命軸）単勝的中率: ${honmeiTotal > 0 ? ((honmeiWinHits / honmeiTotal) * 100).toFixed(1) : "-"}% (${honmeiWinHits}/${honmeiTotal})`);
   console.log(`◎（本命軸）複勝的中率（3着以内）: ${honmeiTotal > 0 ? ((honmeiTop3Hits / honmeiTotal) * 100).toFixed(1) : "-"}% (${honmeiTop3Hits}/${honmeiTotal})`);
   console.log();
@@ -128,6 +148,34 @@ async function main() {
 
   const boxHitRate = box.races > 0 ? ((box.hits / box.races) * 100).toFixed(1) : "-";
   console.log(`3連複ボックス的中率: ${boxHitRate}% (${box.hits}/${box.races}) ※払戻データ未取得のため回収率は算出せず`);
+
+  console.log("\nシナリオの組み合わせ別 回収率ランキング（賭け金・払戻を合算、回収率の高い順）:");
+  const labels = [...scenarioStats.keys()];
+  const subsets: string[][] = [];
+  for (let mask = 1; mask < 1 << labels.length; mask++) {
+    subsets.push(labels.filter((_, i) => mask & (1 << i)));
+  }
+  const LOW_CONFIDENCE_HITS = 20; // これ未満のヒット数は誤差が大きく参考値扱い
+  const ranked = subsets
+    .map((subset) => {
+      let stake = 0;
+      let payout = 0;
+      let hits = 0;
+      for (const label of subset) {
+        const stat = scenarioStats.get(label)!;
+        stake += stat.stake;
+        payout += stat.payout;
+        hits += stat.hits;
+      }
+      return { subset, stake, payout, hits, roi: stake > 0 ? (payout / stake) * 100 : 0 };
+    })
+    .sort((a, b) => b.roi - a.roi);
+  for (const r of ranked) {
+    const note = r.hits < LOW_CONFIDENCE_HITS ? "  ※ヒット数が少なく参考値" : "";
+    console.log(
+      `  [${r.subset.join("+")}]: 回収率${r.roi.toFixed(1)}% (賭け金${r.stake}円 / 払戻${r.payout.toFixed(0)}円 / ヒット${r.hits}件)${note}`
+    );
+  }
 
   if (skipped > 0) {
     console.log(`\n(出走数不足・結果不完全などでスキップ: ${skipped}件)`);
