@@ -80,16 +80,22 @@ def _convert_class_text(text: str) -> str | None:
     return f"{m.group(1)}{m.group(2)}"
 
 
+def _age_in_days(timestamp: str | None) -> float | None:
+    if not timestamp:
+        return None
+    updated = datetime.datetime.fromisoformat(timestamp)
+    return (datetime.datetime.now() - updated).total_seconds() / 86400
+
+
 def _days_since_update(query: str, params: tuple) -> float | None:
     client = get_client()
     try:
         result = client.execute(query, list(params))
     finally:
         client.close()
-    if not result.rows or not result.rows[0][0]:
+    if not result.rows:
         return None
-    updated = datetime.datetime.fromisoformat(result.rows[0][0])
-    return (datetime.datetime.now() - updated).total_seconds() / 86400
+    return _age_in_days(result.rows[0][0])
 
 
 def scrape_cyclist_history(cyclist_id: str) -> tuple[str | None, list[RacerHistoryEntry]]:
@@ -153,15 +159,21 @@ def enrich_entries_with_history(entries: list[dict[str, Any]]) -> list[RacerHist
             continue
         cyclist_id = str(snum)[2:]
 
-        class_age = _days_since_update(
-            "SELECT updated_at FROM racers WHERE snum=? AND prev_class_rank IS NOT NULL",
-            (snum,),
-        )
-        history_age = _days_since_update(
-            "SELECT MAX(scraped_at) FROM racer_race_history WHERE snum=?",
-            (snum,),
-        )
-        need_class = class_age is None
+        # 1クエリにまとめて鮮度チェックの往復回数を減らす（Turso側の502対策の一環）。
+        client = get_client()
+        try:
+            row = client.execute(
+                """SELECT
+                     (SELECT updated_at FROM racers WHERE snum=? AND prev_class_rank IS NOT NULL) as class_updated_at,
+                     (SELECT MAX(scraped_at) FROM racer_race_history WHERE snum=?) as history_updated_at""",
+                [snum, snum],
+            ).rows[0]
+        finally:
+            client.close()
+        class_updated_at, history_updated_at = row[0], row[1]
+
+        need_class = class_updated_at is None
+        history_age = _age_in_days(history_updated_at)
         need_history = history_age is None or history_age > RACER_HISTORY_MAX_AGE_DAYS
         if not need_class and not need_history:
             continue
@@ -260,6 +272,15 @@ def _to_float(value: str) -> float | None:
         return None
 
 
+def _to_int(value: str | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value.replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+
+
 def parse_racecard(html: str, cup_id: str, day: int, race_no: int) -> RaceData | None:
     soup = BeautifulSoup(html, "html.parser")
 
@@ -353,6 +374,12 @@ def parse_racecard(html: str, cup_id: str, day: int, race_no: int) -> RaceData |
             "syouritu": _to_float(cell_text(cells, "勝率") or ""),
             "rentairitu2": _to_float(cell_text(cells, "２連対率") or ""),
             "rentairitu3": _to_float(cell_text(cells, "３連対率") or ""),
+            # 「1着・2着に入った際の勝ち方の回数」（WINTICKET公式ヘルプの説明文）。
+            # 選手個人の得意な決まり手（逃げ/捲り/差し/マーク）を表す。
+            "kimarite_nige_count": _to_int(cell_text(cells, "逃")),
+            "kimarite_makuri_count": _to_int(cell_text(cells, "捲")),
+            "kimarite_sashi_count": _to_int(cell_text(cells, "差")),
+            "kimarite_mark_count": _to_int(cell_text(cells, "マ")),
         }
         if car_num in line_info:
             entry["line_group"], entry["line_position"] = line_info[car_num]

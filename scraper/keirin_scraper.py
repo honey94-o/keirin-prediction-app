@@ -513,18 +513,26 @@ def save_to_db(
         for e in race.entries:
             statements.append((
                 """INSERT INTO racers (snum, name, pref, class_rank, prev_class_rank, kyakushitsu,
-                                        heikin_tokuten, syouritu, rentairitu2, rentairitu3)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)
+                                        heikin_tokuten, syouritu, rentairitu2, rentairitu3,
+                                        kimarite_nige_count, kimarite_makuri_count,
+                                        kimarite_sashi_count, kimarite_mark_count)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(snum) DO UPDATE SET
                        name=excluded.name, pref=excluded.pref,
                        class_rank=excluded.class_rank, prev_class_rank=excluded.prev_class_rank,
                        kyakushitsu=excluded.kyakushitsu,
                        heikin_tokuten=excluded.heikin_tokuten, syouritu=excluded.syouritu,
                        rentairitu2=excluded.rentairitu2, rentairitu3=excluded.rentairitu3,
+                       kimarite_nige_count=COALESCE(excluded.kimarite_nige_count, racers.kimarite_nige_count),
+                       kimarite_makuri_count=COALESCE(excluded.kimarite_makuri_count, racers.kimarite_makuri_count),
+                       kimarite_sashi_count=COALESCE(excluded.kimarite_sashi_count, racers.kimarite_sashi_count),
+                       kimarite_mark_count=COALESCE(excluded.kimarite_mark_count, racers.kimarite_mark_count),
                        updated_at=datetime('now')""",
                 [e["snum"], e["name"], e.get("pref"), e.get("class_rank"), e.get("prev_class_rank"),
                  e.get("kyakushitsu"), e.get("heikin_tokuten"), e.get("syouritu"),
-                 e.get("rentairitu2"), e.get("rentairitu3")],
+                 e.get("rentairitu2"), e.get("rentairitu3"),
+                 e.get("kimarite_nige_count"), e.get("kimarite_makuri_count"),
+                 e.get("kimarite_sashi_count"), e.get("kimarite_mark_count")],
             ))
             statements.append((
                 """INSERT INTO entries (race_id, snum, car_num, line_group, line_position)

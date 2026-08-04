@@ -42,6 +42,11 @@ export interface RacerRow {
   syouritu: number | null;
   rentairitu2: number | null;
   rentairitu3: number | null;
+  /** 以下4つは「1着・2着に入った際の勝ち方の回数」（WINTICKET由来のみ。KEIRIN.JP由来はnull）。 */
+  kimarite_nige_count: number | null;
+  kimarite_makuri_count: number | null;
+  kimarite_sashi_count: number | null;
+  kimarite_mark_count: number | null;
 }
 
 export interface RacerHistoryRow {
@@ -67,6 +72,10 @@ export interface EntryWithRacer {
   syouritu: number | null;
   rentairitu2: number | null;
   rentairitu3: number | null;
+  kimarite_nige_count: number | null;
+  kimarite_makuri_count: number | null;
+  kimarite_sashi_count: number | null;
+  kimarite_mark_count: number | null;
 }
 
 export interface OddsRow {

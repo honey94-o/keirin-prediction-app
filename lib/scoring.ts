@@ -200,6 +200,42 @@ function calculateBankFitScore(
   return { score: clamp(pct), usedPct: pct };
 }
 
+/**
+ * 選手個人の決まり手適性：WINTICKET出走表の「1着・2着に入った際の勝ち方の回数」
+ * （kimarite_nige_count等）から、脚質に対応する決まり手で実際に何割上位に
+ * 入ってきたかを算出する。バンクの決まり手傾向（calculateBankFitScore）は
+ * 開催場側の一般的な傾向だが、こちらは選手個人の実績に基づく適性指標。
+ * KEIRIN.JP由来のレコード等でデータが無い場合はnullを返す（ニュートラル50点）。
+ */
+function calculatePersonalMoveFitScore(
+  entry: EntryWithRacer
+): { score: number | null; usedRate: number | null } {
+  const { kimarite_nige_count, kimarite_makuri_count, kimarite_sashi_count, kimarite_mark_count } =
+    entry;
+  if (
+    kimarite_nige_count == null ||
+    kimarite_makuri_count == null ||
+    kimarite_sashi_count == null ||
+    kimarite_mark_count == null ||
+    !entry.kyakushitsu
+  ) {
+    return { score: null, usedRate: null };
+  }
+  const total =
+    kimarite_nige_count + kimarite_makuri_count + kimarite_sashi_count + kimarite_mark_count;
+  if (total === 0) return { score: null, usedRate: null };
+
+  const relevantCount =
+    entry.kyakushitsu === "逃"
+      ? kimarite_nige_count
+      : entry.kyakushitsu === "追"
+        ? kimarite_sashi_count
+        : kimarite_makuri_count; // 両
+
+  const rate = (relevantCount / total) * 100;
+  return { score: clamp(rate), usedRate: rate };
+}
+
 const MONTH_DAY_RE = /^(\d{2})\/(\d{2})$/;
 
 function monthDayToDayOfYear(md: string): number | null {
@@ -305,7 +341,8 @@ function calculatePositionWinRateScore(
 
 /**
  * ③データ統計評価：バンク適性・出走間隔・過去の同条件成績・位置別勝率・
- * 連対率を重み付け合成する。
+ * 連対率を重み付け合成する（選手個人の決まり手適性は算出するがバックテストで
+ * 効果が無いと判明したため現在は重み0＝合成に使わず、参考表示のみ）。
  *
  * オッズは予想の参考にしない方針のため意図的に対象外にしている
  * （群衆の人気を自分のスコアに混ぜると、群衆と同じ判断に収束してしまうため）。
@@ -327,14 +364,23 @@ export function calculateStatsScore(
   const intervalResult = calculateIntervalScore(kaisaiDate, history);
   const sameConditionResult = calculateSameConditionScore(keirinjoName, history);
   const positionResult = calculatePositionWinRateScore(entry, positionWinRates);
+  const personalMoveResult = calculatePersonalMoveFitScore(entry);
   const rentaiScore = entry.rentairitu2 != null ? clamp(entry.rentairitu2) : null;
 
+  // 選手個人の決まり手適性(personalMoveResult)は重み0.1/0.2の両方で検証したが、
+  // 重みを上げるほど◎的中率が単調に悪化した（重み0:42.3%→0.1:41.7%→0.2:40.5%、
+  // 1086レース）。回収率側の改善に見えた部分もまくり/差し一撃（母数42件）中心で、
+  // 重みで的中件数が変わらずROIだけ変動しており分散の範囲と判断した。
+  // 総合スコアへの単純合成では効果が無いと判断し無効化（0）。データ自体
+  // （kimarite_*_count）は選手の個性を捉えており、まくり/差し一撃・逃げ粘り込み
+  // シナリオの軸候補選定など、より限定的な使い方であれば今後再検証の余地がある。
   const score = clamp(
     (bankResult.score ?? 50) * 0.2 +
       (intervalResult.score ?? 50) * 0.15 +
       (sameConditionResult.score ?? 50) * 0.2 +
       (positionResult.score ?? 50) * 0.2 +
-      (rentaiScore ?? 50) * 0.25
+      (rentaiScore ?? 50) * 0.25 +
+      (personalMoveResult.score ?? 50) * 0
   );
 
   return {
@@ -348,6 +394,9 @@ export function calculateStatsScore(
         ? `${positionResult.rawRate.toFixed(0)}%(${positionResult.races}走・縮小推定後${positionResult.score?.toFixed(0)})`
         : "不明",
       連対率: entry.rentairitu2 ?? "不明",
+      決まり手適性: personalMoveResult.usedRate != null
+        ? `${personalMoveResult.usedRate.toFixed(0)}%`
+        : "不明",
       注記: "オッズは意図的に不使用。天候はレース終了後にしか取得できないため未反映",
     },
   };

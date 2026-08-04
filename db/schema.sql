@@ -60,6 +60,13 @@ CREATE TABLE IF NOT EXISTS racers (
     syouritu       REAL,                  -- 勝率(%)
     rentairitu2    REAL,                  -- 2連対率(%)
     rentairitu3    REAL,                  -- 3着内率(%)
+    -- 以下4つはWINTICKET出走表由来。「1着・2着に入った際の勝ち方の回数」
+    -- （WINTICKET公式ヘルプの説明文そのまま。個人の得意な決まり手を表す）。
+    -- KEIRIN.JP由来のレコードにはこの列は無くNULLのまま。
+    kimarite_nige_count    INTEGER,       -- 逃げで1-2着になった回数
+    kimarite_makuri_count  INTEGER,       -- 捲りで1-2着になった回数
+    kimarite_sashi_count   INTEGER,       -- 差しで1-2着になった回数
+    kimarite_mark_count    INTEGER,       -- マークで1-2着になった回数
     updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
