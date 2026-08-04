@@ -361,22 +361,91 @@ function calculatePositionWinRateScore(
  */
 const BACK_LEAD_RANK_WIN_RATE = [27.0, 20.7, 16.7, 14.2, 8.0, 6.7, 5.8];
 
+/** entryを含むフィールド内で、getterの値が高い順に何番目かを返す（値なしはnull）。 */
+function rankWithinField(
+  entry: EntryWithRacer,
+  allEntries: EntryWithRacer[],
+  getter: (e: EntryWithRacer) => number | null
+): number | null {
+  const withValue = allEntries.filter((e) => getter(e) != null);
+  if (getter(entry) == null || withValue.length === 0) return null;
+
+  const sorted = [...withValue].sort(
+    (a, b) => (getter(b) as number) - (getter(a) as number) || a.car_num - b.car_num
+  );
+  const idx = sorted.findIndex((e) => e.entry_id === entry.entry_id);
+  return idx === -1 ? null : idx + 1;
+}
+
 function calculateLeadPositionScore(
   entry: EntryWithRacer,
   allEntries: EntryWithRacer[]
 ): { score: number | null; rank: number | null } {
-  const withB = allEntries.filter((e) => e.back_lead_count != null);
-  if (entry.back_lead_count == null || withB.length < 2) return { score: null, rank: null };
+  const rank = rankWithinField(entry, allEntries, (e) => e.back_lead_count);
+  if (rank == null) return { score: null, rank: null };
 
-  const sorted = [...withB].sort(
-    (a, b) => (b.back_lead_count as number) - (a.back_lead_count as number) || a.car_num - b.car_num
-  );
-  const idx = sorted.findIndex((e) => e.entry_id === entry.entry_id);
-  if (idx === -1) return { score: null, rank: null };
-
-  const rank = idx + 1;
   const rate = BACK_LEAD_RANK_WIN_RATE[Math.min(rank, BACK_LEAD_RANK_WIN_RATE.length) - 1];
   return { score: clamp(rate), rank };
+}
+
+/**
+ * スタート優位（車番×S=好スタート回数）：競輪の定説通り、車番（内枠）は
+ * スタート優位で真の勝率にも大きな差があった（scripts/diagnose-carnum-start.ts、
+ * 車番1:24.8%〜車番6:5.1%）。さらにS（standing_count、好スタート回数）の
+ * レース内順位を掛け合わせた6区分では、内枠×S上位が20.9%で最良、
+ * 中枠×S下位が10.0%で最低と、車番だけよりもさらに分離度が高い。
+ * ◎選定用の総合スコアには使わず（決まり手回数・Bの教訓：強い信号でも合成すると
+ * 既存の統計評価と重複して的中率が悪化するため）、2着・3着候補プールの並び替え
+ * （lineupOrderScore）専用に限定して使う。
+ */
+const CAR_S_BUCKET_RATE: Record<string, number> = {
+  "内_上位": 20.9,
+  "内_下位": 16.4,
+  "中_上位": 11.5,
+  "中_下位": 10.0,
+  "外_上位": 15.9,
+  "外_下位": 10.2,
+};
+
+function carNumBucket(carNum: number): "内" | "中" | "外" {
+  if (carNum <= 3) return "内";
+  if (carNum <= 6) return "中";
+  return "外";
+}
+
+function calculateStartPositionScore(
+  entry: EntryWithRacer,
+  allEntries: EntryWithRacer[]
+): { score: number | null } {
+  const sRank = rankWithinField(entry, allEntries, (e) => e.standing_count);
+  if (sRank == null) return { score: null };
+
+  const sBucket = sRank <= 3 ? "上位" : "下位";
+  const rate = CAR_S_BUCKET_RATE[`${carNumBucket(entry.car_num)}_${sBucket}`];
+  return { score: clamp(rate) };
+}
+
+/**
+ * 最終周回の隊列（並び）予想スコア：買い目提案画面の2着・3着候補プールの
+ * 並び替えにのみ使う特別な合成値（◎選定の総合スコアtotalScoreとは別。
+ * calculateStatsScoreへの合成は前述の通り効果が無いと判明したため行っていない）。
+ * ◎の選定はtotalScoreのまま変更せず、「軸が決まった後、2・3着に来やすいのは
+ * 誰か」という限定的な用途にだけスタート優位・バック先頭通過実績を使う。
+ *
+ * ◎軸の総合スコアに混ぜた場合（LEAD_POSITION_WEIGHT等）は既存の統計評価との
+ * 重複で悪化したが、こちらは「軸が決まった後の2・3着の並び」という別の判断
+ * ポイントに使うため重複しておらず、実際にbacktest.tsで改善を確認できた
+ * （1148レース、weight0→0.5で全シナリオ合成的中率28.8%(331)→29.4%(337)・
+ * 回収率72.1%→77.8%、まくり/差し一撃は回収率66.4%→93.8%と大きく改善。
+ * 0.5は2回実行し完全再現。0.7→74.9%、1.0→71.9%とさらに重みを上げると
+ * 悪化に転じたため0.5を採用）。
+ */
+const LINEUP_ORDER_WEIGHT = 0.5;
+
+function lineupOrderScore(entry: ScoredEntry, allEntries: EntryWithRacer[]): number {
+  const startScore = calculateStartPositionScore(entry.entry, allEntries).score ?? 50;
+  const leadScore = calculateLeadPositionScore(entry.entry, allEntries).score ?? 50;
+  return entry.totalScore + LINEUP_ORDER_WEIGHT * (startScore + leadScore - 100);
 }
 
 /**
@@ -650,8 +719,8 @@ export function generateBetSuggestions(scored: ScoredEntry[]): BetSuggestion[] {
 
 /**
  * シナリオの2着・3着候補プールを「優先ライン」のメンバーを先頭に、
- * それ以外はスコア順で並べて返す（軸自身は除く）。
- * 優先ラインは展開ごとに意味が異なる：
+ * それ以外はlineupOrderScore（総合スコア＋隊列予想の加点）順で並べて返す
+ * （軸自身は除く）。優先ラインは展開ごとに意味が異なる：
  * - 本命／逃げ粘り込み：軸と同じライン（先頭が残れば道連れで番手・3番手も上位に来やすい）
  * - まくり/差し一撃：軸に差される側＝本命ライン（差した後ろに残るのは元々前にいた選手たち）
  */
@@ -660,15 +729,17 @@ function buildLineAwarePool(
   priorityLineGroup: number | null,
   allScored: ScoredEntry[]
 ): number[] {
+  const allEntries = allScored.map((s) => s.entry);
   const others = allScored.filter((s) => s.entry.car_num !== axisCarNum);
-  const byScoreDesc = (a: ScoredEntry, b: ScoredEntry) => b.totalScore - a.totalScore;
+  const byOrderDesc = (a: ScoredEntry, b: ScoredEntry) =>
+    lineupOrderScore(b, allEntries) - lineupOrderScore(a, allEntries);
 
   const priority = others
     .filter((s) => priorityLineGroup != null && s.entry.line_group === priorityLineGroup)
-    .sort(byScoreDesc);
+    .sort(byOrderDesc);
   const rest = others
     .filter((s) => !(priorityLineGroup != null && s.entry.line_group === priorityLineGroup))
-    .sort(byScoreDesc);
+    .sort(byOrderDesc);
 
   return [...priority, ...rest].map((s) => s.entry.car_num);
 }
