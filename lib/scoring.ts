@@ -340,9 +340,50 @@ function calculatePositionWinRateScore(
 }
 
 /**
+ * バックストレッチ先頭通過実績（B）：WINTICKET出走表のback_lead_count
+ * （最終周回バックストレッチ線を先頭通過した回数）を使い、そのレースの
+ * 出走選手の中でBが何番目に高いかを見る指標。
+ * 診断（scripts/diagnose-shb.ts、7994出走・結果確定分）で、レース内でのB順位別の
+ * 真の勝率が 1位27.0%→2位20.7%→3位16.7%→4位14.2%→5位8.0%→6位6.7%→7位5.8%と
+ * 極めて綺麗な単調減少を示した。生カウントのバケット別勝率も8.8%→14.1%→
+ * 21.3%→23.3%→27.0%と単調増加しており、WINTICKET公式ヘルプの「ここでの位置が
+ * ゴールでの着順に大きく影響することが多い」という説明と一致する強い信号。
+ * 同様に集計したH（ホーム線）も近い傾向、S（好スタート）は弱くノイジーだった
+ * ためBのみを採用する。8位以下は母数が少なく不安定なため7位の値で頭打ちにする。
+ *
+ * ただし総合スコアへの単純合成はバックテストで効果が無いと判明した
+ * （1148レース、重み0:42.0%(482)→0.1:41.9%(481)→0.2:41.7%(479)、0.2は2回実行し
+ * 完全再現。的中率が単調に悪化）。決まり手適性(personalMoveResult)の失敗と
+ * 同じパターン：Bで先頭に立つ選手は結局heikin_tokuten/rentairitu2など既存の
+ * 統計評価が既に高評価している選手と重なりが大きく、追加の重みは新しい情報を
+ * 足すのではなく既にチューニング済みの他要素の重みを薄めるだけになったと考えられる。
+ * このため現在は重み0＝合成に使わず、参考表示のみ（LEAD_POSITION_WEIGHT定数）。
+ */
+const BACK_LEAD_RANK_WIN_RATE = [27.0, 20.7, 16.7, 14.2, 8.0, 6.7, 5.8];
+
+function calculateLeadPositionScore(
+  entry: EntryWithRacer,
+  allEntries: EntryWithRacer[]
+): { score: number | null; rank: number | null } {
+  const withB = allEntries.filter((e) => e.back_lead_count != null);
+  if (entry.back_lead_count == null || withB.length < 2) return { score: null, rank: null };
+
+  const sorted = [...withB].sort(
+    (a, b) => (b.back_lead_count as number) - (a.back_lead_count as number) || a.car_num - b.car_num
+  );
+  const idx = sorted.findIndex((e) => e.entry_id === entry.entry_id);
+  if (idx === -1) return { score: null, rank: null };
+
+  const rank = idx + 1;
+  const rate = BACK_LEAD_RANK_WIN_RATE[Math.min(rank, BACK_LEAD_RANK_WIN_RATE.length) - 1];
+  return { score: clamp(rate), rank };
+}
+
+/**
  * ③データ統計評価：バンク適性・出走間隔・過去の同条件成績・位置別勝率・
- * 連対率を重み付け合成する（選手個人の決まり手適性は算出するがバックテストで
- * 効果が無いと判明したため現在は重み0＝合成に使わず、参考表示のみ）。
+ * 連対率を重み付け合成する（選手個人の決まり手適性・バックストレッチ先頭通過
+ * 実績は算出するがいずれもバックテストで効果が無いと判明したため現在は重み0＝
+ * 合成に使わず、参考表示のみ）。
  *
  * オッズは予想の参考にしない方針のため意図的に対象外にしている
  * （群衆の人気を自分のスコアに混ぜると、群衆と同じ判断に収束してしまうため）。
@@ -351,6 +392,8 @@ function calculatePositionWinRateScore(
  * 予想スコアには反映していない。過去レースの振り返り分析用）。
  * 各要素はデータが無い場合ニュートラル(50点)にフォールバックする。
  */
+const LEAD_POSITION_WEIGHT = 0;
+
 export function calculateStatsScore(
   entry: EntryWithRacer,
   kaisaiDate: string,
@@ -358,13 +401,15 @@ export function calculateStatsScore(
   bankInfo: BankInfoRow | undefined,
   history: RacerHistoryRow[],
   positionWinRates: PositionWinRate[],
-  venueKimarite?: VenueKimariteRates | null
+  venueKimarite?: VenueKimariteRates | null,
+  allEntries?: EntryWithRacer[]
 ): ScoreBreakdown {
   const bankResult = calculateBankFitScore(entry, venueKimarite, bankInfo);
   const intervalResult = calculateIntervalScore(kaisaiDate, history);
   const sameConditionResult = calculateSameConditionScore(keirinjoName, history);
   const positionResult = calculatePositionWinRateScore(entry, positionWinRates);
   const personalMoveResult = calculatePersonalMoveFitScore(entry);
+  const leadResult = calculateLeadPositionScore(entry, allEntries ?? [entry]);
   const rentaiScore = entry.rentairitu2 != null ? clamp(entry.rentairitu2) : null;
 
   // 選手個人の決まり手適性(personalMoveResult)は重み0.1/0.2の両方で検証したが、
@@ -374,13 +419,20 @@ export function calculateStatsScore(
   // 総合スコアへの単純合成では効果が無いと判断し無効化（0）。データ自体
   // （kimarite_*_count）は選手の個性を捉えており、まくり/差し一撃・逃げ粘り込み
   // シナリオの軸候補選定など、より限定的な使い方であれば今後再検証の余地がある。
+  //
+  // バックストレッチ先頭通過実績(leadResult)も同様に重み0.1/0.2で検証したが
+  // （1148レース、42.0%→41.9%→41.7%、0.2は2回実行し完全再現）、こちらも
+  // 単調に悪化したため無効化（0）。詳細はcalculateLeadPositionScoreのコメント参照。
+  const otherScale = 1 - LEAD_POSITION_WEIGHT;
   const score = clamp(
-    (bankResult.score ?? 50) * 0.2 +
+    ((bankResult.score ?? 50) * 0.2 +
       (intervalResult.score ?? 50) * 0.15 +
       (sameConditionResult.score ?? 50) * 0.2 +
       (positionResult.score ?? 50) * 0.2 +
       (rentaiScore ?? 50) * 0.25 +
-      (personalMoveResult.score ?? 50) * 0
+      (personalMoveResult.score ?? 50) * 0) *
+      otherScale +
+      (leadResult.score ?? 50) * LEAD_POSITION_WEIGHT
   );
 
   return {
@@ -397,6 +449,7 @@ export function calculateStatsScore(
       決まり手適性: personalMoveResult.usedRate != null
         ? `${personalMoveResult.usedRate.toFixed(0)}%`
         : "不明",
+      バック先頭通過順位: leadResult.rank != null ? `${leadResult.rank}番目(B=${entry.back_lead_count})` : "不明",
       注記: "オッズは意図的に不使用。天候はレース終了後にしか取得できないため未反映",
     },
   };
@@ -424,7 +477,8 @@ export function scoreRace(
       bankInfo,
       historyBySnum[entry.snum] ?? [],
       positionWinRatesBySnum[entry.snum] ?? [],
-      venueKimarite
+      venueKimarite,
+      entries
     );
     const totalScore =
       lineScore.score * weights.line +

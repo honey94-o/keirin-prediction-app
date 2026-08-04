@@ -67,6 +67,14 @@ CREATE TABLE IF NOT EXISTS racers (
     kimarite_makuri_count  INTEGER,       -- 捲りで1-2着になった回数
     kimarite_sashi_count   INTEGER,       -- 差しで1-2着になった回数
     kimarite_mark_count    INTEGER,       -- マークで1-2着になった回数
+    -- 以下3つもWINTICKET出走表由来（S/H/B列）。WINTICKET公式ヘルプの説明文：
+    -- S=「スタートの号砲がなった後速やかに発走し、先頭誘導員の後方に付けた回数」
+    -- H=「ゴールまで残り一周のホーム線を先頭で通過した回数」（ホーム線=ゴール線でもある）
+    -- B=「最終バックストレッチラインを先頭で通過した回数。ここでの位置がゴールでの
+    --    着順に大きく影響することが多い」（WINTICKET側の説明文をそのまま採用）
+    standing_count INTEGER,               -- 好スタート回数
+    home_lead_count INTEGER,              -- 最終周回ホーム線を先頭通過した回数
+    back_lead_count INTEGER,              -- 最終周回バック線を先頭通過した回数
     updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

@@ -83,7 +83,8 @@ export async function getEntriesForRace(raceId: number): Promise<EntryWithRacer[
                  r.snum, r.name, r.pref, r.class_rank, r.prev_class_rank, r.kyakushitsu, r.gear_ratio,
                  r.heikin_tokuten, r.syouritu, r.rentairitu2, r.rentairitu3,
                  r.kimarite_nige_count, r.kimarite_makuri_count,
-                 r.kimarite_sashi_count, r.kimarite_mark_count
+                 r.kimarite_sashi_count, r.kimarite_mark_count,
+                 r.standing_count, r.home_lead_count, r.back_lead_count
           FROM entries e
           JOIN racers r ON e.snum = r.snum
           WHERE e.race_id = ?

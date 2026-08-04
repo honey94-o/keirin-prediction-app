@@ -380,6 +380,12 @@ def parse_racecard(html: str, cup_id: str, day: int, race_no: int) -> RaceData |
             "kimarite_makuri_count": _to_int(cell_text(cells, "捲")),
             "kimarite_sashi_count": _to_int(cell_text(cells, "差")),
             "kimarite_mark_count": _to_int(cell_text(cells, "マ")),
+            # S/H/B（WINTICKET公式ヘルプの説明文）。
+            # S=好スタート回数、H=最終周回ホーム線を先頭通過した回数、
+            # B=最終周回バック線を先頭通過した回数（着順への影響が大きいとされる）。
+            "standing_count": _to_int(cell_text(cells, "S")),
+            "home_lead_count": _to_int(cell_text(cells, "H")),
+            "back_lead_count": _to_int(cell_text(cells, "B")),
         }
         if car_num in line_info:
             entry["line_group"], entry["line_position"] = line_info[car_num]

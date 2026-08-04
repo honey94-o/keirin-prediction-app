@@ -47,6 +47,11 @@ export interface RacerRow {
   kimarite_makuri_count: number | null;
   kimarite_sashi_count: number | null;
   kimarite_mark_count: number | null;
+  /** 以下3つもWINTICKET出走表由来（S/H/B列）。Bは最終バックストレッチ線を
+   *  先頭通過した回数、Hは最終周回ホーム線（ゴール線）を先頭通過した回数。 */
+  standing_count: number | null;
+  home_lead_count: number | null;
+  back_lead_count: number | null;
 }
 
 export interface RacerHistoryRow {
@@ -76,6 +81,9 @@ export interface EntryWithRacer {
   kimarite_makuri_count: number | null;
   kimarite_sashi_count: number | null;
   kimarite_mark_count: number | null;
+  standing_count: number | null;
+  home_lead_count: number | null;
+  back_lead_count: number | null;
 }
 
 export interface OddsRow {
