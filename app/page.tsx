@@ -1,10 +1,9 @@
 import Link from "next/link";
-import { getRacesByDate, getTodayVenues } from "../lib/repository";
-import { ScrapeTriggerForm } from "../components/ScrapeTriggerForm";
+import { getRacesByDate } from "../lib/repository";
 import type { RaceRow } from "../lib/types";
 
-// GitHub Actions（スクレイパー・開催場同期）がNext.jsの外からTursoを直接更新するため、
-// ビルド時の静的生成のままだと新しいレースや開催場一覧が反映されない。
+// GitHub Actions（daily-sync.yml、1日2回自動実行）がNext.jsの外からTursoを
+// 直接更新するため、ビルド時の静的生成のままだと新しいレースが反映されない。
 // 常に最新のDBを読むよう動的レンダリングを強制する。
 export const dynamic = "force-dynamic";
 
@@ -23,7 +22,6 @@ export default async function Home() {
   const today = new Date();
   const todayStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
   const races = await getRacesByDate(todayStr);
-  const todayVenues = await getTodayVenues();
 
   const groups = new Map<string, RaceRow[]>();
   for (const race of races) {
@@ -35,11 +33,9 @@ export default async function Home() {
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
       <h1 className="text-lg font-bold mb-4">開催場を選択</h1>
 
-      <ScrapeTriggerForm todayVenues={todayVenues.names} syncedDate={todayVenues.syncedDate} />
-
       {races.length === 0 ? (
         <p className="text-center text-gray-500 mt-8">
-          本日のレースがまだ登録されていません。上のフォームから取得してください。
+          本日のレースはまだ取得されていません。毎日朝6時頃に自動取得されるので、しばらくしてから開き直してください。
         </p>
       ) : (
         <div className="flex flex-col gap-2">

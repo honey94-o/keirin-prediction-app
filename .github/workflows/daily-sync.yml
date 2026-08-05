@@ -1,0 +1,35 @@
+name: Daily sync all venues
+
+# 全43開催場の直近レース（当日カード＋前日分の結果確定）を自動取得する。
+# WINTICKET版スクレイパー（winticket_scraper.py）はPlaywright不要（requests/BeautifulSoup
+# のみ）のため、Playwrightのインストールは行わずスケジュール実行できる。
+# 個人利用の範囲内で低頻度（1日2回）を維持する：
+#   - 朝（JST 6:00）：当日の出走表・オッズを発走前に取得
+#   - 夜（JST 22:00）：その日のレース結果を取得
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 21 * * *"  # JST 6:00（前日21:00 UTC）
+    - cron: "0 13 * * *"  # JST 22:00
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: scraper
+        run: pip install -r requirements.txt
+
+      - name: Scrape all venues (recent days)
+        working-directory: scraper
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: |
+          python winticket_scraper.py --all-venues --days-back 1

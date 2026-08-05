@@ -136,15 +136,6 @@ CREATE TABLE IF NOT EXISTS predictions (
     UNIQUE (race_id, car_num)
 );
 
--- 本日発売中の開催場一覧のキャッシュ。VercelはPlaywrightを実行できないため、
--- GitHub Actions側（sync_today_venues）で取得してここに保存し、
--- Next.jsアプリの「新しいレースを取得」フォームの選択肢に使う。
-CREATE TABLE IF NOT EXISTS today_venues (
-    venue_name  TEXT PRIMARY KEY,
-    synced_date TEXT NOT NULL,   -- YYYYMMDD（この一覧が本日分かを判定するため）
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
 -- 展開シナリオ（本命／逃げ粘り込み／まくり差し一撃／単騎一撃）ごとの
 -- バックテスト実績（的中率・回収率）のキャッシュ。scripts/backtest.tsを実行する
 -- たびに再集計してUPSERTする（毎回全レースを再予想し直すのは重いため、

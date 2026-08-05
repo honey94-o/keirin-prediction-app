@@ -1,8 +1,8 @@
 name: Scrape keirin race data
 
-# 手動実行（workflow_dispatch）を基本とする。Next.jsアプリの「レース取得」画面から
-# GitHub APIでこのワークフローをトリガーする（lib/actions.ts の triggerScrapeAction）。
-# スケジュール実行はデフォルトで無効にしている（下のcronはコメントアウト）。
+# 特定の1レースだけを手動で再取得したい時のための手動実行専用ワークフロー
+# （GitHub ActionsのUIから直接「Run workflow」で実行する）。日次の自動取得は
+# daily-sync.yml（全開催場、1日2回自動実行）が別途担っている。
 # 有効化する場合も、KEIRIN.JPへの節度あるアクセス（低頻度・個人利用の範囲）を
 # 必ず維持すること。全開催場×全レースを高頻度に回すような使い方はしない。
 on:

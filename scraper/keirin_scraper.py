@@ -627,47 +627,9 @@ def resolve_venue_index_by_name(venue_name: str) -> int:
     return matches[0]["index"]
 
 
-def sync_today_venues() -> list[str]:
-    """本日発売中の開催場名一覧を取得し、today_venuesテーブルを本日分に置き換える。
-
-    Next.jsアプリ（Vercel、Playwright実行不可）の「新しいレースを取得」フォームの
-    選択肢を「本日実際に開催している場」だけに絞るためのキャッシュ更新用。
-    """
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page(user_agent=USER_AGENT)
-        try:
-            venues = list_today_venues(page)
-        finally:
-            browser.close()
-
-    today = datetime.date.today().strftime("%Y%m%d")
-    names = [v["label"] for v in venues]
-
-    client = get_client()
-    try:
-        client.execute("DELETE FROM today_venues")
-        if names:
-            client.batch([
-                (
-                    "INSERT INTO today_venues (venue_name, synced_date) VALUES (?, ?)",
-                    [name, today],
-                )
-                for name in names
-            ])
-    finally:
-        client.close()
-
-    return names
-
-
 def main():
     parser = argparse.ArgumentParser(description="KEIRIN.JPから1レース分のデータを取得")
     parser.add_argument("--list-venues", action="store_true", help="本日発売中の開催場一覧を表示")
-    parser.add_argument(
-        "--sync-venues", action="store_true",
-        help="本日発売中の開催場名一覧をDBにキャッシュする（アプリのフォーム用）",
-    )
     parser.add_argument("--venue-index", type=int, help="開催場のインデックス（--list-venuesで確認）")
     parser.add_argument("--venue-name", type=str, help="開催場名（例: 京王閣）。--venue-indexの代わりに指定可")
     parser.add_argument("--race-no", type=int, help="レース番号")
@@ -680,11 +642,6 @@ def main():
             for v in list_today_venues(page):
                 print(f"{v['index']}: {v['label']}")
             browser.close()
-        return
-
-    if args.sync_venues:
-        names = sync_today_venues()
-        print(f"本日の開催場 {len(names)}件をDBに同期しました: {', '.join(names)}")
         return
 
     venue_index = args.venue_index

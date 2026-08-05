@@ -88,7 +88,7 @@ gh secret set TURSO_DATABASE_URL --body "libsql://xxxx.turso.io"
 gh secret set TURSO_AUTH_TOKEN --body "xxxxxxxx"
 ```
 
-以降、GitHubリポジトリの「Actions」タブから `Scrape keirin race data` ワークフローを手動実行（`workflow_dispatch`）すると、PCを起動していなくてもレースデータを取得できる。デフォルトではスケジュール実行は無効にしてある（`.github/workflows/scrape.yml` 内のcronはコメントアウト）。有効化する場合も、KEIRIN.JPへの節度あるアクセス（低頻度・個人利用の範囲）を必ず維持すること。
+全開催場・当日分のレース取得は `.github/workflows/daily-sync.yml` が1日2回（JST 6:00・22:00）自動実行する（`winticket_scraper.py --all-venues --days-back 1`。Playwright不要でrequests/BeautifulSoupのみのため軽量）。特定の1レースだけ手動で再取得したい場合は、GitHubリポジトリの「Actions」タブから `Scrape keirin race data`（`scrape.yml`、KEIRIN.JP版・Playwright使用）を手動実行（`workflow_dispatch`）する。どちらもKEIRIN.JP/WINTICKETへの節度あるアクセス（低頻度・個人利用の範囲）を必ず維持すること。
 
 ### 3. Vercelにデプロイ
 
@@ -114,6 +114,13 @@ npx vercel --prod
 - [x] Phase 5: デプロイ・iPhone動作確認（Turso移行・Vercelデプロイ手順整備。実際のデプロイ・iPhone確認はユーザー側の認証操作待ち）
 
 ## データ取得（スクレイピング）
+
+**日次の自動取得：** `.github/workflows/daily-sync.yml` が1日2回（JST 6:00・22:00）、
+全43開催場の直近分（`--days-back 1`）をWINTICKET版スクレイパーで自動取得する。
+アプリ側で手動操作は不要（以前あった「新しいレースを取得」フォーム・
+「開催場を更新」ボタンは、この自動化により不要になったため削除した）。
+
+以下は手動で個別に取得したい場合のコマンド：
 
 ```bash
 cd scraper
