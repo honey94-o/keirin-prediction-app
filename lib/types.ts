@@ -93,6 +93,12 @@ export interface EntryWithRacer {
   standing_count: number | null;
   home_lead_count: number | null;
   back_lead_count: number | null;
+  debut_class: string | null;
+  tt200_sec: number | null;
+  tt400_sec: number | null;
+  tt1000_sec: number | null;
+  tt3000_sec: number | null;
+  kisokukai_grade: string | null;
 }
 
 export interface OddsRow {

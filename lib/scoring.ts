@@ -236,6 +236,63 @@ function calculatePersonalMoveFitScore(
   return { score: clamp(rate), usedRate: rate };
 }
 
+/**
+ * 新人期別ボーナス：ユーザーから「129期は強いので、得点が低くても優勢に」との
+ * 指摘があり検証した。129期選手はA3級ルーキー同士のトーナメント（A級チ予選/
+ * 準決/選抜/決勝、F2グレード）で42.5%の勝率（68/160走）を記録しており、同じ
+ * レースに出た129期以外の選手の勝率8.7%を大きく上回る（母数778走）。
+ * 決まり手回数・S/H/Bと違いheikin_tokuten（平均得点）とはほぼ無相関で
+ * 重複しない新しい情報だった点が重要：129期の平均得点は74.18、同レース他選手は
+ * 72.76とわずか1.4点差しかなく、得点最高選手が129期だったレースは
+ * わずか10.7%（15/140）に留まる。つまり「得点はまだ低いが実力はそれ以上」
+ * というユーザーの見立て通りで、既存スコアでは捉えられていない。
+ * デビュー期をracers.debut_classとして持つ選手（現状129期のみ、
+ * scraper/jik_kisokukai.pyで取り込み）に限定して適用する。
+ *
+ * classChangeAdjustmentFactor（昇級/降級調整）と同じく、加重平均の一項として
+ * 混ぜるのではなく最終スコアへの「加点」として実装する。加重平均に混ぜる方式で
+ * 最初に試したところ、対象外レース（全体の88%）でもotherScaleが常に薄まり
+ * 無関係な選手のスコアまで歪めてしまい、◎的中率が悪化した（重み0.1で
+ * 42.3%→42.0%、1184レース）。加点方式ならデータの無い91%超の出走には
+ * 一切影響しない（+10点で42.3%→42.6%・回収率75.1%→80.2%と改善）。
+ *
+ * ユーザー指摘：「だんだん点数が高くなるから、デビューして3ヶ月の補正にして」。
+ * レースを重ねてheikin_tokuten（平均得点）が実力に追いついてくると、この
+ * ボーナスの根拠（得点はまだ低いが実力はそれ以上）が薄れていく。
+ * classChangeAdjustmentFactorのデビュー直後1〜2ヶ月の減衰と同じ考え方で、
+ * デビュー月を起点に3ヶ月かけて線形に減衰させ、4ヶ月目以降は0にする。
+ * デビュー月は期ごとに手動で管理する（新しい期を追加したらROOKIE_DEBUT_YMにも
+ * 追記すること）。公式のデビュー月（毎年5月）ではなく、実際にDBにレース記録が
+ * 現れ始めた月を使う：129期は公式デビューが5月でもDB上の初出走は7月からで、
+ * 月別勝率も7月49.5%→8月28.3%と推移していた。5月を起点にすると3ヶ月で
+ * 8月には減衰しきってしまい、実際にはまだ基準値（7車立てで約14%）の
+ * 2倍近く勝っている時期にボーナスが消えてbacktestが悪化した
+ * （減衰+15点：◎的中率42.6%・回収率74.2% ＜ 減衰なし+15点：42.9%・79.9%）。
+ * そのため起点はDB上の実際の初出走月に合わせている。
+ */
+const ROOKIE_CLASS_BONUS_POINTS = 15;
+const ROOKIE_DEBUT_YM: Record<string, string> = {
+  "129期": "202607", // YYYYMM（DB上の初出走月。公式デビュー月の5月ではない）
+};
+
+function calculateRookieClassBonus(
+  entry: EntryWithRacer,
+  kaisaiDate: string
+): { bonus: number; monthsSinceDebut: number | null } {
+  const debutYm = entry.debut_class ? ROOKIE_DEBUT_YM[entry.debut_class] : undefined;
+  if (!debutYm) return { bonus: 0, monthsSinceDebut: null };
+
+  const debutY = Number(debutYm.slice(0, 4));
+  const debutM = Number(debutYm.slice(4, 6));
+  const raceY = Number(kaisaiDate.slice(0, 4));
+  const raceM = Number(kaisaiDate.slice(4, 6));
+  const monthsSinceDebut = (raceY - debutY) * 12 + (raceM - debutM);
+  if (monthsSinceDebut < 0) return { bonus: 0, monthsSinceDebut };
+
+  const decayFactor = clamp(1 - monthsSinceDebut / 3, 0, 1);
+  return { bonus: ROOKIE_CLASS_BONUS_POINTS * decayFactor, monthsSinceDebut };
+}
+
 const MONTH_DAY_RE = /^(\d{2})\/(\d{2})$/;
 
 function monthDayToDayOfYear(md: string): number | null {
@@ -499,6 +556,7 @@ export function calculateStatsScore(
   const positionResult = calculatePositionWinRateScore(entry, positionWinRates);
   const personalMoveResult = calculatePersonalMoveFitScore(entry);
   const leadResult = calculateLeadPositionScore(entry, allEntries ?? [entry]);
+  const rookieResult = calculateRookieClassBonus(entry, kaisaiDate);
   const rentaiScore = entry.rentairitu2 != null ? clamp(entry.rentairitu2) : null;
 
   // 選手個人の決まり手適性(personalMoveResult)は重み0.1/0.2の両方で検証したが、
@@ -512,6 +570,10 @@ export function calculateStatsScore(
   // バックストレッチ先頭通過実績(leadResult)も同様に重み0.1/0.2で検証したが
   // （1148レース、42.0%→41.9%→41.7%、0.2は2回実行し完全再現）、こちらも
   // 単調に悪化したため無効化（0）。詳細はcalculateLeadPositionScoreのコメント参照。
+  //
+  // 新人期別ボーナス(rookieResult)はclassChangeAdjustmentFactorと同じく、
+  // 加重平均に混ぜず最終スコアへの加点として適用する（対象外レースを
+  // 一切歪めないため）。calculateRookieClassBonusのコメント参照。
   const otherScale = 1 - LEAD_POSITION_WEIGHT;
   const score = clamp(
     ((bankResult.score ?? 50) * 0.2 +
@@ -521,7 +583,8 @@ export function calculateStatsScore(
       (rentaiScore ?? 50) * 0.25 +
       (personalMoveResult.score ?? 50) * 0) *
       otherScale +
-      (leadResult.score ?? 50) * LEAD_POSITION_WEIGHT
+      (leadResult.score ?? 50) * LEAD_POSITION_WEIGHT +
+      rookieResult.bonus
   );
 
   return {
@@ -539,6 +602,9 @@ export function calculateStatsScore(
         ? `${personalMoveResult.usedRate.toFixed(0)}%`
         : "不明",
       バック先頭通過順位: leadResult.rank != null ? `${leadResult.rank}番目(B=${entry.back_lead_count})` : "不明",
+      新人期別: entry.debut_class
+        ? `${entry.debut_class}（デビュー${rookieResult.monthsSinceDebut ?? "?"}ヶ月目・加点${rookieResult.bonus.toFixed(1)}）`
+        : "不明",
       注記: "オッズは意図的に不使用。天候はレース終了後にしか取得できないため未反映",
     },
   };
