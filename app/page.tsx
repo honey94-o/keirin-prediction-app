@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { getRacesByDate, getTodayVenues } from "../lib/repository";
-import { predictRace } from "../lib/predict";
-import { HIGH_CONFIDENCE_MARGIN } from "../lib/scoring";
 import { ScrapeTriggerForm } from "../components/ScrapeTriggerForm";
+import type { RaceRow } from "../lib/types";
 
 // GitHub Actions（スクレイパー・開催場同期）がNext.jsの外からTursoを直接更新するため、
 // ビルド時の静的生成のままだと新しいレースや開催場一覧が反映されない。
@@ -17,35 +16,24 @@ function formatDate(kaisaiDate: string): string {
 }
 
 export default async function Home() {
-  // レース一覧は当日開催分だけを表示する（過去分はscripts/backtest.tsのバックテスト
-  // 用データとしてDBには残すが、日々の予想確認には不要なため。過去の的中実績は
-  // 「履歴」画面で確認できる）。
+  // 開催場選択（ステップ1）。当日開催分のみ表示し、各開催場の件数・発走時刻だけを
+  // 出す軽量な一覧にしている（予想計算=predictRaceは1レースにつきDBを20回近く
+  // 読むため、ここで全レース分まとめて呼ぶと表示が重くなる。予想はレース選択後の
+  // 詳細画面でだけ計算する）。
   const today = new Date();
   const todayStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
   const races = await getRacesByDate(todayStr);
   const todayVenues = await getTodayVenues();
 
-  // 開催日＋開催場ごとにグルーピング
-  const groups = new Map<string, typeof races>();
+  const groups = new Map<string, RaceRow[]>();
   for (const race of races) {
-    const key = `${race.kaisai_date}_${race.keirinjo_name}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(race);
+    if (!groups.has(race.jocd)) groups.set(race.jocd, []);
+    groups.get(race.jocd)!.push(race);
   }
-
-  const highConfidenceRaceIds = new Set<number>();
-  await Promise.all(
-    races.map(async (race) => {
-      const prediction = await predictRace(race.id);
-      if (!prediction || prediction.scored.length < 2) return;
-      const margin = prediction.scored[0].totalScore - prediction.scored[1].totalScore;
-      if (margin >= HIGH_CONFIDENCE_MARGIN) highConfidenceRaceIds.add(race.id);
-    })
-  );
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
-      <h1 className="text-lg font-bold mb-4">レース一覧</h1>
+      <h1 className="text-lg font-bold mb-4">開催場を選択</h1>
 
       <ScrapeTriggerForm todayVenues={todayVenues.names} syncedDate={todayVenues.syncedDate} />
 
@@ -54,38 +42,26 @@ export default async function Home() {
           本日のレースがまだ登録されていません。上のフォームから取得してください。
         </p>
       ) : (
-        <div className="flex flex-col gap-4">
-          {[...groups.entries()].map(([key, groupRaces]) => {
+        <div className="flex flex-col gap-2">
+          {[...groups.entries()].map(([jocd, groupRaces]) => {
             const first = groupRaces[0];
             return (
-              <section key={key} className="bg-white rounded-lg shadow-sm overflow-hidden">
-                <div className="bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-700">
-                  {formatDate(first.kaisai_date)} {first.keirinjo_name}
+              <Link
+                key={jocd}
+                href={`/venues/${jocd}`}
+                className="flex items-center justify-between bg-white rounded-lg shadow-sm px-4 py-3 active:bg-gray-50"
+              >
+                <div>
+                  <div className="font-semibold text-gray-900">{first.keirinjo_name}</div>
+                  <div className="text-xs text-gray-400">{formatDate(first.kaisai_date)}</div>
                 </div>
-                <ul className="divide-y divide-gray-100">
-                  {groupRaces.map((race) => (
-                    <li key={race.id}>
-                      <Link
-                        href={`/races/${race.id}`}
-                        className="flex items-center justify-between px-4 py-3 active:bg-gray-50"
-                      >
-                        <span className="font-medium text-gray-900 flex items-center gap-1.5">
-                          {race.race_no}R
-                          {highConfidenceRaceIds.has(race.id) && (
-                            <span className="text-[10px] font-semibold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full">
-                              高信頼度
-                            </span>
-                          )}
-                        </span>
-                        <span className="text-sm text-gray-500">
-                          {race.syumoku ?? ""} {race.grade_kbn ?? ""}
-                        </span>
-                        <span className="text-sm text-gray-400">{race.start_time ?? ""}</span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </section>
+                <div className="text-right">
+                  <div className="text-sm text-gray-500">{groupRaces.length}レース</div>
+                  {first.start_time && (
+                    <div className="text-xs text-gray-400">発走 {first.start_time}〜</div>
+                  )}
+                </div>
+              </Link>
             );
           })}
         </div>
