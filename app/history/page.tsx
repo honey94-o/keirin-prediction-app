@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getRaceIdsWithPrediction } from "../../lib/repository";
-import { getRaceResultSummary, getOverallAccuracyStats } from "../../lib/accuracy";
+import { getRaceResultSummary, getOverallAccuracyStats, getDailySummary, yesterdayJst } from "../../lib/accuracy";
 
 // レース結果はGitHub Actions（Next.jsの外）からTursoへ書き込まれるため、
 // 静的生成だと反映されない。常に最新を読むよう動的レンダリングを強制する。
@@ -22,10 +22,49 @@ export default async function HistoryPage() {
   const summaryResults = await Promise.all(raceIds.map((id) => getRaceResultSummary(id)));
   const summaries = summaryResults.filter((s) => s != null);
   const stats = await getOverallAccuracyStats();
+  const daily = await getDailySummary(yesterdayJst());
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
       <h1 className="text-lg font-bold mb-4">予想履歴・精度検証</h1>
+
+      {daily.totalRaces > 0 && (
+        <section className="bg-white rounded-lg shadow-sm p-4 mb-4">
+          <h2 className="font-semibold text-sm text-gray-600 mb-2">
+            前日サマリー（{formatDate(daily.statDate)}・{daily.totalRaces}レース）
+          </h2>
+          <div className="grid grid-cols-2 gap-y-2 text-sm mb-3">
+            <div>◎ 単勝的中率</div>
+            <div className="text-right tabular-nums">{fmtPct(daily.honmeiHitRate)}</div>
+            <div>3連単フォーメーション的中率</div>
+            <div className="text-right tabular-nums">{fmtPct(daily.sanrentanHitRate)}</div>
+            <div>回収率（参考値）</div>
+            <div className="text-right tabular-nums">{fmtPct(daily.overallRoi)}</div>
+          </div>
+          {daily.topPayouts.length > 0 && (
+            <>
+              <h3 className="text-xs font-semibold text-gray-500 mb-1">配当ベスト{daily.topPayouts.length}（的中レース）</h3>
+              <ul className="flex flex-col gap-1">
+                {daily.topPayouts.map((p, i) => (
+                  <li key={p.race.id}>
+                    <Link
+                      href={`/races/${p.race.id}`}
+                      className="flex items-center justify-between text-sm px-2 py-1.5 rounded bg-amber-50 active:bg-amber-100"
+                    >
+                      <span className="text-gray-700">
+                        {i + 1}位 {p.race.keirinjo_name}{p.race.race_no}R（{p.combo}）
+                      </span>
+                      <span className="font-semibold text-amber-800 tabular-nums">
+                        {p.payoutYen.toFixed(0)}円
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
 
       <section className="bg-white rounded-lg shadow-sm p-4 mb-4">
         <h2 className="font-semibold text-sm text-gray-600 mb-2">

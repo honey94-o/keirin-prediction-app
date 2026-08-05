@@ -195,6 +195,7 @@ export interface RaceResultSummary {
   honmeiTop3: boolean | null; // ◎が3着以内だったか
   sanrentanHit: boolean | null; // 実際の着順が◎の3連単フォーメーションに含まれていたか
   roi: number | null; // フォーメーションを均等買いした場合の回収率(%)。オッズはスナップショット時点の参考値
+  payoutYen: number | null; // 的中した場合の払戻金額（100円賭け1点あたり）。不的中・未確定はnull
 }
 
 export interface AccuracyStats {
@@ -203,4 +204,10 @@ export interface AccuracyStats {
   honmeiTop3Rate: number | null; // ◎の複勝的中率(%)
   sanrentanHitRate: number | null; // 3連単フォーメーション的中率(%)
   overallRoi: number | null; // 全レース合算の回収率(%)
+}
+
+/** 1日分のサマリー（前日集計用）。AccuracyStatsに対象日と的中ベスト5を加えたもの。 */
+export interface DailySummary extends AccuracyStats {
+  statDate: string; // YYYYMMDD
+  topPayouts: { race: RaceRow; combo: string; payoutYen: number }[]; // 配当が高い順、最大5件
 }

@@ -4,13 +4,15 @@ name: Daily sync all venues
 # WINTICKET版スクレイパー（winticket_scraper.py）はPlaywright不要（requests/BeautifulSoup
 # のみ）のため、Playwrightのインストールは行わずスケジュール実行できる。
 # 個人利用の範囲内で低頻度（1日2回）を維持する：
-#   - 朝（JST 6:00）：当日の出走表・オッズを発走前に取得
-#   - 夜（JST 22:00）：その日のレース結果を取得
+#   - 朝（JST 5:00）：当日の出走表・オッズを発走前に取得。この実行時のみ、
+#     結果が出揃った前日分のpredictionsを保存し予想精度サマリーも計算する
+#     （scripts/daily-summary.ts。/history画面の「前日サマリー」に表示）
+#   - 夕方（JST 17:00）：日中に確定したレース結果を取得
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "0 21 * * *"  # JST 6:00（前日21:00 UTC）
-    - cron: "0 13 * * *"  # JST 22:00
+    - cron: "0 20 * * *"  # JST 5:00（前日20:00 UTC）
+    - cron: "0 8 * * *"   # JST 17:00
 
 jobs:
   sync:
@@ -33,3 +35,22 @@ jobs:
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
         run: |
           python winticket_scraper.py --all-venues --days-back 1
+
+      # 前日サマリー集計は朝の実行（前日分の結果が出揃った後）だけでよいので、
+      # 手動実行時と朝(JST 5:00=UTC20:00)のスケジュールに限定する。
+      - name: Set up Node.js
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 20 * * *'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Node dependencies
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 20 * * *'
+        run: npm ci
+
+      - name: Compute previous day's summary
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 20 * * *'
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: npx tsx scripts/daily-summary.ts

@@ -5,9 +5,10 @@ import {
   getResultsForRace,
   getOddsForRace,
   getRaceIdsWithPredictionAndResult,
+  getRacesByDate,
 } from "./repository";
 import { generateBetSuggestionsFromRanking } from "./scoring";
-import type { AccuracyStats, RaceResultSummary } from "./types";
+import type { AccuracyStats, DailySummary, RaceResultSummary } from "./types";
 
 /**
  * 保存済み予想(predictions)と結果(results)を突き合わせ、
@@ -37,6 +38,7 @@ export async function getRaceResultSummary(raceId: number): Promise<RaceResultSu
       honmeiTop3: null,
       sanrentanHit: null,
       roi: null,
+      payoutYen: null,
     };
   }
 
@@ -64,12 +66,14 @@ export async function getRaceResultSummary(raceId: number): Promise<RaceResultSu
       : null;
 
   let roi: number | null = null;
+  let payoutYen: number | null = null;
   if (actualCombo != null && formation != null && formation.combinations.length > 0) {
     const odds = (await getOddsForRace(raceId)).filter((o) => o.bet_type === "3連単");
     const stake = 100 * formation.combinations.length;
     const hitOdds = odds.find((o) => o.combination === actualCombo)?.odds_value ?? null;
     const payout = sanrentanHit && hitOdds != null ? 100 * hitOdds : 0;
     roi = (payout / stake) * 100;
+    payoutYen = sanrentanHit && hitOdds != null ? payout : null;
   }
 
   return {
@@ -81,17 +85,11 @@ export async function getRaceResultSummary(raceId: number): Promise<RaceResultSu
     honmeiTop3,
     sanrentanHit,
     roi,
+    payoutYen,
   };
 }
 
-/**
- * 予想・結果が揃っている全レースを集計し、通算の的中率・回収率を算出する。
- */
-export async function getOverallAccuracyStats(): Promise<AccuracyStats> {
-  const raceIds = await getRaceIdsWithPredictionAndResult();
-  const results = await Promise.all(raceIds.map((id) => getRaceResultSummary(id)));
-  const summaries = results.filter((s): s is RaceResultSummary => s != null);
-
+function aggregateAccuracyStats(summaries: RaceResultSummary[]): AccuracyStats {
   const withHonmei = summaries.filter((s) => s.honmeiHit != null);
   const withSanrentan = summaries.filter((s) => s.sanrentanHit != null);
   const withRoi = summaries.filter((s) => s.roi != null);
@@ -115,4 +113,63 @@ export async function getOverallAccuracyStats(): Promise<AccuracyStats> {
         ? withRoi.reduce((sum, s) => sum + (s.roi ?? 0), 0) / withRoi.length
         : null,
   };
+}
+
+/**
+ * 予想・結果が揃っている全レースを集計し、通算の的中率・回収率を算出する。
+ */
+export async function getOverallAccuracyStats(): Promise<AccuracyStats> {
+  const raceIds = await getRaceIdsWithPredictionAndResult();
+  const results = await Promise.all(raceIds.map((id) => getRaceResultSummary(id)));
+  const summaries = results.filter((s): s is RaceResultSummary => s != null);
+  return aggregateAccuracyStats(summaries);
+}
+
+/**
+ * UTCで動くサーバー環境（GitHub Actions・Vercel）でも日本時間基準で
+ * 「前日」を計算するためのヘルパー。競輪はJST基準の暦で開催されるため。
+ */
+export function yesterdayJst(): string {
+  const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  jstNow.setUTCDate(jstNow.getUTCDate() - 1);
+  const y = jstNow.getUTCFullYear();
+  const m = String(jstNow.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(jstNow.getUTCDate()).padStart(2, "0");
+  return `${y}${m}${d}`;
+}
+
+/**
+ * 指定日（YYYYMMDD）のレースだけを集計する（前日サマリー用）。
+ * scripts/daily-summary.tsがGitHub Actions（daily-sync.yml）から日次実行し、
+ * その日のレース分のpredictionsを事前に保存しておくことで、ここでは
+ * 保存済みpredictions/results/oddsを読むだけの軽い処理になる
+ * （毎回predictRaceで再計算すると1日分でもレース数が多く重いため）。
+ */
+export async function getDailySummary(statDate: string): Promise<DailySummary> {
+  const races = await getRacesByDate(statDate);
+  const results = await Promise.all(races.map((r) => getRaceResultSummary(r.id)));
+  // getRacesByDateはその日の全レース（結果未確定分も含む）を返すため、
+  // 予想・結果の両方が揃っている（honmeiHitが判定済みの）レースだけに絞る。
+  // そうしないと「結果確定レース数」に未確定分が混ざってしまう。
+  const summaries = results.filter(
+    (s): s is RaceResultSummary => s != null && s.honmeiHit != null
+  );
+  const stats = aggregateAccuracyStats(summaries);
+
+  const topPayouts = summaries
+    .filter((s) => s.sanrentanHit && s.payoutYen != null)
+    .sort((a, b) => (b.payoutYen ?? 0) - (a.payoutYen ?? 0))
+    .slice(0, 5)
+    .map((s) => {
+      const actualOrder = [1, 2, 3].map(
+        (pos) => s.results.find((r) => r.finish_pos === pos)?.car_num
+      );
+      return {
+        race: s.race,
+        combo: actualOrder.join("-"),
+        payoutYen: s.payoutYen as number,
+      };
+    });
+
+  return { ...stats, statDate, topPayouts };
 }
