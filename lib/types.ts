@@ -52,6 +52,15 @@ export interface RacerRow {
   standing_count: number | null;
   home_lead_count: number | null;
   back_lead_count: number | null;
+  /** 日本競輪選手養成所（JIK）のデビュー前「記録会」データ（scraper/jik_kisokukai.py）。
+   *  新人選手の実力参考指標。既存レコードには無くNULLのまま（デビュー済みでも
+   *  記録会PDFを未取込の選手はNULL）。 */
+  debut_class: string | null;
+  tt200_sec: number | null;
+  tt400_sec: number | null;
+  tt1000_sec: number | null;
+  tt3000_sec: number | null;
+  kisokukai_grade: string | null;
 }
 
 export interface RacerHistoryRow {

@@ -49,6 +49,37 @@ export default async function RacerDetailPage({
         </div>
       </section>
 
+      {racer.debut_class && (
+        <section className="bg-white rounded-lg shadow-sm p-4 mb-4">
+          <h2 className="font-semibold mb-2 text-sm text-gray-600">
+            記録会データ（{racer.debut_class}・デビュー前）
+            <span className="text-xs text-gray-400 font-normal ml-2">
+              日本競輪選手養成所調べ・参考値
+            </span>
+          </h2>
+          <div className="grid grid-cols-2 gap-y-2 text-sm">
+            <div>能力別評価</div>
+            <div className="text-right font-semibold">{racer.kisokukai_grade ?? "不明"}</div>
+            <div>200mTT</div>
+            <div className="text-right tabular-nums">
+              {racer.tt200_sec != null ? `${racer.tt200_sec.toFixed(2)}秒` : "不明"}
+            </div>
+            <div>400mTT</div>
+            <div className="text-right tabular-nums">
+              {racer.tt400_sec != null ? `${racer.tt400_sec.toFixed(2)}秒` : "不明"}
+            </div>
+            <div>1000mTT</div>
+            <div className="text-right tabular-nums">
+              {racer.tt1000_sec != null ? `${racer.tt1000_sec.toFixed(2)}秒` : "不明"}
+            </div>
+            <div>3000mTT</div>
+            <div className="text-right tabular-nums">
+              {racer.tt3000_sec != null ? `${racer.tt3000_sec.toFixed(2)}秒` : "不明"}
+            </div>
+          </div>
+        </section>
+      )}
+
       <section className="bg-white rounded-lg shadow-sm p-4 mb-4">
         <h2 className="font-semibold mb-2 text-sm text-gray-600">
           隊列内位置別勝率

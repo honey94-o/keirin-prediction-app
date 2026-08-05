@@ -75,6 +75,16 @@ CREATE TABLE IF NOT EXISTS racers (
     standing_count INTEGER,               -- 好スタート回数
     home_lead_count INTEGER,              -- 最終周回ホーム線を先頭通過した回数
     back_lead_count INTEGER,              -- 最終周回バック線を先頭通過した回数
+    -- 以下6つは日本競輪選手養成所（JIK）のデビュー前「記録会」データ
+    -- （scraper/jik_kisokukai.py、PDFから取得）。新人選手はレース実績が無い/少なく
+    -- 通常のスコアリングがほぼ機能しないため、代わりの実力参考指標として保持する。
+    -- タイムは秒に統一（例: 11″20→11.20、1′09″21→69.21）。
+    debut_class      TEXT,                 -- 期（例: "129期"）
+    tt200_sec        REAL,                 -- 200mタイムトライアル(秒)
+    tt400_sec        REAL,                 -- 400mタイムトライアル(秒)
+    tt1000_sec       REAL,                 -- 1000mタイムトライアル(秒)
+    tt3000_sec       REAL,                 -- 3000mタイムトライアル(秒)
+    kisokukai_grade  TEXT,                 -- 能力別総合評価（S/A/B/C/D）
     updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
