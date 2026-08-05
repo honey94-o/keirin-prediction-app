@@ -45,7 +45,7 @@ export default async function VenueRacesPage({
         {races.map((race) => (
           <li key={race.id}>
             <Link
-              href={`/races/${race.id}`}
+              href={`/races/${race.id}/bets`}
               className="flex items-center justify-between bg-white rounded-lg shadow-sm px-4 py-3 active:bg-gray-50"
             >
               <span className="font-medium text-gray-900 flex items-center gap-1.5">
