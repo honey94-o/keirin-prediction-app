@@ -2,9 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { predictRace } from "../../../../lib/predict";
 import { formatFormationNotation } from "../../../../lib/scoring";
-import { getScenarioStats } from "../../../../lib/repository";
+import { getScenarioStats, getRacesForEvent } from "../../../../lib/repository";
 import { MarkBadge } from "../../../../components/MarkBadge";
 import { CarNumberBadge } from "../../../../components/CarNumberBadge";
+import { RaceSwitcher } from "../../../../components/RaceSwitcher";
 
 export default async function RaceBetsPage({
   params,
@@ -19,12 +20,14 @@ export default async function RaceBetsPage({
   const { race, scored, scenarios, boxSuggestion, winSuggestion } = prediction;
   const top4 = scored.slice(0, 4);
   const scenarioStats = await getScenarioStats();
+  const eventRaces = await getRacesForEvent(race.kaisai_date, race.jocd);
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
       <Link href={`/races/${race.id}`} className="text-sm text-[#0d5c3f] mb-2 inline-block">
         ← 出走表に戻る
       </Link>
+      <RaceSwitcher races={eventRaces} currentRaceId={race.id} linkSuffix="/bets" />
       <h1 className="text-lg font-bold mb-1">
         {race.keirinjo_name} {race.race_no}R 買い目提案
       </h1>
