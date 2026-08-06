@@ -505,6 +505,20 @@ ALL_VENUE_SLUGS = [
 ]
 
 
+def _month_range(start: datetime.date, end: datetime.date) -> list[str]:
+    """start〜end（両端の月を含む）をYYYYMM文字列で月単位に列挙する。
+
+    例: start=2026-04-09, end=2026-08-07 -> ["202604","202605","202606","202607","202608"]
+    """
+    months: list[str] = []
+    cur = start.replace(day=1)
+    end_marker = end.replace(day=1)
+    while cur <= end_marker:
+        months.append(cur.strftime("%Y%m"))
+        cur = (cur.replace(day=28) + datetime.timedelta(days=4)).replace(day=1)
+    return months
+
+
 def scrape_venue_recent(
     venue: str, since_date: datetime.date, on_race=None
 ) -> list[tuple[RaceData, list[RacerHistoryEntry]]]:
@@ -512,11 +526,12 @@ def scrape_venue_recent(
 
     on_raceを渡すと、レースを1件取得するたびに呼び出す（中断されても
     それまでの取得分がDBに残るよう、逐次保存するために使う）。
+
+    注意：以前はsince_dateの月と今月の2つしかスケジュールページを見ておらず、
+    その間の月（例: since_dateが4か月前なら5〜7月）が丸ごと抜け落ちるバグが
+    あった。_month_rangeで間の月も含めて全て列挙する。
     """
-    months = sorted({
-        since_date.strftime("%Y%m"),
-        datetime.date.today().strftime("%Y%m"),
-    })
+    months = _month_range(since_date, datetime.date.today())
     cup_ids: list[str] = []
     for yyyymm in months:
         cup_ids.extend(discover_cup_ids(venue, yyyymm))
