@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getRacesForEvent } from "../../../lib/repository";
+import {
+  getRacesForEvent,
+  getVenueKimariteRatesWithFallback,
+  getBankInfo,
+} from "../../../lib/repository";
 import { predictRace } from "../../../lib/predict";
 import { HIGH_CONFIDENCE_MARGIN } from "../../../lib/scoring";
 import { todayJstStr, isValidDateStr } from "../../../lib/date";
@@ -22,10 +26,28 @@ export default async function VenueRacesPage({
   // トップ画面は全開催場×全レースで呼んでいたため重かった。1開催場なら
   // 7〜12レース程度で済むため「高信頼度」バッジ表示とのバランスを取れる）。
   const viewDate = isValidDateStr(date) ? date : todayJstStr();
-  const races = await getRacesForEvent(viewDate, jocd);
+  const [races, venueKimarite, bankInfo] = await Promise.all([
+    getRacesForEvent(viewDate, jocd),
+    getVenueKimariteRatesWithFallback(jocd),
+    getBankInfo(jocd),
+  ]);
   if (races.length === 0) notFound();
 
   const first = races[0];
+
+  // 予想スコアが実際に参照している決まり手データ（calculateBankFitScoreと同じ
+  // 優先順位：自場/同周長グループの実績→bank_info静的値）をそのまま表示する。
+  // どちらも無ければ非表示（ニュートラル50点で予想には影響していない）。
+  const kimariteRates =
+    venueKimarite ??
+    (bankInfo?.nige_pct != null && bankInfo?.makuri_pct != null && bankInfo?.sashi_pct != null
+      ? { nige_pct: bankInfo.nige_pct, makuri_pct: bankInfo.makuri_pct, sashi_pct: bankInfo.sashi_pct }
+      : null);
+  const kimariteSourceLabel = venueKimarite
+    ? `実績${venueKimarite.races}走`
+    : kimariteRates
+      ? "参考値(KEIRIN.JP掲載)"
+      : null;
 
   const highConfidenceRaceIds = new Set<number>();
   await Promise.all(
@@ -46,6 +68,37 @@ export default async function VenueRacesPage({
         ← 開催場選択に戻る
       </Link>
       <h1 className="text-lg font-bold mb-4">{first.keirinjo_name} レースを選択</h1>
+
+      {kimariteRates && (
+        <section className="bg-white rounded-lg shadow-sm p-3 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-xs font-semibold text-gray-600">このバンクの決まり手傾向</h2>
+            {kimariteSourceLabel && <span className="text-[10px] text-gray-400">{kimariteSourceLabel}</span>}
+          </div>
+          <div className="flex h-2 rounded-full overflow-hidden bg-gray-100">
+            <div style={{ width: `${kimariteRates.nige_pct}%` }} className="bg-sky-400" />
+            <div style={{ width: `${kimariteRates.makuri_pct}%` }} className="bg-amber-400" />
+            <div style={{ width: `${kimariteRates.sashi_pct}%` }} className="bg-rose-400" />
+          </div>
+          <div className="flex justify-between mt-2 text-xs text-gray-600">
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-2 h-2 rounded-full bg-sky-400" />
+              逃げ {kimariteRates.nige_pct.toFixed(0)}%
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-2 h-2 rounded-full bg-amber-400" />
+              捲り {kimariteRates.makuri_pct.toFixed(0)}%
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-2 h-2 rounded-full bg-rose-400" />
+              差し {kimariteRates.sashi_pct.toFixed(0)}%
+            </span>
+          </div>
+          {bankInfo?.feature_text && (
+            <p className="text-xs text-gray-400 mt-2 leading-relaxed">{bankInfo.feature_text}</p>
+          )}
+        </section>
+      )}
 
       <ul className="flex flex-col gap-2">
         {races.map((race) => (
