@@ -8,6 +8,7 @@ import {
 import { predictRace } from "../../../lib/predict";
 import { HIGH_CONFIDENCE_MARGIN } from "../../../lib/scoring";
 import { todayJstStr, isValidDateStr } from "../../../lib/date";
+import { BankKimariteCard } from "../../../components/BankKimariteCard";
 
 export const dynamic = "force-dynamic";
 
@@ -70,34 +71,11 @@ export default async function VenueRacesPage({
       <h1 className="text-lg font-bold mb-4">{first.keirinjo_name} レースを選択</h1>
 
       {kimariteRates && (
-        <section className="bg-white rounded-lg shadow-sm p-3 mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-semibold text-gray-600">このバンクの決まり手傾向</h2>
-            {kimariteSourceLabel && <span className="text-[10px] text-gray-400">{kimariteSourceLabel}</span>}
-          </div>
-          <div className="flex h-2 rounded-full overflow-hidden bg-gray-100">
-            <div style={{ width: `${kimariteRates.nige_pct}%` }} className="bg-sky-400" />
-            <div style={{ width: `${kimariteRates.makuri_pct}%` }} className="bg-amber-400" />
-            <div style={{ width: `${kimariteRates.sashi_pct}%` }} className="bg-rose-400" />
-          </div>
-          <div className="flex justify-between mt-2 text-xs text-gray-600">
-            <span className="flex items-center gap-1">
-              <span className="inline-block w-2 h-2 rounded-full bg-sky-400" />
-              逃げ {kimariteRates.nige_pct.toFixed(0)}%
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block w-2 h-2 rounded-full bg-amber-400" />
-              捲り {kimariteRates.makuri_pct.toFixed(0)}%
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block w-2 h-2 rounded-full bg-rose-400" />
-              差し {kimariteRates.sashi_pct.toFixed(0)}%
-            </span>
-          </div>
-          {bankInfo?.feature_text && (
-            <p className="text-xs text-gray-400 mt-2 leading-relaxed">{bankInfo.feature_text}</p>
-          )}
-        </section>
+        <BankKimariteCard
+          rates={kimariteRates}
+          sourceLabel={kimariteSourceLabel}
+          featureText={bankInfo?.feature_text}
+        />
       )}
 
       <ul className="flex flex-col gap-2">

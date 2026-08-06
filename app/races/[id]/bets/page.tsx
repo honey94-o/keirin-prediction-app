@@ -6,6 +6,7 @@ import { getScenarioStats, getRacesForEvent } from "../../../../lib/repository";
 import { MarkBadge } from "../../../../components/MarkBadge";
 import { CarNumberBadge } from "../../../../components/CarNumberBadge";
 import { RaceSwitcher } from "../../../../components/RaceSwitcher";
+import { BankKimariteCard } from "../../../../components/BankKimariteCard";
 
 export default async function RaceBetsPage({
   params,
@@ -17,10 +18,22 @@ export default async function RaceBetsPage({
   const prediction = await predictRace(raceId);
   if (!prediction) notFound();
 
-  const { race, scored, scenarios, boxSuggestion, winSuggestion } = prediction;
+  const { race, bankInfo, venueKimarite, scored, scenarios, boxSuggestion, winSuggestion } = prediction;
   const top4 = scored.slice(0, 4);
   const scenarioStats = await getScenarioStats();
   const eventRaces = await getRacesForEvent(race.kaisai_date, race.jocd);
+
+  // venues/[jocd]と同じ解決ロジック（自場実績→同周長グループ実績→bank_info静的値）。
+  const kimariteRates =
+    venueKimarite ??
+    (bankInfo?.nige_pct != null && bankInfo?.makuri_pct != null && bankInfo?.sashi_pct != null
+      ? { nige_pct: bankInfo.nige_pct, makuri_pct: bankInfo.makuri_pct, sashi_pct: bankInfo.sashi_pct }
+      : null);
+  const kimariteSourceLabel = venueKimarite
+    ? `実績${venueKimarite.races}走`
+    : kimariteRates
+      ? "参考値(KEIRIN.JP掲載)"
+      : null;
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
@@ -34,6 +47,14 @@ export default async function RaceBetsPage({
       <p className="text-xs text-gray-400 mb-4">
         展開の分かれ目ごとに複数パターンを提示（参考値）
       </p>
+
+      {kimariteRates && (
+        <BankKimariteCard
+          rates={kimariteRates}
+          sourceLabel={kimariteSourceLabel}
+          featureText={bankInfo?.feature_text}
+        />
+      )}
 
       <div className="flex gap-2 mb-4 flex-wrap">
         {top4.map((s) => (

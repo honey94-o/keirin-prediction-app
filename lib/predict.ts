@@ -14,11 +14,15 @@ import type {
   RaceRow,
   RaceScenario,
   ScoredEntry,
+  VenueKimariteRates,
 } from "./types";
 
 export interface RacePrediction {
   race: RaceRow;
   bankInfo: BankInfoRow | undefined;
+  /** ①ライン評価等が実際に参照した決まり手データ（自場実績→同周長グループ実績）。
+   *  bank_info静的値まで含めた最終フォールバックはbankInfo側で表示側が解決する。 */
+  venueKimarite: VenueKimariteRates | null;
   scored: ScoredEntry[];
   /** 展開パターン別の予想（本命／逃げ粘り込み／まくり差し等）。2〜3パターン。 */
   scenarios: RaceScenario[];
@@ -77,5 +81,5 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
     }
   }
 
-  return { race, bankInfo, scored, scenarios, boxSuggestion, winSuggestion };
+  return { race, bankInfo, venueKimarite, scored, scenarios, boxSuggestion, winSuggestion };
 }
