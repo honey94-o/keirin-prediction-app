@@ -60,6 +60,8 @@ export function calculateLineScore(
   };
 }
 
+// L1〜L3はガールズケイリン（女子）の級班。男子とは別の階級体系で、
+// 男女が同じレースで走ることは無いため相対値のみ意味を持つ。
 const CLASS_RANK_SCORES: Record<string, number> = {
   SS: 100,
   S1: 85,
@@ -67,6 +69,9 @@ const CLASS_RANK_SCORES: Record<string, number> = {
   A1: 55,
   A2: 40,
   A3: 25,
+  L1: 70,
+  L2: 45,
+  L3: 25,
 };
 
 // 数値が大きいほど上位級。昇級/降級の判定に使う（S級・A級の大まかな序列）。
@@ -77,6 +82,9 @@ const CLASS_RANK_ORDER: Record<string, number> = {
   A1: 3,
   A2: 2,
   A3: 1,
+  L1: 3,
+  L2: 2,
+  L3: 1,
 };
 
 export type ClassChangeStatus = "昇級" | "降級" | "変動なし" | "不明";
@@ -269,10 +277,25 @@ function calculatePersonalMoveFitScore(
  * 2倍近く勝っている時期にボーナスが消えてbacktestが悪化した
  * （減衰+15点：◎的中率42.6%・回収率74.2% ＜ 減衰なし+15点：42.9%・79.9%）。
  * そのため起点はDB上の実際の初出走月に合わせている。
+ *
+ * さらにユーザーから「記録会のタイムを参考に予想して」との依頼があり、
+ * kisokukai_grade（能力別評価S/A/B/C/D）別に実際の勝率との相関を診断した
+ * （scripts/diagnose-kisokukai-grade.ts）。結果は非常に強い相関で、
+ * S評価88.9%(16/18)・A評価37.1%(23/62)・B評価38.1%(16/42)・C評価28.1%(9/32)・
+ * D評価18.8%(12/64)ときれいな階段状だった。そのため期一律のフラットな加点
+ * ではなく、等級別に加点量を変えるKISOKUKAI_GRADE_BONUSに変更した
+ * （S評価は母数18件とまだ小さいため、他等級より慎重な値にしている）。
  */
-const ROOKIE_CLASS_BONUS_POINTS = 15;
+const KISOKUKAI_GRADE_BONUS: Record<string, number> = {
+  S: 30,
+  A: 15,
+  B: 15,
+  C: 8,
+  D: 0,
+};
 const ROOKIE_DEBUT_YM: Record<string, string> = {
   "129期": "202607", // YYYYMM（DB上の初出走月。公式デビュー月の5月ではない）
+  "130期": "202607", // 女子（130回生）もDB上は7月末が初出走
 };
 
 function calculateRookieClassBonus(
@@ -282,6 +305,9 @@ function calculateRookieClassBonus(
   const debutYm = entry.debut_class ? ROOKIE_DEBUT_YM[entry.debut_class] : undefined;
   if (!debutYm) return { bonus: 0, monthsSinceDebut: null };
 
+  const baseBonus = entry.kisokukai_grade ? KISOKUKAI_GRADE_BONUS[entry.kisokukai_grade] ?? 0 : 0;
+  if (baseBonus === 0) return { bonus: 0, monthsSinceDebut: null };
+
   const debutY = Number(debutYm.slice(0, 4));
   const debutM = Number(debutYm.slice(4, 6));
   const raceY = Number(kaisaiDate.slice(0, 4));
@@ -290,7 +316,7 @@ function calculateRookieClassBonus(
   if (monthsSinceDebut < 0) return { bonus: 0, monthsSinceDebut };
 
   const decayFactor = clamp(1 - monthsSinceDebut / 3, 0, 1);
-  return { bonus: ROOKIE_CLASS_BONUS_POINTS * decayFactor, monthsSinceDebut };
+  return { bonus: baseBonus * decayFactor, monthsSinceDebut };
 }
 
 const MONTH_DAY_RE = /^(\d{2})\/(\d{2})$/;
@@ -847,11 +873,53 @@ function buildLineAwarePool(
  * 同じ選手が複数パターンの軸に重複する場合はその後のパターンをスキップし、
  * 実質的に異なる決着筋だけを2パターン以上出すようにしている。
  */
+/** 選手にL級（ガールズケイリン）が1人でもいればガールズレースと判定する。 */
+function isGirlsRace(scored: ScoredEntry[]): boolean {
+  return scored.some((s) => s.entry.class_rank?.startsWith("L"));
+}
+
+/**
+ * ガールズケイリンはライン（隊列の連携・番手/3番手）が無く、全選手が単騎
+ * （1人1ライン、常に「先頭」表記）で走る。ユーザー指摘の通り、男子向け4パターン
+ * （本命/逃げ粘り込み/まくり・差し一撃/単騎一撃）はライン前提の絞り込みロジック
+ * （buildLineAwarePool、まくり/差し一撃の`line_position !== "先頭"`条件等）と
+ * かみ合わず、まくり/差し一撃の候補が常に0件になるなど不自然な結果になる。
+ * そのためガールズレースはラインを考慮せず、総合スコア順に軸を選ぶ
+ * シンプルな2パターン（本命＝1位、対抗＝2位）だけを出す。
+ */
+function generateGirlsScenarios(scored: ScoredEntry[]): RaceScenario[] {
+  const budget = Math.floor(SANRENTAN_MAX_POINTS / Math.min(2, scored.length));
+
+  const buildFor = (axisIdx: number, label: string): RaceScenario => {
+    const axis = scored[axisIdx];
+    const pool = [...scored]
+      .filter((s) => s.entry.car_num !== axis.entry.car_num)
+      .sort((a, b) => b.totalScore - a.totalScore)
+      .map((s) => s.entry.car_num);
+    return {
+      label,
+      axisCarNum: axis.entry.car_num,
+      axisName: axis.entry.name,
+      reason: `ガールズケイリンはラインが無いため、総合スコア${axisIdx + 1}位を軸に採用（${axis.entry.class_rank ?? "-"}級）。2・3着候補も総合スコア順。`,
+      formation: {
+        betType: "3連単フォーメーション",
+        combinations: formationFromPool(axis.entry.car_num, pool, budget),
+      },
+      likelyRank: axisIdx + 1,
+    };
+  };
+
+  const scenarios = [buildFor(0, "本命")];
+  if (scored.length >= 2) scenarios.push(buildFor(1, "対抗"));
+  return scenarios;
+}
+
 export function generateScenarios(
   scored: ScoredEntry[],
   bankInfo: BankInfoRow | VenueKimariteRates | undefined | null
 ): RaceScenario[] {
   if (scored.length < 3) return [];
+  if (isGirlsRace(scored)) return generateGirlsScenarios(scored);
 
   const usedAxes = new Set<number>();
   type ScenarioSpec = {

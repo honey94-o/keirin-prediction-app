@@ -52,29 +52,46 @@ def parse_time_to_sec(raw: str | None) -> float | None:
 
 
 def parse_pdf(pdf_bytes: bytes) -> list[dict[str, Any]]:
-    """PDFの各ページの表を読み取り、候補生ごとのレコードのリストを返す。"""
+    """PDFの各ページの表を読み取り、候補生ごとのレコードのリストを返す。
+
+    男子は1,000mTT/3,000mTT、女子は500mTT/2,000mTTと3・4番目のタイム
+    トライアル種目の距離が異なる（200m/400mは共通）。ヘッダ行の該当列の
+    表記（"500mTT"か"1,000mTT"か）を見て自動判定し、該当するカラム名
+    （tt500_sec/tt2000_sec または tt1000_sec/tt3000_sec）に振り分ける。
+    """
     import io
 
     records: list[dict[str, Any]] = []
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for page in pdf.pages:
-            for row in page.extract_tables()[0] if page.extract_tables() else []:
+            tables = page.extract_tables()
+            if not tables:
+                continue
+            table = tables[0]
+            header_row = table[0] if table else []
+            third_col_header = (header_row[8] or "") if len(header_row) > 8 else ""
+            is_womens_distance = "500" in third_col_header
+            third_key = "tt500_sec" if is_womens_distance else "tt1000_sec"
+            fourth_key = "tt2000_sec" if is_womens_distance else "tt3000_sec"
+
+            for row in table:
                 # ヘッダ行（番号列が数字でない）はスキップ
                 if not row or not row[0] or not row[0].strip().isdigit():
                     continue
                 name = (row[1] or "").strip().lstrip("*").replace("　", " ")
                 if not name:
                     continue
-                records.append({
+                record: dict[str, Any] = {
                     "name": name,
                     "age": int(row[2]) if row[2] and row[2].strip().isdigit() else None,
                     "pref": (row[3] or "").strip() or None,
                     "tt200_sec": parse_time_to_sec(row[4]),
                     "tt400_sec": parse_time_to_sec(row[6]),
-                    "tt1000_sec": parse_time_to_sec(row[8]),
-                    "tt3000_sec": parse_time_to_sec(row[10]),
                     "grade": (row[16] or "").strip() or None if len(row) > 16 else None,
-                })
+                }
+                record[third_key] = parse_time_to_sec(row[8])
+                record[fourth_key] = parse_time_to_sec(row[10])
+                records.append(record)
     return records
 
 
@@ -102,10 +119,13 @@ def save_to_db(records: list[dict[str, Any]], class_name: str) -> tuple[int, lis
                 client.execute(
                     """UPDATE racers SET
                            debut_class = ?, tt200_sec = ?, tt400_sec = ?,
-                           tt1000_sec = ?, tt3000_sec = ?, kisokukai_grade = ?
+                           tt500_sec = ?, tt1000_sec = ?, tt2000_sec = ?, tt3000_sec = ?,
+                           kisokukai_grade = ?
                        WHERE snum = ?""",
-                    [class_name, r["tt200_sec"], r["tt400_sec"], r["tt1000_sec"],
-                     r["tt3000_sec"], r["grade"], snum],
+                    [class_name, r["tt200_sec"], r["tt400_sec"],
+                     r.get("tt500_sec"), r.get("tt1000_sec"),
+                     r.get("tt2000_sec"), r.get("tt3000_sec"),
+                     r["grade"], snum],
                 )
                 matched += 1
     finally:

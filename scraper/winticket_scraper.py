@@ -63,7 +63,7 @@ HEADING_RE = re.compile(
     r"(?P<year>\d{4})年(?P<month>\d{1,2})月(?P<day>\d{1,2})日\s+"
     r"(?P<kyori>[\d,]+)m\s*\((?P<shukai>\d+)周\)"
 )
-NAME_INFO_RE = re.compile(r"(SS|S1|S2|A1|A2|A3)\s*(\d+)歳\s*(\d+)期")
+NAME_INFO_RE = re.compile(r"(SS|S1|S2|A1|A2|A3|L1|L2|L3)\s*(\d+)歳\s*(\d+)期")
 CYCLIST_ID_RE = re.compile(r"/keirin/cyclist/(\d+)")
 BIB_NUM_RE = re.compile(r"(\d+)番")
 CLASS_TEXT_RE = re.compile(r"^([A-Z]+)級(\d+)班$")

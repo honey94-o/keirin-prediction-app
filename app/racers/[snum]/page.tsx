@@ -68,14 +68,29 @@ export default async function RacerDetailPage({
             <div className="text-right tabular-nums">
               {racer.tt400_sec != null ? `${racer.tt400_sec.toFixed(2)}秒` : "不明"}
             </div>
-            <div>1000mTT</div>
-            <div className="text-right tabular-nums">
-              {racer.tt1000_sec != null ? `${racer.tt1000_sec.toFixed(2)}秒` : "不明"}
-            </div>
-            <div>3000mTT</div>
-            <div className="text-right tabular-nums">
-              {racer.tt3000_sec != null ? `${racer.tt3000_sec.toFixed(2)}秒` : "不明"}
-            </div>
+            {racer.tt500_sec != null || racer.tt2000_sec != null ? (
+              <>
+                <div>500mTT</div>
+                <div className="text-right tabular-nums">
+                  {racer.tt500_sec != null ? `${racer.tt500_sec.toFixed(2)}秒` : "不明"}
+                </div>
+                <div>2000mTT</div>
+                <div className="text-right tabular-nums">
+                  {racer.tt2000_sec != null ? `${racer.tt2000_sec.toFixed(2)}秒` : "不明"}
+                </div>
+              </>
+            ) : (
+              <>
+                <div>1000mTT</div>
+                <div className="text-right tabular-nums">
+                  {racer.tt1000_sec != null ? `${racer.tt1000_sec.toFixed(2)}秒` : "不明"}
+                </div>
+                <div>3000mTT</div>
+                <div className="text-right tabular-nums">
+                  {racer.tt3000_sec != null ? `${racer.tt3000_sec.toFixed(2)}秒` : "不明"}
+                </div>
+              </>
+            )}
           </div>
         </section>
       )}

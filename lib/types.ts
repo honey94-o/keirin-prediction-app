@@ -58,6 +58,9 @@ export interface RacerRow {
   debut_class: string | null;
   tt200_sec: number | null;
   tt400_sec: number | null;
+  /** 以下2つは女子（L級）のみ。男子はtt1000_sec/tt3000_secを使う。 */
+  tt500_sec: number | null;
+  tt2000_sec: number | null;
   tt1000_sec: number | null;
   tt3000_sec: number | null;
   kisokukai_grade: string | null;
@@ -96,6 +99,8 @@ export interface EntryWithRacer {
   debut_class: string | null;
   tt200_sec: number | null;
   tt400_sec: number | null;
+  tt500_sec: number | null;
+  tt2000_sec: number | null;
   tt1000_sec: number | null;
   tt3000_sec: number | null;
   kisokukai_grade: string | null;
