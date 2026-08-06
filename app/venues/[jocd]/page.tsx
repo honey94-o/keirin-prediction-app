@@ -3,23 +3,26 @@ import { notFound } from "next/navigation";
 import { getRacesForEvent } from "../../../lib/repository";
 import { predictRace } from "../../../lib/predict";
 import { HIGH_CONFIDENCE_MARGIN } from "../../../lib/scoring";
+import { todayJstStr, isValidDateStr } from "../../../lib/date";
 
 export const dynamic = "force-dynamic";
 
 export default async function VenueRacesPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ jocd: string }>;
+  searchParams: Promise<{ date?: string }>;
 }) {
   const { jocd } = await params;
+  const { date } = await searchParams;
 
-  // 開催場選択（ステップ1）から来た当日開催分のレース選択（ステップ2）。
+  // 開催場選択（ステップ1）から来た選択日開催分のレース選択（ステップ2）。
   // 予想計算（predictRace）はこの開催場のレース分だけに絞って行う（以前の
   // トップ画面は全開催場×全レースで呼んでいたため重かった。1開催場なら
   // 7〜12レース程度で済むため「高信頼度」バッジ表示とのバランスを取れる）。
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-  const races = await getRacesForEvent(todayStr, jocd);
+  const viewDate = isValidDateStr(date) ? date : todayJstStr();
+  const races = await getRacesForEvent(viewDate, jocd);
   if (races.length === 0) notFound();
 
   const first = races[0];
@@ -36,7 +39,10 @@ export default async function VenueRacesPage({
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
-      <Link href="/" className="text-sm text-[#0d5c3f] mb-2 inline-block">
+      <Link
+        href={viewDate === todayJstStr() ? "/" : `/?date=${viewDate}`}
+        className="text-sm text-[#0d5c3f] mb-2 inline-block"
+      >
         ← 開催場選択に戻る
       </Link>
       <h1 className="text-lg font-bold mb-4">{first.keirinjo_name} レースを選択</h1>

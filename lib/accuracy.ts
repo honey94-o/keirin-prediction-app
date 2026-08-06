@@ -8,6 +8,7 @@ import {
   getRacesByDate,
 } from "./repository";
 import { generateBetSuggestionsFromRanking } from "./scoring";
+import { todayJstStr, addDaysToDateStr } from "./date";
 import type { AccuracyStats, DailySummary, RaceResultSummary } from "./types";
 
 /**
@@ -130,12 +131,7 @@ export async function getOverallAccuracyStats(): Promise<AccuracyStats> {
  * 「前日」を計算するためのヘルパー。競輪はJST基準の暦で開催されるため。
  */
 export function yesterdayJst(): string {
-  const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  jstNow.setUTCDate(jstNow.getUTCDate() - 1);
-  const y = jstNow.getUTCFullYear();
-  const m = String(jstNow.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(jstNow.getUTCDate()).padStart(2, "0");
-  return `${y}${m}${d}`;
+  return addDaysToDateStr(todayJstStr(), -1);
 }
 
 /**

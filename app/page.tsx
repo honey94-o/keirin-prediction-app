@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getRacesByDate } from "../lib/repository";
+import { todayJstStr, addDaysToDateStr, formatDateStr, isValidDateStr } from "../lib/date";
 import type { RaceRow } from "../lib/types";
 
 // GitHub Actions（daily-sync.yml、1日2回自動実行）がNext.jsの外からTursoを
@@ -7,21 +8,22 @@ import type { RaceRow } from "../lib/types";
 // 常に最新のDBを読むよう動的レンダリングを強制する。
 export const dynamic = "force-dynamic";
 
-function formatDate(kaisaiDate: string): string {
-  const y = kaisaiDate.slice(0, 4);
-  const m = kaisaiDate.slice(4, 6);
-  const d = kaisaiDate.slice(6, 8);
-  return `${y}/${m}/${d}`;
-}
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ date?: string }>;
+}) {
+  const { date } = await searchParams;
+  const todayStr = todayJstStr();
+  const viewDate = isValidDateStr(date) ? date : todayStr;
+  const prevDate = addDaysToDateStr(viewDate, -1);
+  const nextDate = addDaysToDateStr(viewDate, 1);
 
-export default async function Home() {
-  // 開催場選択（ステップ1）。当日開催分のみ表示し、各開催場の件数・発走時刻だけを
-  // 出す軽量な一覧にしている（予想計算=predictRaceは1レースにつきDBを20回近く
-  // 読むため、ここで全レース分まとめて呼ぶと表示が重くなる。予想はレース選択後の
-  // 詳細画面でだけ計算する）。
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-  const races = await getRacesByDate(todayStr);
+  // 開催場選択（ステップ1）。選択中の1日分のみ表示し、各開催場の件数・発走時刻
+  // だけを出す軽量な一覧にしている（予想計算=predictRaceは1レースにつきDBを
+  // 20回近く読むため、ここで全レース分まとめて呼ぶと表示が重くなる。予想は
+  // レース選択後の詳細画面でだけ計算する）。
+  const races = await getRacesByDate(viewDate);
 
   const groups = new Map<string, RaceRow[]>();
   for (const race of races) {
@@ -29,13 +31,42 @@ export default async function Home() {
     groups.get(race.jocd)!.push(race);
   }
 
+  const tabs: { label: string; date: string }[] = [
+    { label: "前日", date: prevDate },
+    { label: "当日", date: todayStr },
+    { label: "翌日", date: nextDate },
+  ];
+
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
-      <h1 className="text-lg font-bold mb-4">開催場を選択</h1>
+      <h1 className="text-lg font-bold mb-1">開催場を選択</h1>
+      <p className="text-sm text-gray-400 mb-3">{formatDateStr(viewDate)}</p>
+
+      <div className="flex gap-1.5 mb-4">
+        {tabs.map((tab) => {
+          const active = tab.date === viewDate;
+          const href = tab.date === todayStr ? "/" : `/?date=${tab.date}`;
+          return (
+            <Link
+              key={tab.label}
+              href={href}
+              className={`flex-1 text-center px-3 py-2 rounded-lg text-sm font-semibold ${
+                active
+                  ? "bg-[#0d5c3f] text-white"
+                  : "bg-white text-gray-600 border border-gray-200"
+              }`}
+            >
+              {tab.label}
+            </Link>
+          );
+        })}
+      </div>
 
       {races.length === 0 ? (
         <p className="text-center text-gray-500 mt-8">
-          本日のレースはまだ取得されていません。毎日朝6時頃に自動取得されるので、しばらくしてから開き直してください。
+          {formatDateStr(viewDate)}のレースはまだ取得されていません。
+          {viewDate === todayStr &&
+            "毎日朝5時頃に自動取得されるので、しばらくしてから開き直してください。"}
         </p>
       ) : (
         <div className="flex flex-col gap-2">
@@ -44,13 +75,10 @@ export default async function Home() {
             return (
               <Link
                 key={jocd}
-                href={`/venues/${jocd}`}
+                href={`/venues/${jocd}?date=${viewDate}`}
                 className="flex items-center justify-between bg-white rounded-lg shadow-sm px-4 py-3 active:bg-gray-50"
               >
-                <div>
-                  <div className="font-semibold text-gray-900">{first.keirinjo_name}</div>
-                  <div className="text-xs text-gray-400">{formatDate(first.kaisai_date)}</div>
-                </div>
+                <div className="font-semibold text-gray-900">{first.keirinjo_name}</div>
                 <div className="text-right">
                   <div className="text-sm text-gray-500">{groupRaces.length}レース</div>
                   {first.start_time && (
