@@ -137,13 +137,25 @@ export function calculateKyakushitsuScore(
   // 逃23.4% > 両15.6% > 追7.9%と大きく差があるが、旧実装は「逃×先頭」と「追×非先頭」を
   // 同じ100点（相性が良いという理由だけ）で評価しており、脚質そのものの強さの差を
   // 反映できていなかった。脚質自体の強さを土台にしつつ、隊列位置との相性で調整する。
+  //
+  // 旧実装は「先頭かどうか」の二値でしか隊列位置を見ておらず、番手と3番手を同列に
+  // 扱っていた。しかしユーザー指摘（番手の選手は逃げ脚質だと番手まくりを出しやすい＝
+  // 差しで溜めずに前に出る）を受けてscripts/diagnose-bantemakuri.ts/-2.tsで検証すると、
+  // 隊列位置×脚質の実勝率は次のようにはっきり分かれていた（真の勝率、母数で正規化）：
+  //   逃：先頭23.6%(2335) ≒ 番手23.4%(137) >> 3番手12.5%(8、母数少なく参考)
+  //   両：番手19.1%(545) > 先頭16.1%(1417) >> 3番手4.3%(138)
+  //   追：番手11.9%(2261) > 先頭5.4%(701) >> 3番手1.9%(1122)
+  // 番手は「先頭より劣る位置」ではなく、追・両にとってはむしろ最も勝率が高い定位置
+  // （差しで脚を溜められるため）であり、逃げにとっても先頭とほぼ互角（差しを待たず
+  // 前に出て捲る＝番手まくりを打てるため）と分かった。一方3番手はどの脚質でも
+  // 大きく勝率が落ちる。この3値の差を反映するようテーブルを番手/3番手で分離した。
   let fitScore = 50;
   if (entry.kyakushitsu === "逃") {
-    fitScore = entry.line_position === "先頭" ? 95 : 75;
+    fitScore = entry.line_position === "先頭" ? 95 : entry.line_position === "番手" ? 90 : 55;
   } else if (entry.kyakushitsu === "追") {
-    fitScore = entry.line_position !== "先頭" ? 40 : 25;
+    fitScore = entry.line_position === "番手" ? 45 : entry.line_position === "先頭" ? 25 : 15;
   } else if (entry.kyakushitsu === "両") {
-    fitScore = 65;
+    fitScore = entry.line_position === "番手" ? 65 : entry.line_position === "先頭" ? 55 : 25;
   }
 
   const baseScore = clamp(
