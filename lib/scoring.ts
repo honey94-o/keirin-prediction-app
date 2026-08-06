@@ -541,6 +541,39 @@ function calculateStartPositionScore(
 }
 
 /**
+ * 選手個人のマーク率：kimarite_mark_count / (逃・捲・差・マの合計)。
+ * ユーザー指摘「マークが多い選手はライン1・2着で決まりやすい（マーク選手は2着）」を
+ * scripts/diagnose-markline.tsで検証：自分のラインが1-2着を占める決着の2着に限ると
+ * 平均マーク率29.9%、それ以外の2着は23.0%、全1着は14.4%と、2着に回るタイプほど
+ * マーク率が高い傾向は単独診断では出ていた。
+ *
+ * しかしlineupOrderScoreへ重み0.5で組み込みbacktest.tsで検証したところ、
+ * 既にLINEUP_ORDER_WEIGHT=0.5で調整済みだったバランスを崩し、ほぼ全シナリオが
+ * 悪化した（1275レース：まくり/差し一撃回収率105.5%→61.0%、全シナリオ合成
+ * 的中率31.6%→28.2%・回収率87.8%→74.3%）。番手×差し優位ボーナス（下記
+ * generateScenarios内）を0にしても大きくは戻らなかった（まくり回収率67.1%止まり）
+ * ため、主因はこのマーク率の重みと判明。personalMoveFitScore・leadResult等と
+ * 同じ「単独診断は綺麗でも既存の重み付き信号と衝突する」パターンのため、
+ * 関数自体は残すが合成には使わない（現状どこからも呼ばれていない）。
+ */
+function calculateMarkRateScore(entry: EntryWithRacer): { score: number | null } {
+  const { kimarite_nige_count, kimarite_makuri_count, kimarite_sashi_count, kimarite_mark_count } =
+    entry;
+  if (
+    kimarite_nige_count == null ||
+    kimarite_makuri_count == null ||
+    kimarite_sashi_count == null ||
+    kimarite_mark_count == null
+  ) {
+    return { score: null };
+  }
+  const total =
+    kimarite_nige_count + kimarite_makuri_count + kimarite_sashi_count + kimarite_mark_count;
+  if (total === 0) return { score: null };
+  return { score: clamp((kimarite_mark_count / total) * 100) };
+}
+
+/**
  * 最終周回の隊列（並び）予想スコア：買い目提案画面の2着・3着候補プールの
  * 並び替えにのみ使う特別な合成値（◎選定の総合スコアtotalScoreとは別。
  * calculateStatsScoreへの合成は前述の通り効果が無いと判明したため行っていない）。
@@ -553,14 +586,22 @@ function calculateStartPositionScore(
  * （1148レース、weight0→0.5で全シナリオ合成的中率28.8%(331)→29.4%(337)・
  * 回収率72.1%→77.8%、まくり/差し一撃は回収率66.4%→93.8%と大きく改善。
  * 0.5は2回実行し完全再現。0.7→74.9%、1.0→71.9%とさらに重みを上げると
- * 悪化に転じたため0.5を採用）。
+ * 悪化に転じたため0.5を採用）。マーク率(calculateMarkRateScore)も同じ枠組みで
+ * 追加検証したが上記の通り悪化したため、MARK_RATE_WEIGHT=0で無効化（呼び出し自体は
+ * 他の無効化済み要素と同じ形で残す）。
  */
 const LINEUP_ORDER_WEIGHT = 0.5;
+const MARK_RATE_WEIGHT = 0;
 
 function lineupOrderScore(entry: ScoredEntry, allEntries: EntryWithRacer[]): number {
   const startScore = calculateStartPositionScore(entry.entry, allEntries).score ?? 50;
   const leadScore = calculateLeadPositionScore(entry.entry, allEntries).score ?? 50;
-  return entry.totalScore + LINEUP_ORDER_WEIGHT * (startScore + leadScore - 100);
+  const markScore = calculateMarkRateScore(entry.entry).score ?? 50;
+  return (
+    entry.totalScore +
+    LINEUP_ORDER_WEIGHT * (startScore + leadScore - 100) +
+    MARK_RATE_WEIGHT * (markScore - 50)
+  );
 }
 
 /**
@@ -704,6 +745,11 @@ export const HIGH_CONFIDENCE_MARGIN = 10;
  * 本命の買い目を1着・2着入れ替え可能なボックス形式（例: 1=2-3）にする。
  */
 const LOW_MARGIN_THRESHOLD = 5;
+
+/** まくり/差し一撃の軸候補選びで、番手×差し優位（決まり手回数ベース）の選手に
+ * 与えるタイブレーク用の加点として検証したが、backtest.tsで効果を確認できなかった
+ * ため0で無効化（詳細はgenerateScenarios内のコメント参照）。 */
+const MAKURI_SASHI_DOMINANT_BONUS = 0;
 
 /**
  * 軸（1着固定）と、あらかじめ優先順に並べた候補プールから
@@ -972,6 +1018,25 @@ export function generateScenarios(
   //    1000レース超のバックテストで「番手が1着だった時、2着は同ラインの先頭
   //    （自分の前を走っていた選手がそのまま粘る）」が53.2%と最多だったため、
   //    差された側（honmeiのライン）ではなく軸自身のラインを優先する
+  //
+  //    ユーザー指摘「番手で、マークより差しが多い選手は先頭を差して1着になることが
+  //    多い」をscripts/diagnose-markline.tsで検証：番手選手を決まり手回数で
+  //    差し優位（kimarite_sashi_count > kimarite_mark_count）とマーク優位に分けると、
+  //    差し優位は番手のまま1着になる率17.1%・自ラインの先頭より上位でゴールする率
+  //    54.3%（マーク優位は9.2%・41.6%）と単独診断では大きく差があった。
+  //    軸候補選びのタイブレーク加点として試したが、backtest.ts(1275レース)で
+  //    まくり/差し一撃の回収率が105.5%→61.0%と大きく悪化（同時に検証した
+  //    lineupOrderScoreのマーク率重みが主因と判明したが、本加点だけ0にしても
+  //    67.1%までしか戻らず、単独でも上振れなかった）。MAKURI_SASHI_DOMINANT_BONUS=0
+  //    で無効化して残す。
+  const sashiDominantBonus = (s: ScoredEntry) => {
+    const { kimarite_sashi_count, kimarite_mark_count } = s.entry;
+    const sashiDominant =
+      kimarite_sashi_count != null &&
+      kimarite_mark_count != null &&
+      kimarite_sashi_count > kimarite_mark_count;
+    return s.entry.line_position === "番手" && sashiDominant ? MAKURI_SASHI_DOMINANT_BONUS : 0;
+  };
   const makuriCandidate = [...scored]
     .filter(
       (s) =>
@@ -979,7 +1044,7 @@ export function generateScenarios(
         s.entry.line_position !== "先頭" &&
         (s.entry.kyakushitsu === "追" || s.entry.kyakushitsu === "両")
     )
-    .sort((a, b) => b.totalScore - a.totalScore)[0];
+    .sort((a, b) => b.totalScore + sashiDominantBonus(b) - (a.totalScore + sashiDominantBonus(a)))[0];
   if (makuriCandidate) {
     usedAxes.add(makuriCandidate.entry.car_num);
     const bankNote =
