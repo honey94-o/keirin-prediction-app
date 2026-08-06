@@ -1,6 +1,7 @@
 import { getDb } from "./db";
 import type {
   BankInfoRow,
+  DailyPickRow,
   EntryWithRacer,
   OddsRow,
   PositionWinRate,
@@ -470,4 +471,61 @@ export async function saveScenarioStats(
   await db.batch(
     stats.map((s) => ({ sql, args: [s.label, s.races, s.hits, s.stakeYen, s.payoutYen] }))
   );
+}
+
+/**
+ * 結果未確定レースの◎-対抗スコア差（margin）をまとめて保存する（daily_picksテーブル）。
+ * scripts/daily-picks.tsがdaily-sync.yml実行のたびに呼び、ホーム画面「本日の厳選
+ * レース」用のキャッシュとして使う。predictRaceの都度計算は重い（1レースあたり
+ * DB約20回）ため、事前計算しておきホーム画面では読むだけにする。
+ */
+export async function saveDailyPicks(
+  picks: {
+    raceId: number;
+    kaisaiDate: string;
+    jocd: string;
+    keirinjoName: string;
+    raceNo: number;
+    startTime: string | null;
+    margin: number;
+    honmeiCarNum: number;
+    honmeiName: string;
+  }[]
+): Promise<void> {
+  if (picks.length === 0) return;
+  const db = getDb();
+  const sql = `INSERT INTO daily_picks (race_id, kaisai_date, jocd, keirinjo_name, race_no,
+                                         start_time, margin, honmei_car_num, honmei_name, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,datetime('now'))
+               ON CONFLICT(race_id) DO UPDATE SET
+                 margin=excluded.margin, honmei_car_num=excluded.honmei_car_num,
+                 honmei_name=excluded.honmei_name, start_time=excluded.start_time,
+                 updated_at=datetime('now')`;
+  await db.batch(
+    picks.map((p) => ({
+      sql,
+      args: [
+        p.raceId,
+        p.kaisaiDate,
+        p.jocd,
+        p.keirinjoName,
+        p.raceNo,
+        p.startTime,
+        p.margin,
+        p.honmeiCarNum,
+        p.honmeiName,
+      ],
+    }))
+  );
+}
+
+/** 指定日の厳選ピックをスコア差の大きい順に取得する（ホーム画面用）。 */
+export async function getDailyPicks(kaisaiDate: string, minMargin: number): Promise<DailyPickRow[]> {
+  const result = await getDb().execute({
+    sql: `SELECT race_id, kaisai_date, jocd, keirinjo_name, race_no, start_time, margin,
+                 honmei_car_num, honmei_name
+          FROM daily_picks WHERE kaisai_date = ? AND margin >= ? ORDER BY margin DESC`,
+    args: [kaisaiDate, minMargin],
+  });
+  return result.rows as unknown as DailyPickRow[];
 }

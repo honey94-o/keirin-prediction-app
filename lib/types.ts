@@ -231,3 +231,16 @@ export interface DailySummary extends AccuracyStats {
   statDate: string; // YYYYMMDD
   topPayouts: { race: RaceRow; combo: string; payoutYen: number }[]; // 配当が高い順、最大5件
 }
+
+/** 結果未確定レースの事前計算済み厳選ピック（daily_picksテーブル）。ホーム画面用。 */
+export interface DailyPickRow {
+  race_id: number;
+  kaisai_date: string;
+  jocd: string;
+  keirinjo_name: string;
+  race_no: number;
+  start_time: string | null;
+  margin: number;
+  honmei_car_num: number;
+  honmei_name: string;
+}

@@ -162,6 +162,25 @@ CREATE TABLE IF NOT EXISTS scenario_stats (
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- 結果未確定（これから走る）レースの◎-対抗スコア差を事前計算してキャッシュする。
+-- ホーム画面の「本日の厳選レース」用。predictRaceは1レースあたりDBを20回近く
+-- 読むため、当日全レース分（最大94件/日）をリクエストの都度計算すると数秒〜十数秒
+-- かかる（scripts/daily-picks.tsの計測値）。daily-sync.yml実行のたびに事前計算して
+-- ここに保存し、ホーム画面はこのテーブルを読むだけにする。
+CREATE TABLE IF NOT EXISTS daily_picks (
+    race_id        INTEGER PRIMARY KEY REFERENCES races(id) ON DELETE CASCADE,
+    kaisai_date    TEXT NOT NULL,
+    jocd           TEXT NOT NULL,
+    keirinjo_name  TEXT NOT NULL,
+    race_no        INTEGER NOT NULL,
+    start_time     TEXT,
+    margin         REAL NOT NULL,      -- ◎と対抗の総合スコア差
+    honmei_car_num INTEGER NOT NULL,
+    honmei_name    TEXT NOT NULL,
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_daily_picks_date ON daily_picks(kaisai_date, margin DESC);
+
 CREATE INDEX IF NOT EXISTS idx_predictions_race ON predictions(race_id);
 CREATE INDEX IF NOT EXISTS idx_entries_race ON entries(race_id);
 CREATE INDEX IF NOT EXISTS idx_results_race ON results(race_id);

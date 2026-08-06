@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { getRacesByDate } from "../lib/repository";
+import { getRacesByDate, getDailyPicks } from "../lib/repository";
 import { todayJstStr, addDaysToDateStr, formatDateStr, isValidDateStr } from "../lib/date";
 import { RefreshTrigger } from "../components/RefreshTrigger";
+import { HIGH_CONFIDENCE_MARGIN } from "../lib/scoring";
 import type { RaceRow } from "../lib/types";
 
 // GitHub Actions（daily-sync.yml、1日2回自動実行）がNext.jsの外からTursoを
@@ -25,6 +26,12 @@ export default async function Home({
   // 20回近く読むため、ここで全レース分まとめて呼ぶと表示が重くなる。予想は
   // レース選択後の詳細画面でだけ計算する）。
   const races = await getRacesByDate(viewDate);
+
+  // 「本日の厳選レース」：結果未確定（前日以前は対象外）の日だけ、
+  // scripts/daily-picks.tsが事前計算したdaily_picksから◎-対抗スコア差が
+  // HIGH_CONFIDENCE_MARGIN以上（実績: 単勝的中率81.7%以上）のレースを表示する。
+  const showPicks = viewDate === todayStr || viewDate === nextDate;
+  const picks = showPicks ? await getDailyPicks(viewDate, HIGH_CONFIDENCE_MARGIN) : [];
 
   const groups = new Map<string, RaceRow[]>();
   for (const race of races) {
@@ -65,6 +72,39 @@ export default async function Home({
           );
         })}
       </div>
+
+      {picks.length > 0 && (
+        <section className="bg-amber-50 border border-amber-200 rounded-lg shadow-sm p-3 mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-semibold bg-amber-500 text-white px-2 py-0.5 rounded-full">
+              厳選レース
+            </span>
+            <span className="text-xs text-amber-800">
+              ◎が抜けているレース（単勝的中率81.7%以上の実績）
+            </span>
+          </div>
+          <ul className="flex flex-col gap-2">
+            {picks.map((p) => (
+              <li key={p.race_id}>
+                <Link
+                  href={`/races/${p.race_id}/bets`}
+                  className="flex items-center justify-between bg-white rounded-lg px-3 py-2 active:bg-gray-50"
+                >
+                  <span className="text-sm font-medium text-gray-900">
+                    {p.keirinjo_name} {p.race_no}R
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    軸 {p.honmei_car_num}.{p.honmei_name}
+                  </span>
+                  <span className="text-xs font-semibold text-amber-700 tabular-nums">
+                    差{p.margin.toFixed(1)}点
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {races.length === 0 ? (
         <div className="text-center mt-8">

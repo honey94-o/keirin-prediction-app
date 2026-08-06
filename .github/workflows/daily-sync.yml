@@ -36,21 +36,28 @@ jobs:
         run: |
           python winticket_scraper.py --all-venues --days-back 1
 
-      # 前日サマリー集計は朝の実行（前日分の結果が出揃った後）だけでよいので、
-      # 手動実行時と朝(JST 5:00=UTC20:00)のスケジュールに限定する。
+      # Node系のステップは全実行（朝・夕・手動）で使うため無条件にする。
       - name: Set up Node.js
-        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 20 * * *'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
       - name: Install Node dependencies
-        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 20 * * *'
         run: npm ci
 
+      # 前日サマリー集計は朝の実行（前日分の結果が出揃った後）だけでよいので、
+      # 手動実行時と朝(JST 5:00=UTC20:00)のスケジュールに限定する。
       - name: Compute previous day's summary
         if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 20 * * *'
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
         run: npx tsx scripts/daily-summary.ts
+
+      # 当日・翌日の厳選レース（◎-対抗スコア差）は日中のオッズ・並び予想更新も
+      # 反映したいので、朝・夕・手動リフレッシュの全実行で計算し直す。
+      - name: Compute today's/tomorrow's high-confidence picks
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: npx tsx scripts/daily-picks.ts
