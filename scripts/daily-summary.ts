@@ -19,10 +19,16 @@ loadDotEnvLocal();
 import { predictRace } from "../lib/predict";
 import { getRacesByDate, getResultsForRace, savePrediction } from "../lib/repository";
 import { getDailySummary, yesterdayJst } from "../lib/accuracy";
+import { addDaysToDateStr } from "../lib/date";
 
-async function main() {
-  const statDate = process.argv[2] ?? yesterdayJst();
-  console.log(`集計対象日: ${statDate}`);
+/** 過去何日分をさかのぼって処理するか（引数で日付を1件指定しない自動実行時）。
+ *  /history画面で前日〜過去1週間分をさかのぼって閲覧できるようにするため、
+ *  1日分だけでなく直近分もまとめて処理する（既に処理済みの日はpredictions
+ *  保存がUPSERTなので再実行しても安全＝軽い無駄はあるが壊れない）。 */
+const BACKFILL_DAYS = 7;
+
+async function processDate(statDate: string): Promise<void> {
+  console.log(`\n集計対象日: ${statDate}`);
 
   const races = await getRacesByDate(statDate);
   console.log(`対象レース数: ${races.length}件`);
@@ -42,7 +48,7 @@ async function main() {
   console.log(`予想を保存: ${saved}件`);
 
   const summary = await getDailySummary(statDate);
-  console.log(`\n=== ${statDate} サマリー ===`);
+  console.log(`=== ${statDate} サマリー ===`);
   console.log(`結果確定レース: ${summary.totalRaces}件`);
   console.log(`◎単勝的中率: ${summary.honmeiHitRate?.toFixed(1) ?? "-"}%`);
   console.log(`◎複勝的中率: ${summary.honmeiTop3Rate?.toFixed(1) ?? "-"}%`);
@@ -53,6 +59,19 @@ async function main() {
     console.log(
       `  ${p.race.keirinjo_name}${p.race.race_no}R ${p.combo} 払戻${p.payoutYen.toFixed(0)}円`
     );
+  }
+}
+
+async function main() {
+  const explicitDate = process.argv[2];
+  if (explicitDate) {
+    await processDate(explicitDate);
+    return;
+  }
+
+  const latest = yesterdayJst();
+  for (let i = BACKFILL_DAYS - 1; i >= 0; i--) {
+    await processDate(addDaysToDateStr(latest, -i));
   }
 }
 

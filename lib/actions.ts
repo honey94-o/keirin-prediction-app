@@ -5,6 +5,48 @@ import { predictRace } from "./predict";
 import { savePrediction, setScoreWeights } from "./repository";
 import type { ScoreWeights } from "./types";
 
+const GITHUB_REPO_OWNER = "honey94-o";
+const GITHUB_REPO_NAME = "keirin-prediction-app";
+
+export interface TriggerSyncResult {
+  ok: boolean;
+  message: string;
+}
+
+/**
+ * レースがまだ表示されていない時に「今すぐ更新」で使う手動トリガー。
+ * daily-sync.yml（全43開催場の自動取得ワークフロー）をGitHub APIで
+ * 即時実行する。Vercelのサーバーレス関数はPlaywright等を直接実行できず、
+ * WINTICKETへのスクレイピング自体はGitHub Actions側で行う必要があるため
+ * （詳細はREADME「データ取得」参照）。実行は非同期（数分かかる）なので、
+ * この関数は「開始できたか」までしか分からない。
+ */
+export async function triggerDailySyncAction(): Promise<TriggerSyncResult> {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    return { ok: false, message: "GITHUB_TOKENが未設定です（サーバー設定を確認してください）" };
+  }
+
+  const res = await fetch(
+    `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/workflows/daily-sync.yml/dispatches`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ ref: "master", inputs: {} }),
+    }
+  );
+
+  if (res.status === 204) {
+    return { ok: true, message: "更新を開始しました。1〜2分後にこのページを開き直してください。" };
+  }
+  const body = await res.text();
+  return { ok: false, message: `更新開始に失敗しました (${res.status}): ${body.slice(0, 200)}` };
+}
+
 /** 現在のスコアを発走前の予想としてスナップショット保存する。 */
 export async function recordPredictionAction(raceId: number): Promise<void> {
   const prediction = await predictRace(raceId);

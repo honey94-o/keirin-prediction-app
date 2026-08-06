@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getRacesByDate } from "../lib/repository";
 import { todayJstStr, addDaysToDateStr, formatDateStr, isValidDateStr } from "../lib/date";
+import { RefreshTrigger } from "../components/RefreshTrigger";
 import type { RaceRow } from "../lib/types";
 
 // GitHub Actions（daily-sync.yml、1日2回自動実行）がNext.jsの外からTursoを
@@ -39,7 +40,10 @@ export default async function Home({
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
-      <h1 className="text-lg font-bold mb-1">開催場を選択</h1>
+      <div className="flex items-baseline justify-between mb-1">
+        <h1 className="text-lg font-bold">開催場を選択</h1>
+        <RefreshTrigger compact />
+      </div>
       <p className="text-sm text-gray-400 mb-3">{formatDateStr(viewDate)}</p>
 
       <div className="flex gap-1.5 mb-4">
@@ -63,11 +67,14 @@ export default async function Home({
       </div>
 
       {races.length === 0 ? (
-        <p className="text-center text-gray-500 mt-8">
-          {formatDateStr(viewDate)}のレースはまだ取得されていません。
-          {viewDate === todayStr &&
-            "毎日朝5時頃に自動取得されるので、しばらくしてから開き直してください。"}
-        </p>
+        <div className="text-center mt-8">
+          <p className="text-gray-500 mb-4">
+            {formatDateStr(viewDate)}のレースはまだ取得されていません。
+            {viewDate === todayStr &&
+              "毎日朝5時頃に自動取得されますが、今すぐ取得することもできます。"}
+          </p>
+          {viewDate <= addDaysToDateStr(todayStr, 1) && <RefreshTrigger />}
+        </div>
       ) : (
         <div className="flex flex-col gap-2">
           {[...groups.entries()].map(([jocd, groupRaces]) => {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getRaceIdsWithPrediction } from "../../lib/repository";
-import { getRaceResultSummary, getOverallAccuracyStats, getDailySummary, yesterdayJst } from "../../lib/accuracy";
+import { getBulkRaceSummaries, getOverallAccuracyStats, getDailySummary, yesterdayJst } from "../../lib/accuracy";
+import { addDaysToDateStr, formatDateStr, isValidDateStr } from "../../lib/date";
 
 // レース結果はGitHub Actions（Next.jsの外）からTursoへ書き込まれるため、
 // 静的生成だと反映されない。常に最新を読むよう動的レンダリングを強制する。
@@ -17,58 +18,96 @@ function fmtPct(v: number | null): string {
   return v == null ? "-" : `${v.toFixed(0)}%`;
 }
 
-export default async function HistoryPage() {
+export default async function HistoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ date?: string }>;
+}) {
+  const { date } = await searchParams;
+  const latestDate = yesterdayJst(); // 当日はまだ結果が揃っていないため、閲覧可能な最新日は前日まで
+  const viewDate = isValidDateStr(date) && date <= latestDate ? date : latestDate;
+  const prevDate = addDaysToDateStr(viewDate, -1);
+  const nextDate = addDaysToDateStr(viewDate, 1);
+
   const raceIds = await getRaceIdsWithPrediction();
-  const summaryResults = await Promise.all(raceIds.map((id) => getRaceResultSummary(id)));
-  const summaries = summaryResults.filter((s) => s != null);
+  const summaries = await getBulkRaceSummaries(raceIds);
   const stats = await getOverallAccuracyStats();
-  const daily = await getDailySummary(yesterdayJst());
+  const daily = await getDailySummary(viewDate);
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
       <h1 className="text-lg font-bold mb-4">予想履歴・精度検証</h1>
 
-      {daily.totalRaces > 0 && (
-        <section className="bg-white rounded-lg shadow-sm p-4 mb-4">
-          <h2 className="font-semibold text-sm text-gray-600 mb-2">
-            前日サマリー（{formatDate(daily.statDate)}・{daily.totalRaces}レース）
+      <section className="bg-white rounded-lg shadow-sm p-4 mb-4">
+        <div className="flex items-center justify-between mb-2">
+          <Link
+            href={`/history?date=${prevDate}`}
+            className="text-sm text-[#0d5c3f] px-2 py-1 -ml-2"
+          >
+            ← 前日
+          </Link>
+          <h2 className="font-semibold text-sm text-gray-600">
+            {formatDateStr(viewDate)}のサマリー
           </h2>
-          <div className="grid grid-cols-2 gap-y-2 text-sm mb-3">
-            <div>◎ 単勝的中率</div>
-            <div className="text-right tabular-nums">{fmtPct(daily.honmeiHitRate)}</div>
-            <div>3連単フォーメーション的中率</div>
-            <div className="text-right tabular-nums">{fmtPct(daily.sanrentanHitRate)}</div>
-            <div>回収率（参考値）</div>
-            <div className="text-right tabular-nums">{fmtPct(daily.overallRoi)}</div>
-          </div>
-          {daily.topPayouts.length > 0 && (
-            <>
-              <h3 className="text-xs font-semibold text-gray-500 mb-1">配当ベスト{daily.topPayouts.length}（的中レース）</h3>
-              <ul className="flex flex-col gap-1">
-                {daily.topPayouts.map((p, i) => (
-                  <li key={p.race.id}>
-                    <Link
-                      href={`/races/${p.race.id}`}
-                      className="flex items-center justify-between text-sm px-2 py-1.5 rounded bg-amber-50 active:bg-amber-100"
-                    >
-                      <span className="text-gray-700">
-                        {i + 1}位 {p.race.keirinjo_name}{p.race.race_no}R（{p.combo}）
-                      </span>
-                      <span className="font-semibold text-amber-800 tabular-nums">
-                        {p.payoutYen.toFixed(0)}円
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </>
+          {nextDate <= latestDate ? (
+            <Link
+              href={`/history?date=${nextDate}`}
+              className="text-sm text-[#0d5c3f] px-2 py-1 -mr-2"
+            >
+              翌日 →
+            </Link>
+          ) : (
+            <span className="text-sm text-gray-300 px-2 py-1 -mr-2">翌日 →</span>
           )}
-        </section>
-      )}
+        </div>
+
+        {daily.totalRaces === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">
+            この日はまだレース結果・予想がありません。
+          </p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-y-2 text-sm mb-3">
+              <div>結果確定レース</div>
+              <div className="text-right tabular-nums">{daily.totalRaces}レース</div>
+              <div>◎ 単勝的中率</div>
+              <div className="text-right tabular-nums">{fmtPct(daily.honmeiHitRate)}</div>
+              <div>3連単フォーメーション的中率</div>
+              <div className="text-right tabular-nums">{fmtPct(daily.sanrentanHitRate)}</div>
+              <div>回収率（参考値）</div>
+              <div className="text-right tabular-nums">{fmtPct(daily.overallRoi)}</div>
+            </div>
+            {daily.topPayouts.length > 0 && (
+              <>
+                <h3 className="text-xs font-semibold text-gray-500 mb-1">
+                  配当ベスト{daily.topPayouts.length}（的中レース）
+                </h3>
+                <ul className="flex flex-col gap-1">
+                  {daily.topPayouts.map((p, i) => (
+                    <li key={p.race.id}>
+                      <Link
+                        href={`/races/${p.race.id}`}
+                        className="flex items-center justify-between text-sm px-2 py-1.5 rounded bg-amber-50 active:bg-amber-100"
+                      >
+                        <span className="text-gray-700">
+                          {i + 1}位 {p.race.keirinjo_name}{p.race.race_no}R（{p.combo}）
+                        </span>
+                        <span className="font-semibold text-amber-800 tabular-nums">
+                          {p.payoutYen.toFixed(0)}円
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </>
+        )}
+      </section>
 
       <section className="bg-white rounded-lg shadow-sm p-4 mb-4">
         <h2 className="font-semibold text-sm text-gray-600 mb-2">
-          通算成績（結果確定分 {stats.totalRaces}レース）
+          直近の成績（結果確定分 {stats.totalRaces}レース）
         </h2>
         <div className="grid grid-cols-2 gap-y-2 text-sm">
           <div>◎ 単勝的中率</div>
@@ -92,7 +131,6 @@ export default async function HistoryPage() {
       ) : (
         <div className="flex flex-col gap-2">
           {summaries.map((s) => {
-            if (!s) return null;
             const resolved = s.honmeiHit != null;
             return (
               <Link

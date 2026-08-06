@@ -317,22 +317,112 @@ export async function getResultsForRace(raceId: number): Promise<ResultRow[]> {
   return result.rows as unknown as ResultRow[];
 }
 
-/** 予想（predictions）と結果（results）の両方が揃っているレースIDの一覧。 */
-export async function getRaceIdsWithPredictionAndResult(): Promise<number[]> {
-  const result = await getDb().execute(
-    `SELECT DISTINCT p.race_id
+/** IN句用のIDチャンク分割（1クエリあたりのパラメータ数を抑えるため）。 */
+function chunkIds(ids: number[], size = 200): number[][] {
+  const chunks: number[][] = [];
+  for (let i = 0; i < ids.length; i += size) chunks.push(ids.slice(i, i + size));
+  return chunks;
+}
+
+function groupBy<T>(rows: (T & { race_id: number })[]): Map<number, T[]> {
+  const map = new Map<number, T[]>();
+  for (const row of rows) {
+    const arr = map.get(row.race_id) ?? [];
+    arr.push(row);
+    map.set(row.race_id, arr);
+  }
+  return map;
+}
+
+/**
+ * 複数レース分のraces/predictions/results/oddsをまとめて取得する。
+ * /history画面の集計（getOverallAccuracyStats等）が1レースずつ個別クエリで
+ * N+1になっていたため（300レースでページ表示が3分近くかかっていた）、
+ * IN句でのバルク取得に置き換えるために追加した。
+ */
+export async function getRacesByIds(raceIds: number[]): Promise<Map<number, RaceRow>> {
+  const map = new Map<number, RaceRow>();
+  if (raceIds.length === 0) return map;
+  for (const chunk of chunkIds(raceIds)) {
+    const result = await getDb().execute({
+      sql: `SELECT * FROM races WHERE id IN (${chunk.map(() => "?").join(",")})`,
+      args: chunk,
+    });
+    for (const row of result.rows as unknown as RaceRow[]) map.set(row.id, row);
+  }
+  return map;
+}
+
+export async function getPredictionsForRaces(
+  raceIds: number[]
+): Promise<Map<number, PredictionRow[]>> {
+  if (raceIds.length === 0) return new Map();
+  const rows: (PredictionRow & { race_id: number })[] = [];
+  for (const chunk of chunkIds(raceIds)) {
+    const result = await getDb().execute({
+      sql: `SELECT race_id, car_num, snum, mark, total_score, line_score, kyakushitsu_score, stats_score
+            FROM predictions WHERE race_id IN (${chunk.map(() => "?").join(",")})
+            ORDER BY race_id, total_score DESC`,
+      args: chunk,
+    });
+    rows.push(...(result.rows as unknown as (PredictionRow & { race_id: number })[]));
+  }
+  return groupBy(rows);
+}
+
+export async function getResultsForRaces(raceIds: number[]): Promise<Map<number, ResultRow[]>> {
+  if (raceIds.length === 0) return new Map();
+  const rows: (ResultRow & { race_id: number })[] = [];
+  for (const chunk of chunkIds(raceIds)) {
+    const result = await getDb().execute({
+      sql: `SELECT race_id, car_num, snum, finish_pos, kimarite
+            FROM results WHERE race_id IN (${chunk.map(() => "?").join(",")})
+            ORDER BY race_id, finish_pos`,
+      args: chunk,
+    });
+    rows.push(...(result.rows as unknown as (ResultRow & { race_id: number })[]));
+  }
+  return groupBy(rows);
+}
+
+export async function getOddsForRaces(raceIds: number[]): Promise<Map<number, OddsRow[]>> {
+  if (raceIds.length === 0) return new Map();
+  const rows: (OddsRow & { race_id: number })[] = [];
+  for (const chunk of chunkIds(raceIds)) {
+    const result = await getDb().execute({
+      sql: `SELECT race_id, bet_type, combination, odds_value
+            FROM odds WHERE race_id IN (${chunk.map(() => "?").join(",")}) AND bet_type = '3連単'`,
+      args: chunk,
+    });
+    rows.push(...(result.rows as unknown as (OddsRow & { race_id: number })[]));
+  }
+  return groupBy(rows);
+}
+
+/**
+ * 予想（predictions）と結果（results）の両方が揃っているレースIDの一覧。
+ * /history画面の通算成績集計はレースごとにDBを複数回読むため、limitを
+ * 付けずに全件（予想蓄積が増えるほど際限なく増える）処理すると重くなる。
+ * デフォルトで直近300レースに絞る（履歴が浅いうちは実質全件になる）。
+ */
+export async function getRaceIdsWithPredictionAndResult(limit = 300): Promise<number[]> {
+  const result = await getDb().execute({
+    sql: `SELECT DISTINCT p.race_id
      FROM predictions p
      JOIN results r ON r.race_id = p.race_id
-     ORDER BY p.race_id DESC`
-  );
+     ORDER BY p.race_id DESC
+     LIMIT ?`,
+    args: [limit],
+  });
   return (result.rows as unknown as { race_id: number }[]).map((r) => r.race_id);
 }
 
-/** 予想（predictions）を保存済みの全レースID（結果未確定のものも含む）。 */
-export async function getRaceIdsWithPrediction(): Promise<number[]> {
-  const result = await getDb().execute(
-    `SELECT DISTINCT race_id FROM predictions ORDER BY race_id DESC`
-  );
+/** 予想（predictions）を保存済みのレースID（結果未確定のものも含む）。同上の理由でlimit付き。 */
+export async function getRaceIdsWithPrediction(limit = 300): Promise<number[]> {
+  const result = await getDb().execute({
+    sql: `SELECT DISTINCT race_id FROM predictions ORDER BY race_id DESC LIMIT ?`,
+    args: [limit],
+  });
   return (result.rows as unknown as { race_id: number }[]).map((r) => r.race_id);
 }
 

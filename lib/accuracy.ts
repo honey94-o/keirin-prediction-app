@@ -1,38 +1,42 @@
 import {
-  getRace,
-  getEntriesForRace,
-  getPredictionsForRace,
-  getResultsForRace,
-  getOddsForRace,
+  getRacesByIds,
+  getPredictionsForRaces,
+  getResultsForRaces,
+  getOddsForRaces,
   getRaceIdsWithPredictionAndResult,
   getRacesByDate,
 } from "./repository";
 import { generateBetSuggestionsFromRanking } from "./scoring";
 import { todayJstStr, addDaysToDateStr } from "./date";
-import type { AccuracyStats, DailySummary, RaceResultSummary } from "./types";
+import type {
+  AccuracyStats,
+  DailySummary,
+  OddsRow,
+  PredictionRow,
+  RaceResultSummary,
+  RaceRow,
+  ResultRow,
+} from "./types";
 
 /**
  * 保存済み予想(predictions)と結果(results)を突き合わせ、
- * ◎の的中判定・3連単フォーメーションの的中判定・回収率を計算する。
+ * ◎の的中判定・3連単フォーメーションの的中判定・回収率を計算する
+ * （DB呼び出しは行わない純粋関数。呼び出し側でまとめて取得したデータを渡す）。
  *
  * 回収率は「フォーメーションの各点に均等賭け（1点100円）した場合」を仮定し、
  * 的中点のオッズはpredictions保存時点近辺で記録されたoddsスナップショットを使う。
  * 公式の確定払戻金ではない参考値である点に注意。
  */
-export async function getRaceResultSummary(raceId: number): Promise<RaceResultSummary | null> {
-  const race = await getRace(raceId);
-  if (!race) return null;
-
-  const entries = await getEntriesForRace(raceId);
-  const predictions = await getPredictionsForRace(raceId);
-  const results = await getResultsForRace(raceId);
-
-  const entrySummaries = entries.map((e) => ({ car_num: e.car_num, name: e.name }));
-
+function computeRaceSummary(
+  race: RaceRow,
+  predictions: PredictionRow[],
+  results: ResultRow[],
+  odds: OddsRow[]
+): RaceResultSummary {
   if (predictions.length === 0 || results.length === 0) {
     return {
       race,
-      entries: entrySummaries,
+      entries: [],
       predictions,
       results,
       honmeiHit: null,
@@ -69,7 +73,6 @@ export async function getRaceResultSummary(raceId: number): Promise<RaceResultSu
   let roi: number | null = null;
   let payoutYen: number | null = null;
   if (actualCombo != null && formation != null && formation.combinations.length > 0) {
-    const odds = (await getOddsForRace(raceId)).filter((o) => o.bet_type === "3連単");
     const stake = 100 * formation.combinations.length;
     const hitOdds = odds.find((o) => o.combination === actualCombo)?.odds_value ?? null;
     const payout = sanrentanHit && hitOdds != null ? 100 * hitOdds : 0;
@@ -79,7 +82,7 @@ export async function getRaceResultSummary(raceId: number): Promise<RaceResultSu
 
   return {
     race,
-    entries: entrySummaries,
+    entries: [],
     predictions,
     results,
     honmeiHit,
@@ -88,6 +91,37 @@ export async function getRaceResultSummary(raceId: number): Promise<RaceResultSu
     roi,
     payoutYen,
   };
+}
+
+/**
+ * 複数レース分の的中判定・回収率をまとめて計算する。races/predictions/results/odds
+ * をIN句でバルク取得してから計算するため、レース数が増えてもDB往復は定数回で済む
+ * （以前は1レースごとに4回DBを読んでいたため、300レースでページ表示が3分近く
+ * かかっていた。バルク化してこの問題を解消した）。
+ */
+export async function getBulkRaceSummaries(raceIds: number[]): Promise<RaceResultSummary[]> {
+  if (raceIds.length === 0) return [];
+  const [racesMap, predictionsMap, resultsMap, oddsMap] = await Promise.all([
+    getRacesByIds(raceIds),
+    getPredictionsForRaces(raceIds),
+    getResultsForRaces(raceIds),
+    getOddsForRaces(raceIds),
+  ]);
+
+  const summaries: RaceResultSummary[] = [];
+  for (const raceId of raceIds) {
+    const race = racesMap.get(raceId);
+    if (!race) continue;
+    summaries.push(
+      computeRaceSummary(
+        race,
+        predictionsMap.get(raceId) ?? [],
+        resultsMap.get(raceId) ?? [],
+        oddsMap.get(raceId) ?? []
+      )
+    );
+  }
+  return summaries;
 }
 
 function aggregateAccuracyStats(summaries: RaceResultSummary[]): AccuracyStats {
@@ -117,12 +151,12 @@ function aggregateAccuracyStats(summaries: RaceResultSummary[]): AccuracyStats {
 }
 
 /**
- * 予想・結果が揃っている全レースを集計し、通算の的中率・回収率を算出する。
+ * 予想・結果が揃っている直近レースを集計し、的中率・回収率を算出する
+ * （件数はgetRaceIdsWithPredictionAndResultのデフォルト上限＝直近300件）。
  */
 export async function getOverallAccuracyStats(): Promise<AccuracyStats> {
   const raceIds = await getRaceIdsWithPredictionAndResult();
-  const results = await Promise.all(raceIds.map((id) => getRaceResultSummary(id)));
-  const summaries = results.filter((s): s is RaceResultSummary => s != null);
+  const summaries = await getBulkRaceSummaries(raceIds);
   return aggregateAccuracyStats(summaries);
 }
 
@@ -135,21 +169,19 @@ export function yesterdayJst(): string {
 }
 
 /**
- * 指定日（YYYYMMDD）のレースだけを集計する（前日サマリー用）。
+ * 指定日（YYYYMMDD）のレースだけを集計する（日別サマリー用）。
  * scripts/daily-summary.tsがGitHub Actions（daily-sync.yml）から日次実行し、
- * その日のレース分のpredictionsを事前に保存しておくことで、ここでは
- * 保存済みpredictions/results/oddsを読むだけの軽い処理になる
+ * 直近1週間分のレースのpredictionsを事前に保存しておくことで、ここでは
+ * 保存済みpredictions/results/oddsをバルク取得するだけの軽い処理になる
  * （毎回predictRaceで再計算すると1日分でもレース数が多く重いため）。
  */
 export async function getDailySummary(statDate: string): Promise<DailySummary> {
   const races = await getRacesByDate(statDate);
-  const results = await Promise.all(races.map((r) => getRaceResultSummary(r.id)));
+  const results = await getBulkRaceSummaries(races.map((r) => r.id));
   // getRacesByDateはその日の全レース（結果未確定分も含む）を返すため、
   // 予想・結果の両方が揃っている（honmeiHitが判定済みの）レースだけに絞る。
   // そうしないと「結果確定レース数」に未確定分が混ざってしまう。
-  const summaries = results.filter(
-    (s): s is RaceResultSummary => s != null && s.honmeiHit != null
-  );
+  const summaries = results.filter((s) => s.honmeiHit != null);
   const stats = aggregateAccuracyStats(summaries);
 
   const topPayouts = summaries
