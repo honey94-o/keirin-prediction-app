@@ -1086,8 +1086,23 @@ export function generateScenarios(
     });
   }
 
-  // 3連単の買い目は全パターン合計で20点以内に収める（1パターンあたりに均等配分）
+  // 本命(1位)と対抗(2位)のスコア差。後段の本命専用調整だけでなく、
+  // 他シナリオの点数配分にも使うためここで先に計算しておく。
+  const taikou = scored[1];
+  const margin = taikou ? honmei.totalScore - taikou.totalScore : Infinity;
+
+  // 3連単の買い目は全パターン合計で20点以内に収める（1パターンあたりに均等配分）。
+  // ただしmargin >= HIGH_CONFIDENCE_MARGIN（本命が抜けていて単勝的中率81.7%以上の
+  // 実績があるレース）では、本命以外のシナリオが実際に当たる確率も相対的に下がる。
+  // ユーザー指摘「単勝80%なのに他の買い目が多いのはおかしい」の通り、絞らずに
+  // 均等配分したままだと的中率の低い代替シナリオに点数を割きすぎ、回収率を
+  // 押し下げてしまうため、本命以外のシナリオの点数を絞る。
+  const ALT_SCENARIO_HIGH_CONFIDENCE_BUDGET = 2;
   const perScenarioBudget = Math.floor(SANRENTAN_MAX_POINTS / specs.length);
+  const altScenarioBudget =
+    margin >= HIGH_CONFIDENCE_MARGIN
+      ? Math.min(perScenarioBudget, ALT_SCENARIO_HIGH_CONFIDENCE_BUDGET)
+      : perScenarioBudget;
 
   // このレースでどの展開が有力かの順位（1が最有力）。各シナリオの軸選手の
   // 総合スコアを比較する。本命の軸は定義上スコア最高だが、他の展開（逃げ粘り込み
@@ -1101,24 +1116,26 @@ export function generateScenarios(
 
   const result = specs.map((spec) => {
     const pool = buildLineAwarePool(spec.axis.entry.car_num, spec.priorityLineGroup, scored);
+    const budget = spec.label === "本命" ? perScenarioBudget : altScenarioBudget;
     return {
       label: spec.label,
       axisCarNum: spec.axis.entry.car_num,
       axisName: spec.axis.entry.name,
-      reason: spec.reason,
+      reason:
+        spec.label !== "本命" && margin >= HIGH_CONFIDENCE_MARGIN
+          ? `${spec.reason} 本命が抜けているレースのため、こちらの買い目は保険的に絞っています。`
+          : spec.reason,
       formation: {
         betType: "3連単フォーメーション" as const,
-        combinations: formationFromPool(spec.axis.entry.car_num, pool, perScenarioBudget),
+        combinations: formationFromPool(spec.axis.entry.car_num, pool, budget),
       },
       likelyRank: likelyRankByCarNum.get(spec.axis.entry.car_num)!,
     };
   });
 
   // 本命(1位)と対抗(2位)のスコア差に応じて、本命の買い目だけ調整する。
-  const taikou = scored[1];
   const honmeiScenario = result.find((s) => s.label === "本命");
   if (taikou && honmeiScenario) {
-    const margin = honmei.totalScore - taikou.totalScore;
     if (margin >= HIGH_CONFIDENCE_MARGIN) {
       // 本命が抜けているレース：買い目を絞る（この条件で単勝的中率81.7%以上を実績確認済み）
       const pool = buildLineAwarePool(honmei.entry.car_num, honmei.entry.line_group, scored);
