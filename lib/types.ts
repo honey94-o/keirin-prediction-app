@@ -214,8 +214,9 @@ export interface RaceResultSummary {
   honmeiHit: boolean | null; // ◎が1着だったか（結果未確定ならnull）
   honmeiTop3: boolean | null; // ◎が3着以内だったか
   sanrentanHit: boolean | null; // 実際の着順が◎の3連単フォーメーションに含まれていたか
-  roi: number | null; // フォーメーションを均等買いした場合の回収率(%)。オッズはスナップショット時点の参考値
+  roi: number | null; // このレース単体の回収率(%)＝payoutYen/stakeYen*100。オッズはスナップショット時点の参考値
   payoutYen: number | null; // 的中した場合の払戻金額（100円賭け1点あたり）。不的中・未確定はnull
+  stakeYen: number | null; // フォーメーション点数×100円の賭け金合計。複数レース集計時の加重平均に使う
 }
 
 export interface AccuracyStats {

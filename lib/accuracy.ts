@@ -44,6 +44,7 @@ function computeRaceSummary(
       sanrentanHit: null,
       roi: null,
       payoutYen: null,
+      stakeYen: null,
     };
   }
 
@@ -72,12 +73,14 @@ function computeRaceSummary(
 
   let roi: number | null = null;
   let payoutYen: number | null = null;
+  let stakeYen: number | null = null;
   if (actualCombo != null && formation != null && formation.combinations.length > 0) {
     const stake = 100 * formation.combinations.length;
     const hitOdds = odds.find((o) => o.combination === actualCombo)?.odds_value ?? null;
     const payout = sanrentanHit && hitOdds != null ? 100 * hitOdds : 0;
     roi = (payout / stake) * 100;
     payoutYen = sanrentanHit && hitOdds != null ? payout : null;
+    stakeYen = stake;
   }
 
   return {
@@ -90,6 +93,7 @@ function computeRaceSummary(
     sanrentanHit,
     roi,
     payoutYen,
+    stakeYen,
   };
 }
 
@@ -143,9 +147,15 @@ function aggregateAccuracyStats(summaries: RaceResultSummary[]): AccuracyStats {
       withSanrentan.length > 0
         ? (withSanrentan.filter((s) => s.sanrentanHit).length / withSanrentan.length) * 100
         : null,
+    // 総払戻÷総賭け金（backtest.tsのシナリオ別回収率と同じ加重平均方式）。
+    // 各レースのroi(%)を単純平均すると、フォーメーション点数（＝賭け金）がレースごとに
+    // 違う（出走数が少ない・◎の信頼度が高い等で点数が変わる）ため、賭け金の小さいレースの
+    // 極端なroi%が大きいレースと同じ重みで効いてしまい、実際に賭けた場合の回収率とズレる。
     overallRoi:
       withRoi.length > 0
-        ? withRoi.reduce((sum, s) => sum + (s.roi ?? 0), 0) / withRoi.length
+        ? (withRoi.reduce((sum, s) => sum + (s.payoutYen ?? 0), 0) /
+            withRoi.reduce((sum, s) => sum + (s.stakeYen ?? 0), 0)) *
+          100
         : null,
   };
 }
