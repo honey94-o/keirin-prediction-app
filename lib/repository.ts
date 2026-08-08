@@ -519,13 +519,22 @@ export async function saveDailyPicks(
   );
 }
 
-/** 指定日の厳選ピックをスコア差の大きい順に取得する（ホーム画面用）。 */
-export async function getDailyPicks(kaisaiDate: string, minMargin: number): Promise<DailyPickRow[]> {
+/**
+ * 指定日の厳選ピックを、本命marginが大きい順に上位limit件だけ取得する（ホーム画面・
+ * /picks画面用）。scripts/simulate-selective-strategy.tsで122日分の実データを
+ * シミュレーションした結果、margin自体にしきい値を設ける（例: margin>=10のみ採用）
+ * よりも、しきい値を設けず「その日の中での上位」を機械的に選ぶ方が
+ * 30日ローリング回収率の安定性（100%超えの窓の割合）・1日の採用件数の両面で
+ * 優れていた（しきい値ありだと対象日が減り1日あたりの件数がユーザー希望の
+ * 5〜10件を満たせない日が多発した）。そのためmargin条件は付けず、日付＋
+ * 上位N件だけで絞り込む。
+ */
+export async function getDailyPicks(kaisaiDate: string, limit = 10): Promise<DailyPickRow[]> {
   const result = await getDb().execute({
     sql: `SELECT race_id, kaisai_date, jocd, keirinjo_name, race_no, start_time, margin,
                  honmei_car_num, honmei_name
-          FROM daily_picks WHERE kaisai_date = ? AND margin >= ? ORDER BY margin DESC`,
-    args: [kaisaiDate, minMargin],
+          FROM daily_picks WHERE kaisai_date = ? ORDER BY margin DESC LIMIT ?`,
+    args: [kaisaiDate, limit],
   });
   return result.rows as unknown as DailyPickRow[];
 }

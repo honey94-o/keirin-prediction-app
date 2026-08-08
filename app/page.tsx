@@ -2,7 +2,6 @@ import Link from "next/link";
 import { getRacesByDate, getDailyPicks } from "../lib/repository";
 import { todayJstStr, addDaysToDateStr, formatDateStr, isValidDateStr } from "../lib/date";
 import { RefreshTrigger } from "../components/RefreshTrigger";
-import { HIGH_CONFIDENCE_MARGIN } from "../lib/scoring";
 import type { RaceRow } from "../lib/types";
 
 // GitHub Actions（daily-sync.yml、1日2回自動実行）がNext.jsの外からTursoを
@@ -28,10 +27,16 @@ export default async function Home({
   const races = await getRacesByDate(viewDate);
 
   // 「本日の厳選レース」：結果未確定（前日以前は対象外）の日だけ、
-  // scripts/daily-picks.tsが事前計算したdaily_picksから◎-対抗スコア差が
-  // HIGH_CONFIDENCE_MARGIN以上（実績: 単勝的中率81.7%以上）のレースを表示する。
+  // scripts/daily-picks.tsが事前計算したdaily_picksからその日の本命marginが
+  // 大きい順に上位10件を表示する。scripts/simulate-selective-strategy.tsで
+  // 122日分の実データを検証した結果、margin自体にしきい値を設けるより
+  // 「その日の中での相対的な上位」を機械的に選ぶ方が、1日の採用件数を安定して
+  // 確保しつつ30日ローリング回収率も安定した（詳細はgetDailyPicksのコメント参照）。
   const showPicks = viewDate === todayStr || viewDate === nextDate;
-  const picks = showPicks ? await getDailyPicks(viewDate, HIGH_CONFIDENCE_MARGIN) : [];
+  const picks = showPicks ? await getDailyPicks(viewDate) : [];
+  // ホーム画面のプレビュー一覧は発走時刻順に並べ替える（時刻がバラバラなので
+  // 時系列で見えた方が分かりやすい。タブ切り替え版は/picksで発走順に見られる）。
+  const picksByTime = [...picks].sort((a, b) => (a.start_time ?? "").localeCompare(b.start_time ?? ""));
 
   const groups = new Map<string, RaceRow[]>();
   for (const race of races) {
@@ -75,28 +80,37 @@ export default async function Home({
 
       {picks.length > 0 && (
         <section className="bg-amber-50 border border-amber-200 rounded-lg shadow-sm p-3 mb-4">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-semibold bg-amber-500 text-white px-2 py-0.5 rounded-full">
-              厳選レース
-            </span>
-            <span className="text-xs text-amber-800">
-              ◎が抜けているレース（単勝的中率81.7%以上の実績）
-            </span>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold bg-amber-500 text-white px-2 py-0.5 rounded-full">
+                厳選レース
+              </span>
+              <span className="text-xs text-amber-800">本命の信頼度が高い上位{picks.length}レース</span>
+            </div>
+            <Link
+              href={`/picks?date=${viewDate}`}
+              className="text-xs font-semibold text-amber-800 underline whitespace-nowrap"
+            >
+              タブでまとめて見る →
+            </Link>
           </div>
           <ul className="flex flex-col gap-2">
-            {picks.map((p) => (
+            {picksByTime.map((p) => (
               <li key={p.race_id}>
                 <Link
                   href={`/races/${p.race_id}/bets`}
-                  className="flex items-center justify-between bg-white rounded-lg px-3 py-2 active:bg-gray-50"
+                  className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 active:bg-gray-50"
                 >
-                  <span className="text-sm font-medium text-gray-900">
+                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0">
+                    {p.start_time ?? "--:--"}
+                  </span>
+                  <span className="text-sm font-medium text-gray-900 flex-1 truncate">
                     {p.keirinjo_name} {p.race_no}R
                   </span>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-gray-500 whitespace-nowrap">
                     軸 {p.honmei_car_num}.{p.honmei_name}
                   </span>
-                  <span className="text-xs font-semibold text-amber-700 tabular-nums">
+                  <span className="text-xs font-semibold text-amber-700 tabular-nums whitespace-nowrap">
                     差{p.margin.toFixed(1)}点
                   </span>
                 </Link>

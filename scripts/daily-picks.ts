@@ -21,7 +21,10 @@ import { todayJstStr, addDaysToDateStr } from "../lib/date";
 
 /**
  * 結果未確定（これから走る）レースの◎-対抗スコア差を計算し、daily_picksに保存する。
- * ホーム画面「本日の厳選レース」の元データ。当日・翌日（ホーム画面の2タブ分）を対象にする。
+ * ホーム画面「本日の厳選レース」・/picks画面の元データ。当日・翌日（ホーム画面の
+ * 2タブ分）の全レース分のmarginをここでは絞らずに保存し、実際に「上位10件だけ
+ * 表示する」という絞り込みはlib/repository.tsのgetDailyPicks側で行う
+ * （scripts/simulate-selective-strategy.tsの検証結果に基づく）。
  * daily-sync.yml実行のたびに呼ぶため、日中にオッズ・並び予想が更新されればその都度
  * 最新の予想に更新される。
  */
