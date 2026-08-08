@@ -78,7 +78,6 @@ async function main() {
       skipped++;
       continue;
     }
-    const actualCombo = top3.map((r) => r.car_num).join("-");
     const actualTop3Set = new Set(top3.map((r) => r.car_num));
 
     const honmei = scored[0];
@@ -87,6 +86,14 @@ async function main() {
     if (actualTop3Set.has(honmei.entry.car_num)) honmeiTop3Hits++;
 
     const odds = (await getOddsForRace(raceId)).filter((o) => o.bet_type === "3連単");
+    // 払戻オッズには賭けの勝敗判定に使われる確定済みの正しい着順が入っているため
+    // 最優先で使う（同着があるとresults.finish_posだけからは1-2-3を一意に組み立て
+    // られないため。lib/accuracy.tsのcomputeRaceSummaryと同じ理由・同じ修正）。
+    // ただし初期の別スクレイパー由来の一部レースは全組み合わせのオッズ盤ごと
+    // 保存されている（最大210通り）ため、組み合わせが1種類だけの時に限って使う。
+    const distinctCombos = new Set(odds.map((o) => o.combination));
+    const officialCombo = distinctCombos.size === 1 ? odds[0].combination : null;
+    const actualCombo = officialCombo ?? top3.map((r) => r.car_num).join("-");
     const hitOdds = odds.find((o) => o.combination === actualCombo)?.odds_value ?? null;
 
     for (const scenario of scenarios) {

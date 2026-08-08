@@ -54,11 +54,25 @@ function computeRaceSummary(
   const honmeiHit = honmeiFinish != null ? honmeiFinish === 1 : null;
   const honmeiTop3 = honmeiFinish != null ? honmeiFinish <= 3 : null;
 
+  // 3連単の払戻オッズには、賭けの勝敗判定に使われる確定済みの正しい着順が
+  // そのまま入っているため最優先で使う。稀に同着（例: 3着が2人とも記録され
+  // 4着が欠番になる）があり、その場合results.finish_posだけからは1-2-3を
+  // 一意に組み立てられない（40レースで確認、うち25件は欠番のせいでこれまで
+  // 的中判定から静かに除外されていた）。
+  // ただし初期に別スクレイパー(KEIRIN.JP版)で取得した一部の古いレースは
+  // 払戻金だけでなく全組み合わせのオッズ盤ごと保存されている（8レースで確認、
+  // 1レースあたり最大210通り）ため、組み合わせが複数種類記録されている場合は
+  // どれが正解か区別できず信用できない。組み合わせが1種類だけの時に限って使い、
+  // それ以外はresults.finish_posから組み立てるフォールバックにする。
+  const sanrentanOdds = odds.filter((o) => o.bet_type === "3連単");
+  const distinctCombos = new Set(sanrentanOdds.map((o) => o.combination));
+  const officialCombo = distinctCombos.size === 1 ? sanrentanOdds[0].combination : null;
   const actualOrder = [1, 2, 3].map(
     (pos) => results.find((r) => r.finish_pos === pos)?.car_num
   );
-  const actualCombo =
+  const fallbackCombo =
     actualOrder.every((c) => c != null) ? actualOrder.join("-") : null;
+  const actualCombo = officialCombo ?? fallbackCombo;
 
   const ranked = [...predictions]
     .sort((a, b) => b.total_score - a.total_score)

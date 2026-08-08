@@ -68,7 +68,6 @@ async function main() {
       skipped++;
       continue;
     }
-    const actualCombo = top3.map((r) => r.car_num).join("-");
 
     const honmei = scored[0];
     honmeiTotal++;
@@ -77,10 +76,16 @@ async function main() {
 
     const honmeiScenario = scenarios.find((s) => s.label === "本命");
     if (honmeiScenario) {
+      const odds = (await getOddsForRace(raceId)).filter((o) => o.bet_type === "3連単");
+      // 払戻オッズの組み合わせが1種類だけの時に限り正としての着順に使う
+      // （同着対策・古い全オッズ盤保存レース対策。lib/accuracy.tsと同じロジック）。
+      const distinctCombos = new Set(odds.map((o) => o.combination));
+      const officialCombo = distinctCombos.size === 1 ? odds[0].combination : null;
+      const actualCombo = officialCombo ?? top3.map((r) => r.car_num).join("-");
+
       formationRaces++;
       const stake = 100 * honmeiScenario.formation.combinations.length;
       const hit = honmeiScenario.formation.combinations.includes(actualCombo);
-      const odds = (await getOddsForRace(raceId)).filter((o) => o.bet_type === "3連単");
       const hitOdds = odds.find((o) => o.combination === actualCombo)?.odds_value ?? null;
       const payout = hit && hitOdds != null ? 100 * hitOdds : 0;
       if (hit) formationHits++;
