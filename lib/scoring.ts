@@ -1137,13 +1137,22 @@ export function generateScenarios(
   const honmeiScenario = result.find((s) => s.label === "本命");
   if (taikou && honmeiScenario) {
     if (margin >= HIGH_CONFIDENCE_MARGIN) {
-      // 本命が抜けているレース：買い目を絞る（この条件で単勝的中率81.7%以上を実績確認済み）
+      // 本命が抜けているレース：軸の勝率は82.7%と高いが、2着・3着まで含めた
+      // 3連単の的中率・回収率は軸の信頼度とは別物。旧実装は「軸が堅いなら買い目も
+      // 絞れる」という考えで2点に絞っていたが、scripts/diagnose-hc-formation-size.ts
+      // で高信頼度レース(307件)に絞って点数別のROIを検証すると、2点(現行)は
+      // 的中率25.1%・回収率87.6%(赤字)なのに対し、20点まで広げると的中率76.9%・
+      // 回収率152.3%(黒字)と、点数を増やすほど明確に的中率・回収率とも改善した
+      // （6点90.4%/45.3%、12点84.8%/61.9%、いずれも20点に劣る）。
+      // 軸が堅いことは「軸以外の着順も読める」ことを意味しない
+      // （むしろ本命が抜けている分、2-3着争いは横並びになりやすいと考えられる）ため、
+      // 絞るのではなく他シナリオ同様の上限20点まで広げる。
       const pool = buildLineAwarePool(honmei.entry.car_num, honmei.entry.line_group, scored);
       honmeiScenario.formation = {
         betType: "3連単フォーメーション",
-        combinations: formationFromPool(honmei.entry.car_num, pool, 2),
+        combinations: formationFromPool(honmei.entry.car_num, pool, SANRENTAN_MAX_POINTS),
       };
-      honmeiScenario.reason += ` 対抗との差が${margin.toFixed(1)}点あり単勝的中率が高い傾向のため、買い目を絞っています（単勝での勝負もおすすめ）。`;
+      honmeiScenario.reason += ` 対抗との差が${margin.toFixed(1)}点あり単勝的中率が高い傾向です（軸の勝率82.7%実績）。ただし2・3着まで含めると絞り込みは難しいため、買い目は広めに取っています。`;
     } else if (margin < LOW_MARGIN_THRESHOLD) {
       // 本命・対抗が拮抗：1着・2着を入れ替え可能なボックス買いにする（例: 1=2-3）
       const thirdPool = buildLineAwarePool(honmei.entry.car_num, honmei.entry.line_group, scored).filter(
