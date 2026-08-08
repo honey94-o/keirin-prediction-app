@@ -41,6 +41,8 @@ async function processDate(kaisaiDate: string): Promise<void> {
       if (!prediction || prediction.scored.length < 2) return null;
       const honmei = prediction.scored[0];
       const taikou = prediction.scored[1];
+      const honmeiScenario = prediction.scenarios.find((s) => s.label === "本命");
+      if (!honmeiScenario) return null;
       return {
         raceId: race.id,
         kaisaiDate: race.kaisai_date,
@@ -51,6 +53,9 @@ async function processDate(kaisaiDate: string): Promise<void> {
         margin: honmei.totalScore - taikou.totalScore,
         honmeiCarNum: honmei.entry.car_num,
         honmeiName: honmei.entry.name,
+        // その日実際に見せた買い目のスナップショット。後でスコアリングロジックを
+        // 変更しても「前日の結果」表示が過去に遡って変わらないようにするため。
+        formation: honmeiScenario.formation.combinations,
       };
     })
     .filter((p): p is NonNullable<typeof p> => p != null);

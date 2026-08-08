@@ -177,6 +177,9 @@ CREATE TABLE IF NOT EXISTS daily_picks (
     margin         REAL NOT NULL,      -- ◎と対抗の総合スコア差
     honmei_car_num INTEGER NOT NULL,
     honmei_name    TEXT NOT NULL,
+    formation      TEXT,               -- 本命フォーメーションの組み合わせ（JSON配列、例: ["1-2-3","1-3-2"]）。
+                                        -- 予想時点のスナップショットとして保存し、後で「前日の的中結果」
+                                        -- 「直近N日の回収率」を過去のスコアリングロジックのまま再現できるようにする。
     updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_daily_picks_date ON daily_picks(kaisai_date, margin DESC);

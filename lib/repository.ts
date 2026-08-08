@@ -1,7 +1,9 @@
 import { getDb } from "./db";
 import type {
   BankInfoRow,
+  DailyPickResult,
   DailyPickRow,
+  DailyPicksPerformance,
   EntryWithRacer,
   OddsRow,
   PositionWinRate,
@@ -490,17 +492,18 @@ export async function saveDailyPicks(
     margin: number;
     honmeiCarNum: number;
     honmeiName: string;
+    formation: string[];
   }[]
 ): Promise<void> {
   if (picks.length === 0) return;
   const db = getDb();
   const sql = `INSERT INTO daily_picks (race_id, kaisai_date, jocd, keirinjo_name, race_no,
-                                         start_time, margin, honmei_car_num, honmei_name, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,datetime('now'))
+                                         start_time, margin, honmei_car_num, honmei_name, formation, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'))
                ON CONFLICT(race_id) DO UPDATE SET
                  margin=excluded.margin, honmei_car_num=excluded.honmei_car_num,
                  honmei_name=excluded.honmei_name, start_time=excluded.start_time,
-                 updated_at=datetime('now')`;
+                 formation=excluded.formation, updated_at=datetime('now')`;
   await db.batch(
     picks.map((p) => ({
       sql,
@@ -514,6 +517,7 @@ export async function saveDailyPicks(
         p.margin,
         p.honmeiCarNum,
         p.honmeiName,
+        JSON.stringify(p.formation),
       ],
     }))
   );
@@ -532,9 +536,92 @@ export async function saveDailyPicks(
 export async function getDailyPicks(kaisaiDate: string, limit = 10): Promise<DailyPickRow[]> {
   const result = await getDb().execute({
     sql: `SELECT race_id, kaisai_date, jocd, keirinjo_name, race_no, start_time, margin,
-                 honmei_car_num, honmei_name
+                 honmei_car_num, honmei_name, formation
           FROM daily_picks WHERE kaisai_date = ? ORDER BY margin DESC LIMIT ?`,
     args: [kaisaiDate, limit],
   });
-  return result.rows as unknown as DailyPickRow[];
+  const rows = result.rows as unknown as (Omit<DailyPickRow, "formation"> & { formation: string | null })[];
+  return rows.map((r) => ({
+    ...r,
+    formation: r.formation ? (JSON.parse(r.formation) as string[]) : null,
+  }));
+}
+
+/**
+ * 実際の着順を1つの組み合わせ文字列に解決する（lib/accuracy.tsのcomputeRaceSummary・
+ * scripts/backtest.ts等と同じロジック）。3連単の払戻オッズには賭けの勝敗判定に
+ * 使われる確定済みの正しい着順がそのまま入っているため最優先で使う（稀な同着で
+ * results.finish_posだけからは一意に組み立てられないケースの対策）。ただし初期の
+ * 別スクレイパー由来の一部レースは全組み合わせのオッズ盤ごと保存されているため、
+ * 組み合わせが1種類だけの時に限って信用する。
+ */
+function resolveActualCombo(results: ResultRow[], odds: OddsRow[]): string | null {
+  const top3 = results
+    .filter((r) => r.finish_pos != null && r.finish_pos <= 3)
+    .sort((a, b) => (a.finish_pos ?? 0) - (b.finish_pos ?? 0));
+  const sanrentanOdds = odds.filter((o) => o.bet_type === "3連単");
+  const distinctCombos = new Set(sanrentanOdds.map((o) => o.combination));
+  if (distinctCombos.size === 1) return sanrentanOdds[0].combination;
+  if (top3.length < 3) return null;
+  return top3.map((r) => r.car_num).join("-");
+}
+
+/**
+ * 指定日の厳選ピック（上位10件）について、結果が確定していれば的中判定する。
+ * その日実際に見せた買い目（daily_picks.formationのスナップショット）で判定する
+ * ため、後からスコアリングロジックを変更しても過去の「前日の結果」表示は
+ * 変わらない（predictRaceで都度再計算する方式だと、日々のチューニングのたびに
+ * 過去の的中結果が書き換わってしまうため）。
+ */
+export async function getDailyPicksResults(kaisaiDate: string): Promise<DailyPickResult[]> {
+  const picks = await getDailyPicks(kaisaiDate);
+  if (picks.length === 0) return [];
+  const raceIds = picks.map((p) => p.race_id);
+  const [resultsMap, oddsMap] = await Promise.all([
+    getResultsForRaces(raceIds),
+    getOddsForRaces(raceIds),
+  ]);
+
+  return picks.map((pick) => {
+    const results = resultsMap.get(pick.race_id) ?? [];
+    const odds = oddsMap.get(pick.race_id) ?? [];
+    const actualCombo = resolveActualCombo(results, odds);
+    if (actualCombo == null || pick.formation == null) {
+      return { pick, finished: false, hit: null, stakeYen: null, payoutYen: null };
+    }
+    const stakeYen = 100 * pick.formation.length;
+    const hit = pick.formation.includes(actualCombo);
+    const hitOdds =
+      odds.find((o) => o.bet_type === "3連単" && o.combination === actualCombo)?.odds_value ?? null;
+    const payoutYen = hit && hitOdds != null ? 100 * hitOdds : 0;
+    return { pick, finished: true, hit, stakeYen, payoutYen };
+  });
+}
+
+/** 指定した日付リスト分の厳選ピック実績を合算する（回収率は総払戻/総賭け金）。 */
+export async function getDailyPicksPerformance(dates: string[]): Promise<DailyPicksPerformance> {
+  let races = 0;
+  let hits = 0;
+  let stakeYen = 0;
+  let payoutYen = 0;
+
+  for (const date of dates) {
+    const results = await getDailyPicksResults(date);
+    for (const r of results) {
+      if (!r.finished) continue;
+      races++;
+      if (r.hit) hits++;
+      stakeYen += r.stakeYen ?? 0;
+      payoutYen += r.payoutYen ?? 0;
+    }
+  }
+
+  return {
+    days: dates.length,
+    races,
+    hits,
+    stakeYen,
+    payoutYen,
+    roi: stakeYen > 0 ? (payoutYen / stakeYen) * 100 : null,
+  };
 }

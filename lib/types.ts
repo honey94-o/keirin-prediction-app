@@ -233,7 +233,7 @@ export interface DailySummary extends AccuracyStats {
   topPayouts: { race: RaceRow; combo: string; payoutYen: number }[]; // 配当が高い順、最大5件
 }
 
-/** 結果未確定レースの事前計算済み厳選ピック（daily_picksテーブル）。ホーム画面用。 */
+/** 結果未確定レースの事前計算済み厳選ピック（daily_picksテーブル）。ホーム画面・/picks用。 */
 export interface DailyPickRow {
   race_id: number;
   kaisai_date: string;
@@ -244,4 +244,25 @@ export interface DailyPickRow {
   margin: number;
   honmei_car_num: number;
   honmei_name: string;
+  /** 本命フォーメーションの組み合わせ（予想時点のスナップショット）。古いレコードは未保存でnullの場合がある。 */
+  formation: string[] | null;
+}
+
+/** 過去の厳選ピック1件の的中結果（/picksの「前日の結果」用）。 */
+export interface DailyPickResult {
+  pick: DailyPickRow;
+  finished: boolean; // 結果が確定しているか
+  hit: boolean | null; // finished=falseの時はnull
+  stakeYen: number | null;
+  payoutYen: number | null;
+}
+
+/** 期間集計した厳選ピックの実績（/picksの「直近N日の回収率」用）。 */
+export interface DailyPicksPerformance {
+  days: number;
+  races: number; // 結果確定済みの対象レース数
+  hits: number;
+  stakeYen: number;
+  payoutYen: number;
+  roi: number | null; // 総払戻/総賭け金*100。races=0ならnull
 }
