@@ -4,15 +4,33 @@ name: Daily sync all venues
 # WINTICKET版スクレイパー（winticket_scraper.py）はPlaywright不要（requests/BeautifulSoup
 # のみ）のため、Playwrightのインストールは行わずスケジュール実行できる。
 # 個人利用の範囲内で低頻度（1日2回）を維持する：
-#   - 朝（JST 5:00）：当日の出走表・オッズを発走前に取得。この実行時のみ、
+#   - 朝（JST 5〜6時に着地）：当日の出走表・オッズを発走前に取得。この実行時のみ、
 #     結果が出揃った前日分のpredictionsを保存し予想精度サマリーも計算する
 #     （scripts/daily-summary.ts。/history画面の「前日サマリー」に表示）
-#   - 夕方（JST 17:00）：日中に確定したレース結果を取得
+#   - 夕方（JST 17時に着地）：日中に確定したレース結果を取得
+#
+# 【cronの時刻＝実際に走る時刻ではない】
+# GitHub Actionsのscheduleはベストエフォートで、このリポジトリの実測では
+# +64〜211分（中央値125分）遅れて起動する。またGitHubは混雑する毎時0分を
+# 避けるよう推奨している。そのため以下は「狙った着地時刻から約2時間前倒し」かつ
+# 「:00を外した分」を指定している。cronの数字を素直に読むとズレて見えるが意図的。
+#   朝 18:23 UTC (=JST 3:23 予定) → 遅延込みで JST 4:30〜7:00 に着地
+#   夕 05:23 UTC (=JST 14:23 予定) → 遅延込みで JST 16:20〜18:00 に着地
+# なお前倒し後もUTC日付は変わらないため、スクレイパーの --days-back の
+# 対象範囲（date.today() 基準）は従来と同じ。
 on:
-  workflow_dispatch: {}
+  # 手動実行時だけ遡る日数を指定できる。同期失敗やクォータ枯渇で結果を取り逃した
+  # 期間を埋め戻すための入口（自動実行は従来どおり1日分のみ）。スクレイパー側の
+  # --days-back は「今日からN日前まで」を対象にする。
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: "何日前まで遡るか（埋め戻し時のみ増やす。全43開催場×日数ぶんアクセスするため、常用せず節度を保つこと）"
+        required: false
+        default: "1"
   schedule:
-    - cron: "0 20 * * *"  # JST 5:00（前日20:00 UTC）
-    - cron: "0 8 * * *"   # JST 17:00
+    - cron: "23 18 * * *"  # 予定JST 3:23 → 遅延込みで朝5〜6時着地
+    - cron: "23 5 * * *"   # 予定JST 14:23 → 遅延込みで夕17時着地
 
 jobs:
   sync:
@@ -34,7 +52,8 @@ jobs:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
         run: |
-          python winticket_scraper.py --all-venues --days-back 1
+          # scheduleイベントでは github.event.inputs が空になるため 1 にフォールバックする。
+          python winticket_scraper.py --all-venues --days-back ${{ github.event.inputs.days_back || '1' }}
 
       # Node系のステップは全実行（朝・夕・手動）で使うため無条件にする。
       - name: Set up Node.js
@@ -46,9 +65,12 @@ jobs:
         run: npm ci
 
       # 前日サマリー集計は朝の実行（前日分の結果が出揃った後）だけでよいので、
-      # 手動実行時と朝(JST 5:00=UTC20:00)のスケジュールに限定する。
+      # 手動実行時と朝のスケジュールに限定する。
+      # ★ここは上の schedule の cron 文字列と完全一致で比較している。cronを変えたら
+      #   必ずこの文字列も合わせること。不一致だと条件が永久に偽になり、前日サマリーが
+      #   スケジュール実行で一切走らなくなる（エラーも出ないので気付きにくい）。
       - name: Compute previous day's summary
-        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 20 * * *'
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '23 18 * * *'
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
