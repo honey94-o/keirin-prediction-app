@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { predictRace } from "../lib/predict";
+import { enableReadCache } from "../lib/repository";
 
 // next dev/buildは.env.localを自動で読むが、tsx単体では読まれないため手動でロードする。
 function loadDotEnvLocal() {
@@ -18,6 +19,9 @@ function loadDotEnvLocal() {
 loadDotEnvLocal();
 
 async function main() {
+  // 同じ選手・開催場の集計をレースごとに引き直すのを防ぐ（Turso の読取行数削減）。
+  enableReadCache();
+
   const raceId = Number(process.argv[2] ?? 1);
 
   const prediction = await predictRace(raceId);

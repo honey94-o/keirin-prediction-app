@@ -18,6 +18,53 @@ import type {
   VenueKimariteRates,
 } from "./types";
 
+// ---- 読取キャッシュ（backtest / diagnose 系スクリプト専用） ----
+// これらのスクリプトは同じ選手・同じ開催場の集計を何千レースぶんも引き直すため、
+// 1回の実行の中でメモ化するだけで Turso への往復と読取行数が桁で減る。
+// ただし Next.js のサーバープロセスは長時間生き続けるので、常時有効にすると
+// 日次同期で追加されたデータが画面に反映されなくなる。既定では無効にし、
+// スクリプト側で enableReadCache() を呼ぶか KEIRIN_READ_CACHE=1 を渡したときだけ有効化する。
+let readCacheEnabled = process.env.KEIRIN_READ_CACHE === "1";
+const venueKimariteCache = new Map<string, Promise<VenueKimariteRates | null>>();
+const racerHistoryCache = new Map<string, Promise<RacerHistoryRow[]>>();
+const positionWinRatesCache = new Map<string, Promise<PositionWinRate[]>>();
+const bankInfoCache = new Map<string, Promise<BankInfoRow | undefined>>();
+// getScoreWeights は引数を取らないので固定キーで1件だけ持つ。
+const scoreWeightsCache = new Map<string, Promise<ScoreWeights>>();
+
+/** 1回のスクリプト実行の中だけ読取結果をメモ化する。Next.js からは呼ばないこと。 */
+export function enableReadCache(): void {
+  readCacheEnabled = true;
+}
+
+/** メモ化した内容を捨てる（スクレイピング直後に再集計したい場合など）。 */
+export function clearReadCache(): void {
+  venueKimariteCache.clear();
+  racerHistoryCache.clear();
+  positionWinRatesCache.clear();
+  bankInfoCache.clear();
+  scoreWeightsCache.clear();
+}
+
+// Promise をそのままキャッシュする。predict.ts が出走選手ぶんを Promise.all で
+// 並列に呼ぶため、値ではなく Promise を入れないと同じ snum のクエリが重複する。
+function memoized<T>(
+  cache: Map<string, Promise<T>>,
+  key: string,
+  fetch: () => Promise<T>
+): Promise<T> {
+  if (!readCacheEnabled) return fetch();
+  const cached = cache.get(key);
+  if (cached) return cached;
+  // 失敗を残すと以降ずっと同じエラーを返してしまうため、捨ててリトライ可能にする。
+  const pending = fetch().catch((err) => {
+    cache.delete(key);
+    throw err;
+  });
+  cache.set(key, pending);
+  return pending;
+}
+
 export async function getRace(raceId: number): Promise<RaceRow | undefined> {
   const result = await getDb().execute({
     sql: "SELECT * FROM races WHERE id = ?",
@@ -87,6 +134,10 @@ export async function getOddsForRace(raceId: number): Promise<OddsRow[]> {
 }
 
 export async function getBankInfo(jocd: string): Promise<BankInfoRow | undefined> {
+  return memoized(bankInfoCache, jocd, () => fetchBankInfo(jocd));
+}
+
+async function fetchBankInfo(jocd: string): Promise<BankInfoRow | undefined> {
   const result = await getDb().execute({
     sql: "SELECT * FROM bank_info WHERE jocd = ?",
     args: [jocd],
@@ -206,6 +257,12 @@ export async function getBankLengthKimariteRates(
 export async function getVenueKimariteRatesWithFallback(
   jocd: string
 ): Promise<VenueKimariteRates | null> {
+  return memoized(venueKimariteCache, jocd, () => fetchVenueKimariteRatesWithFallback(jocd));
+}
+
+async function fetchVenueKimariteRatesWithFallback(
+  jocd: string
+): Promise<VenueKimariteRates | null> {
   const venueSpecific = await getVenueKimariteRates(jocd);
   if (venueSpecific) return venueSpecific;
 
@@ -215,6 +272,10 @@ export async function getVenueKimariteRatesWithFallback(
 }
 
 export async function getRacerHistory(snum: string): Promise<RacerHistoryRow[]> {
+  return memoized(racerHistoryCache, snum, () => fetchRacerHistory(snum));
+}
+
+async function fetchRacerHistory(snum: string): Promise<RacerHistoryRow[]> {
   const result = await getDb().execute({
     sql: `SELECT race_date, venue_abbr, finish_positions FROM racer_race_history
           WHERE snum = ? ORDER BY race_date DESC`,
@@ -230,6 +291,10 @@ export async function getRacerHistory(snum: string): Promise<RacerHistoryRow[]> 
  * スクレイピング件数が少ないうちは母数が小さく参考程度にしかならない点に注意。
  */
 export async function getPositionWinRates(snum: string): Promise<PositionWinRate[]> {
+  return memoized(positionWinRatesCache, snum, () => fetchPositionWinRates(snum));
+}
+
+async function fetchPositionWinRates(snum: string): Promise<PositionWinRate[]> {
   const result = await getDb().execute({
     sql: `SELECT e.line_position,
                  COUNT(*) as races,
@@ -253,6 +318,10 @@ export async function getPositionWinRates(snum: string): Promise<PositionWinRate
 const DEFAULT_WEIGHTS: ScoreWeights = { line: 0.35, kyakushitsu: 0.35, stats: 0.3 };
 
 export async function getScoreWeights(): Promise<ScoreWeights> {
+  return memoized(scoreWeightsCache, "singleton", () => fetchScoreWeights());
+}
+
+async function fetchScoreWeights(): Promise<ScoreWeights> {
   const result = await getDb().execute(
     "SELECT key, value FROM settings WHERE key LIKE 'score_weight_%'"
   );

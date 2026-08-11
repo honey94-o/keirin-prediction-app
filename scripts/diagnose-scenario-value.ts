@@ -17,7 +17,7 @@ loadDotEnvLocal();
 
 import { getDb } from "../lib/db";
 import { predictRace } from "../lib/predict";
-import { getResultsForRace, getOddsForRace } from "../lib/repository";
+import { getResultsForRace, getOddsForRace, enableReadCache } from "../lib/repository";
 import { HIGH_CONFIDENCE_MARGIN } from "../lib/scoring";
 
 // ユーザー質問への回答用スクリプト：
@@ -33,6 +33,9 @@ function newAgg(): Agg {
 }
 
 async function main() {
+  // 同じ選手・開催場の集計をレースごとに引き直すのを防ぐ（Turso の読取行数削減）。
+  enableReadCache();
+
   const db = getDb();
   const raceIdsResult = await db.execute(
     `SELECT DISTINCT r.race_id FROM results r

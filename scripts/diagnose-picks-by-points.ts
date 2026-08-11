@@ -17,7 +17,7 @@ loadDotEnvLocal();
 
 import { getDb } from "../lib/db";
 import { predictRace } from "../lib/predict";
-import { getResultsForRace, getOddsForRace } from "../lib/repository";
+import { getResultsForRace, getOddsForRace, enableReadCache } from "../lib/repository";
 
 // 「毎日margin上位10件」で選んだレースの中で、本命フォーメーションの点数帯
 // （＝marginの水準）によって実際のROIがどう違うかを見る。
@@ -33,6 +33,9 @@ interface Rec {
 }
 
 async function main() {
+  // 同じ選手・開催場の集計をレースごとに引き直すのを防ぐ（Turso の読取行数削減）。
+  enableReadCache();
+
   const db = getDb();
   const raceRows = await db.execute(`
     SELECT ra.id, ra.kaisai_date FROM races ra

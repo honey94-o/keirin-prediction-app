@@ -17,7 +17,7 @@ loadDotEnvLocal();
 
 import { getDb } from "../lib/db";
 import { predictRace } from "../lib/predict";
-import { getResultsForRace, getOddsForRace } from "../lib/repository";
+import { getResultsForRace, getOddsForRace, enableReadCache } from "../lib/repository";
 
 /**
  * 「回収率をさらに上げる方法」の第一段階：新規スクレイピング不要で、既存データだけで
@@ -169,6 +169,9 @@ function printGroup(title: string, map: Map<string, GroupStat>, minSample: numbe
 }
 
 async function main() {
+  // 同じ選手・開催場の集計をレースごとに引き直すのを防ぐ（Turso の読取行数削減）。
+  enableReadCache();
+
   const all = await loadAllRaceRecords();
   console.log(`predictRace成功: ${all.length}件`);
 

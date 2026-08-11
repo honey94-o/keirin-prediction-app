@@ -17,7 +17,7 @@ function loadDotEnvLocal() {
 loadDotEnvLocal();
 
 import { predictRace } from "../lib/predict";
-import { getRacesByDate, getResultsForRace, savePrediction } from "../lib/repository";
+import { getRacesByDate, getResultsForRace, savePrediction, enableReadCache } from "../lib/repository";
 import { getDailySummary, yesterdayJst } from "../lib/accuracy";
 import { addDaysToDateStr } from "../lib/date";
 
@@ -63,6 +63,9 @@ async function processDate(statDate: string): Promise<void> {
 }
 
 async function main() {
+  // 同じ選手・開催場の集計を全レースぶん引き直すのを防ぐ（Turso の読取行数削減）。
+  enableReadCache();
+
   const explicitDate = process.argv[2];
   if (explicitDate) {
     await processDate(explicitDate);

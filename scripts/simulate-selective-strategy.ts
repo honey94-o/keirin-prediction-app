@@ -17,7 +17,7 @@ loadDotEnvLocal();
 
 import { getDb } from "../lib/db";
 import { predictRace } from "../lib/predict";
-import { getResultsForRace, getOddsForRace } from "../lib/repository";
+import { getResultsForRace, getOddsForRace, enableReadCache } from "../lib/repository";
 
 /**
  * ユーザー依頼：「1日5〜10レース・1レース20点以内」に絞った厳選買い戦略を、
@@ -174,6 +174,9 @@ function rollingWindowStats(
 }
 
 async function main() {
+  // 同じ選手・開催場の集計をレースごとに引き直すのを防ぐ（Turso の読取行数削減）。
+  enableReadCache();
+
   const records = await loadAllRaceRecords();
   console.log(`\npredictRace成功: ${records.length}件`);
 

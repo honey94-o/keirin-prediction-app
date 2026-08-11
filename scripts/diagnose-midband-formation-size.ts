@@ -17,7 +17,7 @@ loadDotEnvLocal();
 
 import { getDb } from "../lib/db";
 import { predictRace } from "../lib/predict";
-import { getResultsForRace, getOddsForRace } from "../lib/repository";
+import { getResultsForRace, getOddsForRace, enableReadCache } from "../lib/repository";
 import { HIGH_CONFIDENCE_MARGIN } from "../lib/scoring";
 
 // lib/scoring.tsのLOW_MARGIN_THRESHOLDはexportされていないため値をここに複製する
@@ -49,6 +49,9 @@ function formationFromPool(axis: number, orderedPool: number[], maxPoints: numbe
 const CANDIDATE_BUDGETS = [2, 6, 12, 20];
 
 async function main() {
+  // 同じ選手・開催場の集計をレースごとに引き直すのを防ぐ（Turso の読取行数削減）。
+  enableReadCache();
+
   const db = getDb();
   const raceRows = await db.execute(`
     SELECT ra.id, ra.kaisai_date FROM races ra

@@ -17,7 +17,7 @@ loadDotEnvLocal();
 
 import { getDb } from "../lib/db";
 import { predictRace } from "../lib/predict";
-import { getResultsForRace, getOddsForRace } from "../lib/repository";
+import { getResultsForRace, getOddsForRace, enableReadCache } from "../lib/repository";
 
 /**
  * scripts/diagnose-venue-grade-roi.ts で「特定の開催場に絞ると回収率が上がりそう」
@@ -125,6 +125,9 @@ function roiOf(records: RaceRecord[]): { roi: number; stake: number; payout: num
 }
 
 async function main() {
+  // 同じ選手・開催場の集計をレースごとに引き直すのを防ぐ（Turso の読取行数削減）。
+  enableReadCache();
+
   const all = await loadAllRaceRecords();
   const selected = selectDaily(all);
 

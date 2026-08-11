@@ -23,6 +23,7 @@ import {
   getResultsForRace,
   getOddsForRace,
   saveScenarioStats,
+  enableReadCache,
 } from "../lib/repository";
 
 interface ScenarioStat {
@@ -33,6 +34,9 @@ interface ScenarioStat {
 }
 
 async function main() {
+  // 同じ選手・開催場の集計を全レースぶん引き直すのを防ぐ（Turso の読取行数削減）。
+  enableReadCache();
+
   const jocdArg = process.argv[2]; // 例: "13,63" で開催場を絞り込み。省略時は結果があるレース全件
   const jocds = jocdArg ? jocdArg.split(",") : null;
 

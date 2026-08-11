@@ -17,7 +17,7 @@ loadDotEnvLocal();
 
 import { getDb } from "../lib/db";
 import { predictRace } from "../lib/predict";
-import { savePrediction, getResultsForRace, getOddsForRace } from "../lib/repository";
+import { savePrediction, getResultsForRace, getOddsForRace, enableReadCache } from "../lib/repository";
 import { todayJstStr, addDaysToDateStr } from "../lib/date";
 
 /**
@@ -27,6 +27,9 @@ import { todayJstStr, addDaysToDateStr } from "../lib/date";
  * predictionsも保存するため、/history画面にもこの期間の結果が反映されるようになる。
  */
 async function main() {
+  // 同じ選手・開催場の集計をレースごとに引き直すのを防ぐ（Turso の読取行数削減）。
+  enableReadCache();
+
   const daysBack = Number(process.argv[2] ?? 30);
   const today = todayJstStr();
   const sinceDate = addDaysToDateStr(today, -daysBack);

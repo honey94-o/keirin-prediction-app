@@ -17,7 +17,7 @@ loadDotEnvLocal();
 
 import { getDb } from "../lib/db";
 import { predictRace } from "../lib/predict";
-import { getResultsForRace, getOddsForRace } from "../lib/repository";
+import { getResultsForRace, getOddsForRace, enableReadCache } from "../lib/repository";
 
 /**
  * diagnose-venue-holdout.ts と同じ手法（前半=学習/後半=検証のアウトオブサンプル検証）
@@ -117,6 +117,9 @@ function roiOf(records: RaceRecord[]): { roi: number; stake: number; payout: num
 }
 
 async function main() {
+  // 同じ選手・開催場の集計をレースごとに引き直すのを防ぐ（Turso の読取行数削減）。
+  enableReadCache();
+
   const all = await loadAllRaceRecords();
   const selected = selectDaily(all);
 

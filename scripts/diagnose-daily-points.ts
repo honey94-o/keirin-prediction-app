@@ -17,6 +17,7 @@ loadDotEnvLocal();
 
 import { getDb } from "../lib/db";
 import { predictRace } from "../lib/predict";
+import { enableReadCache } from "../lib/repository";
 import { todayJstStr, addDaysToDateStr } from "../lib/date";
 
 // ユーザー質問「厳選（毎日margin上位10件）だと1日の買い目は何通りくらい？
@@ -25,6 +26,9 @@ import { todayJstStr, addDaysToDateStr } from "../lib/date";
 // フォーメーションのサイズだけ見ればよいため軽量）。
 
 async function main() {
+  // 同じ選手・開催場の集計をレースごとに引き直すのを防ぐ（Turso の読取行数削減）。
+  enableReadCache();
+
   const db = getDb();
   const today = todayJstStr();
   const days = Array.from({ length: 30 }, (_, i) => addDaysToDateStr(today, -1 - i));

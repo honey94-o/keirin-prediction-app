@@ -17,7 +17,7 @@ loadDotEnvLocal();
 
 import { getDb } from "../lib/db";
 import { predictRace } from "../lib/predict";
-import { getResultsForRace } from "../lib/repository";
+import { getResultsForRace, enableReadCache } from "../lib/repository";
 
 const MARGIN_BUCKETS: [number, number, string][] = [
   [0, 3, "0-3点差"],
@@ -35,6 +35,9 @@ function bucketLabel(margin: number): string {
 }
 
 async function main() {
+  // 同じ選手・開催場の集計をレースごとに引き直すのを防ぐ（Turso の読取行数削減）。
+  enableReadCache();
+
   const db = getDb();
   const raceIdsResult = await db.execute(
     `SELECT DISTINCT r.race_id FROM results r WHERE r.finish_pos IS NOT NULL ORDER BY r.race_id`

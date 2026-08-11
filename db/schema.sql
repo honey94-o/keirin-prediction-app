@@ -189,3 +189,14 @@ CREATE INDEX IF NOT EXISTS idx_entries_race ON entries(race_id);
 CREATE INDEX IF NOT EXISTS idx_results_race ON results(race_id);
 CREATE INDEX IF NOT EXISTS idx_odds_race ON odds(race_id);
 CREATE INDEX IF NOT EXISTS idx_races_date_jocd ON races(kaisai_date, jocd);
+
+-- getPositionWinRates（lib/repository.ts）は WHERE e.snum = ? で entries を絞るが、
+-- 既存の idx_entries_race は race_id 用のため使えず entries 全件スキャンになっていた。
+-- backtest/diagnose 系は1レースあたり出走選手ぶん（7回前後）呼ぶため、読取行数が
+-- レース数×entries件数×7 に膨らむ。Turso は行スキャン数が課金対象なのでこれが効く。
+CREATE INDEX IF NOT EXISTS idx_entries_snum ON entries(snum);
+
+-- getVenueKimariteRates は WHERE ra.jocd = ? で races を絞るが、既存の
+-- idx_races_date_jocd は先頭列が kaisai_date のため jocd 単独の絞り込みには使えず、
+-- races 全件スキャンになっていた。
+CREATE INDEX IF NOT EXISTS idx_races_jocd ON races(jocd);

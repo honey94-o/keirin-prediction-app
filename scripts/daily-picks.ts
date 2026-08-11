@@ -16,7 +16,7 @@ function loadDotEnvLocal() {
 loadDotEnvLocal();
 
 import { predictRace } from "../lib/predict";
-import { getRacesByDate, saveDailyPicks } from "../lib/repository";
+import { getRacesByDate, saveDailyPicks, enableReadCache } from "../lib/repository";
 import { todayJstStr, addDaysToDateStr } from "../lib/date";
 
 /**
@@ -65,6 +65,9 @@ async function processDate(kaisaiDate: string): Promise<void> {
 }
 
 async function main() {
+  // 同じ選手・開催場の集計を全レースぶん引き直すのを防ぐ（Turso の読取行数削減）。
+  enableReadCache();
+
   const today = todayJstStr();
   const tomorrow = addDaysToDateStr(today, 1);
   const start = Date.now();
