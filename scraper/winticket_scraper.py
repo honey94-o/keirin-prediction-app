@@ -38,18 +38,54 @@ USER_AGENT = (
 )
 REQUEST_INTERVAL_SEC = 1.5
 
+# 開催(cup)は3〜4日、GIなど大きい開催では6日程度続く。cup_idの先頭8桁は
+# 「開催初日」なので、取得対象を初日だけで判定すると対象期間より前に始まった
+# 開催の後半日程が丸ごと落ちる。cupを選ぶ窓だけこの日数ぶん手前まで広げる。
+CUP_LOOKBACK_DAYS = 7
+
+# 一時的な失敗（5xx・通信エラー）をリトライする回数。リトライしないと1回の失敗で
+# その日のレースが途中打ち止めになり、取得済み分だけがDBに残る。その状態は
+# load_completed_days から「その日は取得完了」と見えてしまうため、結果が永久に
+# 欠ける原因になる。
+HTTP_MAX_RETRIES = 3
+HTTP_RETRY_DELAY_SEC = 2.0
+
+# scrape_one_race の戻り値を区別するための番兵。404（そのレース番号は存在しない
+# ＝その日の打ち止め）と、一時的な取得失敗を同じNoneで返すと、失敗を打ち止めと
+# 誤認して以降のレース・以降の日程を丸ごと捨ててしまう。
+RACE_NOT_FOUND = object()
+
 
 def _sleep() -> None:
     time.sleep(REQUEST_INTERVAL_SEC)
 
 
 def _get(url: str) -> tuple[int, str]:
+    """URLを取得して (status, body) を返す。
+
+    4xxは再試行しても変わらないので即座に返す（404はレース不存在の判定に使う）。
+    5xxとネットワーク由来の一時的な失敗はHTTP_MAX_RETRIES回まで再試行する。
+    再試行し切っても失敗した場合はstatusに最後のコード（通信エラーなら0）を返す。
+    """
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            return resp.status, resp.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as e:
-        return e.code, ""
+    last_status = 0
+    for attempt in range(HTTP_MAX_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                return resp.status, resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as e:
+            if e.code < 500:
+                return e.code, ""
+            last_status = e.code
+        except (urllib.error.URLError, TimeoutError) as e:
+            # 以前はここで例外が伝播して実行全体が落ちていた。逐次保存しているので
+            # 取得済み分は残るが、残りの開催場が全て未処理になるため捕まえる。
+            print(f"  警告: 通信エラー {e} ({url})")
+            last_status = 0
+        if attempt < HTTP_MAX_RETRIES:
+            time.sleep(HTTP_RETRY_DELAY_SEC * (attempt + 1))
+    print(f"  警告: {HTTP_MAX_RETRIES}回再試行しても取得できず status={last_status} ({url})")
+    return last_status, ""
 
 
 _LINE_POSITION_NAMES = ["先頭", "番手", "3番手", "4番手", "5番手", "6番手", "7番手"]
@@ -191,6 +227,9 @@ def discover_cup_ids(venue: str, yyyymm: str) -> list[str]:
     status, html = _get(f"https://winticket.jp/keirin/{venue}/schedule/{yyyymm}")
     _sleep()
     if status != 200:
+        # 日程ページが取れないと、この開催場・この月は「開催が無かった」ことに
+        # なって静かに丸ごと飛ぶ。気付けるよう必ず記録する。
+        print(f"  警告: 日程ページ取得失敗 status={status} {venue}/{yyyymm}")
         return []
     ids = sorted(set(re.findall(rf"/keirin/{venue}/racecard/(\d+)", html)))
     return ids
@@ -450,18 +489,25 @@ def parse_raceresult(html: str, race: RaceData) -> None:
                 })
 
 
-def scrape_one_race(
-    venue: str, cup_id: str, day: int, race_no: int
-) -> tuple[RaceData, list[RacerHistoryEntry]] | None:
+def scrape_one_race(venue: str, cup_id: str, day: int, race_no: int) -> Any:
+    """1レース分を取得する。
+
+    戻り値:
+      (RaceData, histories) 取得成功
+      RACE_NOT_FOUND        404。そのレース番号は存在しない＝その日の打ち止め
+      None                  取得失敗・解析失敗。打ち止めとは限らないので、
+                            呼び出し側は「この日を列挙し切った」と扱ってはいけない
+    """
     status, html = _get(f"https://winticket.jp/keirin/{venue}/racecard/{cup_id}/{day}/{race_no}")
     _sleep()
     if status == 404:
-        return None
+        return RACE_NOT_FOUND
     if status != 200:
         print(f"  警告: racecard取得失敗 status={status} {venue}/{cup_id}/{day}/{race_no}")
         return None
     race = parse_racecard(html, cup_id, day, race_no)
     if race is None or not race.entries:
+        # 解析できなかった場合も打ち止めとは限らないため None を返す
         return None
 
     status, html = _get(f"https://winticket.jp/keirin/{venue}/raceresult/{cup_id}/{day}/{race_no}")
@@ -474,24 +520,86 @@ def scrape_one_race(
     return race, histories
 
 
+def load_completed_days(since_date: datetime.date) -> set[tuple[str, str]]:
+    """(jocd, kaisai_date) のうち、その日の全レースの着順が既に揃っている組を返す。
+
+    レースが終わって着順が確定した日は取り直しても内容が変わらないため、
+    HTTPアクセスを丸ごと省くための判定材料に使う。開催場ごとに問い合わせると
+    Tursoの読取行数が積み上がるので、1クエリで全開催場ぶんまとめて取る。
+
+    注意：判定は着順(results.finish_pos)の有無だけを見ている。着順は揃って
+    いるがオッズが欠けている日はスキップ対象になるため、この経路ではオッズの
+    後追い補完はされない。
+    """
+    since_str = since_date.strftime("%Y%m%d")
+    client = get_client()
+    try:
+        result = client.execute(
+            """
+            SELECT ra.jocd, ra.kaisai_date
+            FROM races ra
+            LEFT JOIN (
+                SELECT DISTINCT race_id FROM results WHERE finish_pos IS NOT NULL
+            ) res ON res.race_id = ra.id
+            WHERE ra.kaisai_date >= ?
+            GROUP BY ra.jocd, ra.kaisai_date
+            HAVING COUNT(*) = COUNT(res.race_id)
+            """,
+            [since_str],
+        )
+    finally:
+        client.close()
+    return {(str(row[0]), str(row[1])) for row in result.rows}
+
+
 def scrape_cup(
-    venue: str, cup_id: str, max_days: int = 4, max_races: int = 12
+    venue: str,
+    cup_id: str,
+    max_days: int = 4,
+    max_races: int = 12,
+    completed_days: set[tuple[str, str]] | None = None,
 ) -> list[tuple[RaceData, list[RacerHistoryEntry]]]:
+    jocd = cup_id[8:]
+    try:
+        cup_start: datetime.date | None = datetime.datetime.strptime(
+            cup_id[:8], "%Y%m%d"
+        ).date()
+    except ValueError:
+        # cup_idの形式が想定外なら日付を推定できないので、スキップ判定は行わない
+        cup_start = None
+
     races: list[tuple[RaceData, list[RacerHistoryEntry]]] = []
     for day in range(1, max_days + 1):
+        # 開催日は初日から連続しているものとして日付を推定し、その日が
+        # 「全レースの着順が揃っている日」に該当するときだけ取得を省く。
+        # 推定が外れて該当しなければ従来どおり取得するため、スキップ判定の
+        # 誤りで取り逃すことはない（安全側に倒している）。
+        if completed_days and cup_start is not None:
+            guess = (cup_start + datetime.timedelta(days=day - 1)).strftime("%Y%m%d")
+            if (jocd, guess) in completed_days:
+                print(f"  スキップ: {cup_id} day{day} ({guess}) は着順が揃っているため取得しない")
+                continue
         day_had_race = False
+        day_ended_cleanly = False
         for race_no in range(1, max_races + 1):
             result = scrape_one_race(venue, cup_id, day, race_no)
+            if result is RACE_NOT_FOUND:
+                # race_no-1件で打ち止め（race_no==1ならこの日は開催なし）
+                day_ended_cleanly = True
+                break
             if result is None:
-                break  # この日はrace_no件で打ち止め（race_no==1なら開催なし）
+                # 取得・解析の失敗。打ち止めか一時的な失敗か区別できないので、
+                # この日を列挙し切ったとは扱わない（次回の実行で取り直す）。
+                print(f"  警告: {cup_id} day{day} {race_no}R で失敗。この日は未完了として扱う")
+                break
             day_had_race = True
             races.append(result)
             race, histories = result
             print(f"  取得: {race.keirinjo_name} {race.race_no}R ({race.kaisai_date}) "
                   f"選手{len(race.entries)}名 / 結果{len(race.results)}件 / オッズ{len(race.odds)}件 / "
                   f"選手成績補完{len(histories)}件")
-        if not day_had_race:
-            break  # これ以上の日程はなし
+        if not day_had_race and day_ended_cleanly:
+            break  # 1レースも存在しない日に当たった＝これ以上の日程はなし
     return races
 
 
@@ -520,9 +628,12 @@ def _month_range(start: datetime.date, end: datetime.date) -> list[str]:
 
 
 def scrape_venue_recent(
-    venue: str, since_date: datetime.date, on_race=None
+    venue: str,
+    since_date: datetime.date,
+    on_race=None,
+    completed_days: set[tuple[str, str]] | None = None,
 ) -> list[tuple[RaceData, list[RacerHistoryEntry]]]:
-    """指定開催場について、since_date以降に開始した開催(cup)を全て取得する。
+    """指定開催場について、since_date以降にレースがある開催(cup)を全て取得する。
 
     on_raceを渡すと、レースを1件取得するたびに呼び出す（中断されても
     それまでの取得分がDBに残るよう、逐次保存するために使う）。
@@ -531,19 +642,25 @@ def scrape_venue_recent(
     その間の月（例: since_dateが4か月前なら5〜7月）が丸ごと抜け落ちるバグが
     あった。_month_rangeで間の月も含めて全て列挙する。
     """
-    months = _month_range(since_date, datetime.date.today())
+    # cup_idの先頭8桁は開催初日なので、since_date以降に「開始した」開催だけを
+    # 選ぶと、since_dateより前に始まった開催の後半日程が丸ごと落ちる。3日開催
+    # なら毎開催の最終日の着順が永久に取得できないバグになっていた。
+    # CUP_LOOKBACK_DAYSぶん手前から候補に入れ、既に着順が揃っている日は
+    # scrape_cup側でスキップしてアクセス増を打ち消す。
+    cup_since = since_date - datetime.timedelta(days=CUP_LOOKBACK_DAYS)
+    months = _month_range(cup_since, datetime.date.today())
     cup_ids: list[str] = []
     for yyyymm in months:
         cup_ids.extend(discover_cup_ids(venue, yyyymm))
     cup_ids = sorted(set(cup_ids))
 
-    since_str = since_date.strftime("%Y%m%d")
-    target_cups = [c for c in cup_ids if c[:8] >= since_str]
+    cup_since_str = cup_since.strftime("%Y%m%d")
+    target_cups = [c for c in cup_ids if c[:8] >= cup_since_str]
 
     all_races: list[tuple[RaceData, list[RacerHistoryEntry]]] = []
     for cup_id in target_cups:
         print(f"開催 {venue}/{cup_id} を取得中...")
-        cup_races = scrape_cup(venue, cup_id)
+        cup_races = scrape_cup(venue, cup_id, completed_days=completed_days)
         for result in cup_races:
             if on_race is not None:
                 on_race(result)
@@ -564,6 +681,14 @@ def main() -> None:
     since_date = datetime.date.today() - datetime.timedelta(days=args.days_back)
     venues = ALL_VENUE_SLUGS if args.all_venues else [args.venue]
 
+    # 着順が揃っている日は取り直しても内容が変わらないので、ここで1回だけ
+    # 問い合わせて全開催場ぶんの判定材料を用意する（cupの選択窓を広げた分の
+    # アクセス増を打ち消すのが目的）。
+    completed_days = load_completed_days(
+        since_date - datetime.timedelta(days=CUP_LOOKBACK_DAYS)
+    )
+    print(f"着順が揃っている開催日: {len(completed_days)}件（この日は取得をスキップする）")
+
     total = 0
     for venue in venues:
         print(f"=== {venue} ===")
@@ -572,7 +697,9 @@ def main() -> None:
             race, histories = result
             save_to_db(race, bank_info=None, histories=histories)
 
-        races = scrape_venue_recent(venue, since_date, on_race=save_one)
+        races = scrape_venue_recent(
+            venue, since_date, on_race=save_one, completed_days=completed_days
+        )
         print(f"{venue}: {len(races)}件保存")
         total += len(races)
 
