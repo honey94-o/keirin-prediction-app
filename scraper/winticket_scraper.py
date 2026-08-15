@@ -555,7 +555,7 @@ def load_completed_days(since_date: datetime.date) -> set[tuple[str, str]]:
 def scrape_cup(
     venue: str,
     cup_id: str,
-    max_days: int = 4,
+    max_days: int = 7,
     max_races: int = 12,
     completed_days: set[tuple[str, str]] | None = None,
 ) -> list[tuple[RaceData, list[RacerHistoryEntry]]]:
