@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { predictRace } from "../../../../lib/predict";
 import { formatFormationNotation } from "../../../../lib/scoring";
-import { getScenarioStats, getRacesForEvent } from "../../../../lib/repository";
+import { getScenarioStats, getRacesForEvent, getVenueKimariteRank } from "../../../../lib/repository";
 import { MarkBadge } from "../../../../components/MarkBadge";
 import { CarNumberBadge } from "../../../../components/CarNumberBadge";
 import { RaceSwitcher } from "../../../../components/RaceSwitcher";
@@ -22,6 +22,7 @@ export default async function RaceBetsPage({
   const top4 = scored.slice(0, 4);
   const scenarioStats = await getScenarioStats();
   const eventRaces = await getRacesForEvent(race.kaisai_date, race.jocd);
+  const kimariteRank = await getVenueKimariteRank(race.jocd);
 
   // venues/[jocd]と同じ解決ロジック（自場実績→同周長グループ実績→bank_info静的値）。
   const kimariteRates =
@@ -51,6 +52,7 @@ export default async function RaceBetsPage({
       {kimariteRates && (
         <BankKimariteCard
           rates={kimariteRates}
+          ranks={kimariteRank}
           sourceLabel={kimariteSourceLabel}
           featureText={bankInfo?.feature_text}
         />

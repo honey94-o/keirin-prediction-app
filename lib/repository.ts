@@ -15,6 +15,7 @@ import type {
   ScenarioStatsRow,
   ScoredEntry,
   ScoreWeights,
+  VenueKimariteRank,
   VenueKimariteRates,
 } from "./types";
 
@@ -26,6 +27,7 @@ import type {
 // スクリプト側で enableReadCache() を呼ぶか KEIRIN_READ_CACHE=1 を渡したときだけ有効化する。
 let readCacheEnabled = process.env.KEIRIN_READ_CACHE === "1";
 const venueKimariteCache = new Map<string, Promise<VenueKimariteRates | null>>();
+const venueKimariteRankCache = new Map<string, Promise<VenueKimariteRank | null>>();
 const racerHistoryCache = new Map<string, Promise<RacerHistoryRow[]>>();
 const positionWinRatesCache = new Map<string, Promise<PositionWinRate[]>>();
 const bankInfoCache = new Map<string, Promise<BankInfoRow | undefined>>();
@@ -40,6 +42,7 @@ export function enableReadCache(): void {
 /** メモ化した内容を捨てる（スクレイピング直後に再集計したい場合など）。 */
 export function clearReadCache(): void {
   venueKimariteCache.clear();
+  venueKimariteRankCache.clear();
   racerHistoryCache.clear();
   positionWinRatesCache.clear();
   bankInfoCache.clear();
@@ -269,6 +272,61 @@ async function fetchVenueKimariteRatesWithFallback(
   const bankLength = await getVenueBankLength(jocd);
   if (bankLength == null) return null;
   return getBankLengthKimariteRates(bankLength);
+}
+
+/**
+ * 開催場の決まり手（逃/捲/差）割合が、実績データのある全開催場の中で何番目に
+ * 高いかを返す。getVenueKimariteRatesと同じminRaces基準を満たす開催場だけを
+ * ランキング対象にする（母数が少ない場をランキングに混ぜると自場・比較先
+ * 双方の順位がノイズで振れるため）。対象jocd自身が基準未満なら null。
+ */
+export async function getVenueKimariteRank(
+  jocd: string,
+  minRaces = 40
+): Promise<VenueKimariteRank | null> {
+  return memoized(venueKimariteRankCache, `${jocd}:${minRaces}`, () =>
+    fetchVenueKimariteRank(jocd, minRaces)
+  );
+}
+
+async function fetchVenueKimariteRank(
+  jocd: string,
+  minRaces: number
+): Promise<VenueKimariteRank | null> {
+  const result = await getDb().execute(`
+    SELECT ra.jocd as jocd, r.kimarite as kimarite, COUNT(*) as c
+    FROM results r
+    JOIN races ra ON ra.id = r.race_id
+    WHERE r.finish_pos = 1 AND r.kimarite IS NOT NULL
+    GROUP BY ra.jocd, r.kimarite
+  `);
+  const rows = result.rows as unknown as { jocd: string; kimarite: string; c: number }[];
+
+  const byVenue = new Map<string, { kimarite: string; c: number }[]>();
+  for (const row of rows) {
+    const arr = byVenue.get(row.jocd) ?? [];
+    arr.push({ kimarite: row.kimarite, c: row.c });
+    byVenue.set(row.jocd, arr);
+  }
+
+  const rates = [...byVenue.entries()]
+    .map(([venueJocd, rs]) => ({ jocd: venueJocd, ...venueKimariteFromRows(rs) }))
+    .filter((v) => v.races >= minRaces);
+
+  if (!rates.some((v) => v.jocd === jocd)) return null;
+
+  const rankOf = (key: "nige_pct" | "makuri_pct" | "sashi_pct") => {
+    const sorted = [...rates].sort((a, b) => b[key] - a[key]);
+    const idx = sorted.findIndex((v) => v.jocd === jocd);
+    return idx >= 0 ? idx + 1 : null;
+  };
+
+  return {
+    totalVenues: rates.length,
+    nigeRank: rankOf("nige_pct"),
+    makuriRank: rankOf("makuri_pct"),
+    sashiRank: rankOf("sashi_pct"),
+  };
 }
 
 export async function getRacerHistory(snum: string): Promise<RacerHistoryRow[]> {

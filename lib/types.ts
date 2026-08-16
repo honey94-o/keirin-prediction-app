@@ -174,6 +174,14 @@ export interface VenueKimariteRates {
   races: number;
 }
 
+/** 全開催場中での決まり手割合の順位（1位が最も割合が高い）。 */
+export interface VenueKimariteRank {
+  totalVenues: number;
+  nigeRank: number | null;
+  makuriRank: number | null;
+  sashiRank: number | null;
+}
+
 export interface PredictionRow {
   car_num: number;
   snum: string;

@@ -8,12 +8,26 @@ export interface BankKimariteRates {
   sashi_pct: number;
 }
 
+export interface BankKimariteRanks {
+  totalVenues: number;
+  nigeRank: number | null;
+  makuriRank: number | null;
+  sashiRank: number | null;
+}
+
+function RankLabel({ rank, total }: { rank: number | null; total: number }) {
+  if (rank == null) return null;
+  return <span className="text-[10px] text-gray-400 ml-0.5">(全{total}場中{rank}位)</span>;
+}
+
 export function BankKimariteCard({
   rates,
+  ranks,
   sourceLabel,
   featureText,
 }: {
   rates: BankKimariteRates;
+  ranks?: BankKimariteRanks | null;
   sourceLabel: string | null;
   featureText?: string | null;
 }) {
@@ -28,18 +42,21 @@ export function BankKimariteCard({
         <div style={{ width: `${rates.makuri_pct}%` }} className="bg-amber-400" />
         <div style={{ width: `${rates.sashi_pct}%` }} className="bg-rose-400" />
       </div>
-      <div className="flex justify-between mt-2 text-xs text-gray-600">
+      <div className="flex flex-col gap-1 mt-2 text-xs text-gray-600">
         <span className="flex items-center gap-1">
           <span className="inline-block w-2 h-2 rounded-full bg-sky-400" />
           逃げ {rates.nige_pct.toFixed(0)}%
+          {ranks && <RankLabel rank={ranks.nigeRank} total={ranks.totalVenues} />}
         </span>
         <span className="flex items-center gap-1">
           <span className="inline-block w-2 h-2 rounded-full bg-amber-400" />
           捲り {rates.makuri_pct.toFixed(0)}%
+          {ranks && <RankLabel rank={ranks.makuriRank} total={ranks.totalVenues} />}
         </span>
         <span className="flex items-center gap-1">
           <span className="inline-block w-2 h-2 rounded-full bg-rose-400" />
           差し {rates.sashi_pct.toFixed(0)}%
+          {ranks && <RankLabel rank={ranks.sashiRank} total={ranks.totalVenues} />}
         </span>
       </div>
       {featureText && <p className="text-xs text-gray-400 mt-2 leading-relaxed">{featureText}</p>}

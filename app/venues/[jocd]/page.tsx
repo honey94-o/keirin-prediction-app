@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import {
   getRacesForEvent,
   getVenueKimariteRatesWithFallback,
+  getVenueKimariteRank,
   getBankInfo,
 } from "../../../lib/repository";
 import { predictRace } from "../../../lib/predict";
@@ -27,9 +28,10 @@ export default async function VenueRacesPage({
   // トップ画面は全開催場×全レースで呼んでいたため重かった。1開催場なら
   // 7〜12レース程度で済むため「高信頼度」バッジ表示とのバランスを取れる）。
   const viewDate = isValidDateStr(date) ? date : todayJstStr();
-  const [races, venueKimarite, bankInfo] = await Promise.all([
+  const [races, venueKimarite, kimariteRank, bankInfo] = await Promise.all([
     getRacesForEvent(viewDate, jocd),
     getVenueKimariteRatesWithFallback(jocd),
+    getVenueKimariteRank(jocd),
     getBankInfo(jocd),
   ]);
   if (races.length === 0) notFound();
@@ -73,6 +75,7 @@ export default async function VenueRacesPage({
       {kimariteRates && (
         <BankKimariteCard
           rates={kimariteRates}
+          ranks={kimariteRank}
           sourceLabel={kimariteSourceLabel}
           featureText={bankInfo?.feature_text}
         />
