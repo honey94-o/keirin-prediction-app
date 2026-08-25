@@ -37,7 +37,6 @@ jobs:
       - name: Run scraper
         working-directory: scraper
         env:
-          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           python keirin_scraper.py --venue-name "${{ github.event.inputs.venue_name }}" --race-no "${{ github.event.inputs.race_no }}"

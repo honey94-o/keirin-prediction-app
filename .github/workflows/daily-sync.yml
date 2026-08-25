@@ -49,8 +49,7 @@ jobs:
       - name: Scrape all venues (recent days)
         working-directory: scraper
         env:
-          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           # scheduleイベントでは github.event.inputs が空になるため 1 にフォールバックする。
           python winticket_scraper.py --all-venues --days-back ${{ github.event.inputs.days_back || '1' }}
@@ -72,14 +71,12 @@ jobs:
       - name: Compute previous day's summary
         if: github.event_name == 'workflow_dispatch' || github.event.schedule == '23 18 * * *'
         env:
-          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npx tsx scripts/daily-summary.ts
 
       # 当日・翌日の厳選レース（◎-対抗スコア差）は日中のオッズ・並び予想更新も
       # 反映したいので、朝・夕・手動リフレッシュの全実行で計算し直す。
       - name: Compute today's/tomorrow's high-confidence picks
         env:
-          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npx tsx scripts/daily-picks.ts

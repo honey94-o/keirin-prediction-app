@@ -1,11 +1,35 @@
-import { createClient, type Client } from "@libsql/client";
+import { Pool, type PoolClient } from "pg";
 
-let client: Client | null = null;
+// 元はTurso（libSQL）を使っていたが支払い問題で移行。呼び出し側（lib/repository.ts・
+// scripts/配下・scraper/db.py）は「?プレースホルダ」「datetime('now')」を使う
+// SQLite方言のSQL文字列をそのまま書いているため、クエリ文字列を書き換えずに済むよう
+// ここでPostgres（Neon）向けに変換するアダプタを用意する。
+//   - `?` → `$1,$2,...`（位置引数プレースホルダ）
+//   - `datetime('now')` → `to_char(now(), 'YYYY-MM-DD HH24:MI:SS')`（同じ文字列形式を維持）
+// これにより@libsql/clientのClient型（.execute/.batch）と同じ形のインターフェースを
+// 提供し、呼び出し側の変更を最小限にしている。
 
-// Turso（Hrana HTTP）は大量の連続クエリ（バックテストで1レースあたり数十クエリ×1000件超）を
-// 投げると稀に一時的な502等を返すことがある。スクリプトが即クラッシュするのを防ぐため、
-// 一時的なエラーに限って数回リトライする。
-const RETRYABLE_PATTERN = /50\d|ECONNRESET|ETIMEDOUT|fetch failed|network/i;
+export interface DbRow {
+  [column: string]: unknown;
+}
+
+export interface ExecuteResult {
+  rows: DbRow[];
+}
+
+export interface DbStatement {
+  sql: string;
+  args?: unknown[];
+}
+
+export interface DbClient {
+  execute(sql: string): Promise<ExecuteResult>;
+  execute(sql: string, args: unknown[]): Promise<ExecuteResult>;
+  execute(stmt: DbStatement): Promise<ExecuteResult>;
+  batch(statements: DbStatement[]): Promise<ExecuteResult[]>;
+}
+
+const RETRYABLE_PATTERN = /50\d|ECONNRESET|ETIMEDOUT|Connection terminated|timeout/i;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 500;
 
@@ -24,23 +48,86 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   throw lastError;
 }
 
-export function getDb(): Client {
-  if (!client) {
-    const url = process.env.TURSO_DATABASE_URL;
-    const authToken = process.env.TURSO_AUTH_TOKEN;
-    if (!url) {
+/** SQLite方言のdatetime('now')をPostgres相当の同一書式文字列に変換する。 */
+function translateDialect(sql: string): string {
+  return sql.replaceAll("datetime('now')", "to_char(now(), 'YYYY-MM-DD HH24:MI:SS')");
+}
+
+/** `?`プレースホルダを出現順にPostgresの`$1,$2,...`へ変換する。 */
+function convertPlaceholders(sql: string): string {
+  let i = 0;
+  return sql.replace(/\?/g, () => `$${++i}`);
+}
+
+function prepare(sql: string): string {
+  return convertPlaceholders(translateDialect(sql));
+}
+
+let pool: Pool | null = null;
+
+// scripts/配下の各スクリプトは独自の簡易dotenvローダーをそれぞれ持っており、
+// 値を "..." で囲んだままprocess.envに入れてしまうものがある（vercel envが
+// .env.localに書き出す形式はダブルクォート付き）。ここで一箇所だけ対策しておけば
+// 個々のスクリプトのローダーを直して回らずに済む。
+function stripQuotes(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function getPool(): Pool {
+  if (!pool) {
+    const raw =
+      process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? process.env.POSTGRES_PRISMA_URL;
+    if (!raw) {
       throw new Error(
-        "TURSO_DATABASE_URL is not set. Add it to .env.local (see README デプロイ手順)."
+        "DATABASE_URL is not set. Add it to .env.local (Neon connection string, see README デプロイ手順)."
       );
     }
-    const rawClient = createClient({ url, authToken });
-    const originalExecute = rawClient.execute.bind(rawClient);
-    const originalBatch = rawClient.batch.bind(rawClient);
-    rawClient.execute = ((...args: Parameters<typeof originalExecute>) =>
-      withRetry(() => originalExecute(...args))) as typeof rawClient.execute;
-    rawClient.batch = ((...args: Parameters<typeof originalBatch>) =>
-      withRetry(() => originalBatch(...args))) as typeof rawClient.batch;
-    client = rawClient;
+    pool = new Pool({ connectionString: stripQuotes(raw) });
+  }
+  return pool;
+}
+
+async function runExecute(
+  queryable: Pool | PoolClient,
+  stmtOrSql: string | DbStatement,
+  maybeArgs?: unknown[]
+): Promise<ExecuteResult> {
+  const sql = typeof stmtOrSql === "string" ? stmtOrSql : stmtOrSql.sql;
+  const args = typeof stmtOrSql === "string" ? (maybeArgs ?? []) : (stmtOrSql.args ?? []);
+  const text = prepare(sql);
+  const result = await withRetry(() => queryable.query(text, args as unknown[]));
+  return { rows: result.rows as DbRow[] };
+}
+
+let client: DbClient | null = null;
+
+export function getDb(): DbClient {
+  if (!client) {
+    client = {
+      execute: (stmtOrSql: string | DbStatement, args?: unknown[]) =>
+        runExecute(getPool(), stmtOrSql, args),
+      batch: async (statements: DbStatement[]) => {
+        const conn = await getPool().connect();
+        try {
+          await conn.query("BEGIN");
+          const results: ExecuteResult[] = [];
+          for (const stmt of statements) {
+            results.push(await runExecute(conn, stmt));
+          }
+          await conn.query("COMMIT");
+          return results;
+        } catch (err) {
+          await conn.query("ROLLBACK").catch(() => {});
+          throw err;
+        } finally {
+          conn.release();
+        }
+      },
+    };
   }
   return client;
 }

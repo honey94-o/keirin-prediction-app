@@ -48,10 +48,13 @@ scraper/__pycache__/
 # sqlite
 db/*.db
 db/*.db-journal
+db/backup/
 
 # scripts/fetch-venue-weather.tsのキャッシュ（大きい・日付範囲固定のスナップショット、
 # 再実行すればいつでも作り直せるため）。venue_coords.jsonは軽量かつ再利用価値があるため追跡する。
 scripts/data/venue_weather.json
 
 .vercel
+.env*
+
 .env*

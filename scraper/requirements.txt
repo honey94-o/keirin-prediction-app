@@ -1,5 +1,5 @@
 playwright
 requests
 beautifulsoup4
-libsql-client
+psycopg2-binary
 pdfplumber
