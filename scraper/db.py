@@ -101,17 +101,29 @@ class PgClient:
                 _with_retry(cur.execute)(text, list(args))
 
     def close(self) -> None:
-        self._conn.close()
+        # 呼び出し側（winticket_scraper.py等）はTurso時代の慣習で「1回のDB操作の
+        # まとまり毎にget_client()→...→client.close()」を何十〜何百回も繰り返す。
+        # psycopg2.connect()は毎回TCP+TLSハンドシェイクが走り、Tursoの軽量な
+        # HTTPリクエストと比べてこの接続コストが無視できない（1レースあたり
+        # 数十回のDB往復×接続張り直しで実測30秒/レース超まで悪化した）。
+        # 呼び出し側のコードは変えずに済ませたいので、closeを実質no-opにして
+        # モジュールレベルの単一コネクションを使い回す。
+        pass
+
+
+_conn = None
 
 
 def get_client() -> PgClient:
+    global _conn
     _load_dotenv_once()
-    url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
-    if not url:
-        raise RuntimeError(
-            "DATABASE_URL が設定されていません。.env.local を用意するか、"
-            "環境変数として設定してください（README参照）。"
-        )
-    conn = psycopg2.connect(url)
-    conn.autocommit = True
-    return PgClient(conn)
+    if _conn is None or _conn.closed:
+        url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+        if not url:
+            raise RuntimeError(
+                "DATABASE_URL が設定されていません。.env.local を用意するか、"
+                "環境変数として設定してください（README参照）。"
+            )
+        _conn = psycopg2.connect(url)
+        _conn.autocommit = True
+    return PgClient(_conn)

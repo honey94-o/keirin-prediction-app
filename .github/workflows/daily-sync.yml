@@ -52,7 +52,9 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           # scheduleイベントでは github.event.inputs が空になるため 1 にフォールバックする。
-          python winticket_scraper.py --all-venues --days-back ${{ github.event.inputs.days_back || '1' }}
+          # -u: 標準出力をバッファリングしない（ブロックバッファのままだと進捗ログが
+          # 途中経過として見えず、ハングと区別がつかなくなるため）。
+          python -u winticket_scraper.py --all-venues --days-back ${{ github.event.inputs.days_back || '1' }}
 
       # Node系のステップは全実行（朝・夕・手動）で使うため無条件にする。
       - name: Set up Node.js

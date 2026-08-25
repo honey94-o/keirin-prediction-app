@@ -39,4 +39,4 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          python keirin_scraper.py --venue-name "${{ github.event.inputs.venue_name }}" --race-no "${{ github.event.inputs.race_no }}"
+          python -u keirin_scraper.py --venue-name "${{ github.event.inputs.venue_name }}" --race-no "${{ github.event.inputs.race_no }}"
