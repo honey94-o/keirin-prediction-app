@@ -1,4 +1,4 @@
-import { Pool, type PoolClient } from "pg";
+import { Pool, types, type PoolClient } from "pg";
 
 // 元はTurso（libSQL）を使っていたが支払い問題で移行。呼び出し側（lib/repository.ts・
 // scripts/配下・scraper/db.py）は「?プレースホルダ」「datetime('now')」を使う
@@ -8,6 +8,15 @@ import { Pool, type PoolClient } from "pg";
 //   - `datetime('now')` → `to_char(now(), 'YYYY-MM-DD HH24:MI:SS')`（同じ文字列形式を維持）
 // これにより@libsql/clientのClient型（.execute/.batch）と同じ形のインターフェースを
 // 提供し、呼び出し側の変更を最小限にしている。
+
+// node-postgresはBIGINT/COUNT(*)（OID 20 = int8）をJS数値の精度超過を警戒して
+// デフォルトで文字列のまま返す。SQLiteはCOUNT(*)を素直にJS numberとして返して
+// いたため、呼び出し側（lib/repository.tsの各種集計、reduceでの合計等）は数値だと
+// 仮定したコードのままになっている（例: 場ごとの決まり手割合が軒並み0%になる形で
+// 発現した——文字列同士の`+`が連結になり合計が壊れていた）。このアプリのCOUNT(*)は
+// せいぜい数万件规模でJSの安全整数範囲を超えないため、number化して返すよう上書きする。
+types.setTypeParser(20, (val: string) => Number(val)); // int8/bigint（COUNT(*)、SUM(整数)等）
+types.setTypeParser(1700, (val: string) => Number(val)); // numeric（AVG等、kyori*1.0のような計算結果）
 
 export interface DbRow {
   [column: string]: unknown;
