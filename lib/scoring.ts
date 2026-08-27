@@ -1170,21 +1170,21 @@ export function generateScenarios(
       honmeiScenario.reason += ` 対抗とのスコア差が${margin.toFixed(1)}点と拮抗しているため、1着・2着を入れ替え可能な買い方にしています。`;
     } else {
       // 中間帯（LOW_MARGIN_THRESHOLD<=margin<HIGH_CONFIDENCE_MARGIN）：
-      // 高信頼度帯とは逆に、広げるほど回収率が悪化した。
-      // scripts/diagnose-midband-formation-size.tsで「毎日margin上位10件」選定に
-      // 含まれるこの帯のレース(793件)に絞って点数別ROIを検証すると、
-      //   2点: 的中率16.8%・回収率96.1%（最良）
-      //   6点(旧デフォルト): 的中率30.0%・回収率87.9%
-      //   12点: 的中率41.5%・回収率84.5%
-      //   20点: 的中率49.6%・回収率76.7%
-      // と点数を増やすほど一貫して悪化した。高信頼度帯（軸の勝率82.7%）とは違い、
-      // この帯は軸自体の信頼度がそこまで高くないため、2・3着まで広げるほど
-      // 低確率の組み合わせが増えて薄まると考えられる。デフォルトの
-      // perScenarioBudget（4シナリオ時20/4=5点相当）ではなく2点に絞る。
+      // 旧実装は2点固定だった。当時（793件）は点数を増やすほど一貫して悪化する
+      // 結果だったが、データが10,525件規模まで増えた後にscripts/
+      // diagnose-midband-formation-size.tsを再実行すると傾向が変わり、
+      // この帯（578件）では
+      //   2点: 的中率18.2%・回収率101.6%
+      //   6点: 的中率33.9%・回収率133.6%（最良）
+      //   12点: 的中率46.9%・回収率103.7%
+      //   20点: 的中率56.7%・回収率102.5%
+      // と6点がはっきり最良になった。母数が小さいうちの結論が、データが
+      // 増えて安定したことで変わった例（ユーザー指摘「2点のところは
+      // 増えてもいい」が的中）。6点に広げる。
       const pool = buildLineAwarePool(honmei.entry.car_num, honmei.entry.line_group, scored);
       honmeiScenario.formation = {
         betType: "3連単フォーメーション",
-        combinations: formationFromPool(honmei.entry.car_num, pool, 2),
+        combinations: formationFromPool(honmei.entry.car_num, pool, 6),
       };
     }
   }
