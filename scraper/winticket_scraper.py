@@ -104,7 +104,12 @@ CYCLIST_ID_RE = re.compile(r"/keirin/cyclist/(\d+)")
 BIB_NUM_RE = re.compile(r"(\d+)番")
 CLASS_TEXT_RE = re.compile(r"^([A-Z]+)級(\d+)班$")
 
-RACER_HISTORY_MAX_AGE_DAYS = 1  # 選手成績は日々更新されるので短めのキャッシュ
+RACER_HISTORY_MAX_AGE_DAYS = 3
+# 「直近8走」の成績は選手が実際にレースに出た時しか変わらない（毎日ではない）。
+# =1だと1日2回実行のたびに実質ほぼ全選手が再取得対象になり、特に朝の実行
+# （その日初めて見る出走選手が多い）でプロフィールページの個別取得が積み重なり
+# 大幅に遅くなっていた（実測: 朝1400件補完/約35分 vs 夕0件補完/約26分）。
+# 3日に緩めることで大半の選手が複数回の実行をまたいでキャッシュヒットするようになる。
 
 
 def _convert_class_text(text: str) -> str | None:
