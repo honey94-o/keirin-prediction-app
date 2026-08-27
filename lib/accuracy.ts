@@ -74,22 +74,27 @@ function computeRaceSummary(
     actualOrder.every((c) => c != null) ? actualOrder.join("-") : null;
   const actualCombo = officialCombo ?? fallbackCombo;
 
-  const ranked = [...predictions]
-    .sort((a, b) => b.total_score - a.total_score)
-    .map((p) => p.car_num);
-  const suggestions = generateBetSuggestionsFromRanking(ranked);
-  const formation = suggestions.find((s) => s.betType === "3連単フォーメーション");
+  // predictRace時点で実際に表示した「本命」シナリオの買い目（ライン考慮・margin帯別の
+  // 点数調整を反映済み、◎行のformationに保存済み）で的中判定する。この列を追加する前の
+  // 古い行はformationがnullなので、その場合だけ総合スコア順の簡易フォーメーション
+  // （generateBetSuggestionsFromRanking）にフォールバックする。
+  const storedFormation = honmei?.formation ? (JSON.parse(honmei.formation) as string[]) : null;
+  const combinations =
+    storedFormation ??
+    (() => {
+      const ranked = [...predictions].sort((a, b) => b.total_score - a.total_score).map((p) => p.car_num);
+      const suggestions = generateBetSuggestionsFromRanking(ranked);
+      return suggestions.find((s) => s.betType === "3連単フォーメーション")?.combinations ?? null;
+    })();
 
   const sanrentanHit =
-    actualCombo != null && formation != null
-      ? formation.combinations.includes(actualCombo)
-      : null;
+    actualCombo != null && combinations != null ? combinations.includes(actualCombo) : null;
 
   let roi: number | null = null;
   let payoutYen: number | null = null;
   let stakeYen: number | null = null;
-  if (actualCombo != null && formation != null && formation.combinations.length > 0) {
-    const stake = 100 * formation.combinations.length;
+  if (actualCombo != null && combinations != null && combinations.length > 0) {
+    const stake = 100 * combinations.length;
     const hitOdds = odds.find((o) => o.combination === actualCombo)?.odds_value ?? null;
     const payout = sanrentanHit && hitOdds != null ? 100 * hitOdds : 0;
     roi = (payout / stake) * 100;

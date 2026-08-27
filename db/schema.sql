@@ -145,6 +145,9 @@ CREATE TABLE IF NOT EXISTS predictions (
     line_score         REAL NOT NULL,
     kyakushitsu_score  REAL NOT NULL,
     stats_score        REAL NOT NULL,
+    formation          TEXT,                   -- ◎行にのみ設定。実際に表示した「本命」
+                                                 -- シナリオの3連単フォーメーション(JSON配列)。
+                                                 -- /history等の的中判定を実際の買い目と一致させるため。
     predicted_at       TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (race_id, car_num)
 );

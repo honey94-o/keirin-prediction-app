@@ -42,7 +42,8 @@ async function processDate(statDate: string): Promise<void> {
     const prediction = await predictRace(race.id);
     if (!prediction || prediction.scored.length === 0) continue;
 
-    await savePrediction(race.id, prediction.scored);
+    const honmeiFormation = prediction.scenarios.find((s) => s.label === "本命")?.formation.combinations;
+    await savePrediction(race.id, prediction.scored, honmeiFormation);
     saved++;
   }
   console.log(`予想を保存: ${saved}件`);

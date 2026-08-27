@@ -190,6 +190,10 @@ export interface PredictionRow {
   line_score: number;
   kyakushitsu_score: number;
   stats_score: number;
+  // 本命(◎)行にのみ設定される、predictRace時点で実際に表示した「本命」シナリオの
+  // 3連単フォーメーション（JSON配列）。ライン考慮・margin帯別の点数調整を反映した
+  // 実際の買い目そのもの。◎以外の行は常にnull。古い（この列追加前の）行もnull。
+  formation: string | null;
 }
 
 export interface ResultRow {

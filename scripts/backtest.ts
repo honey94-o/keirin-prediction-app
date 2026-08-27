@@ -72,7 +72,8 @@ async function main() {
       continue;
     }
 
-    await savePrediction(raceId, scored);
+    const honmeiFormationForSave = scenarios.find((s) => s.label === "本命")?.formation.combinations;
+    await savePrediction(raceId, scored, honmeiFormationForSave);
 
     const results = await getResultsForRace(raceId);
     const top3 = results

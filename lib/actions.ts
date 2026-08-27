@@ -51,7 +51,8 @@ export async function triggerDailySyncAction(): Promise<TriggerSyncResult> {
 export async function recordPredictionAction(raceId: number): Promise<void> {
   const prediction = await predictRace(raceId);
   if (!prediction) return;
-  await savePrediction(raceId, prediction.scored);
+  const honmeiFormation = prediction.scenarios.find((s) => s.label === "本命")?.formation.combinations;
+  await savePrediction(raceId, prediction.scored, honmeiFormation);
   revalidatePath(`/races/${raceId}`);
   revalidatePath("/history");
 }

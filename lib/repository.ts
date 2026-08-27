@@ -403,18 +403,29 @@ export async function setScoreWeights(weights: ScoreWeights): Promise<void> {
   ]);
 }
 
-/** 発走前の予想（スコア・印）をスナップショットとして保存する。 */
-export async function savePrediction(raceId: number, scored: ScoredEntry[]): Promise<void> {
+/**
+ * 発走前の予想（スコア・印）をスナップショットとして保存する。honmeiFormationは
+ * その時点で実際に表示した「本命」シナリオの3連単フォーメーション（ライン考慮・
+ * margin帯別の点数調整を反映済み）。◎行にのみ保存し、/history等の的中判定を
+ * 実際に見せた買い目と一致させる（generateBetSuggestionsFromRankingという
+ * 別ロジックで再計算していたのを廃止）。
+ */
+export async function savePrediction(
+  raceId: number,
+  scored: ScoredEntry[],
+  honmeiFormation?: string[]
+): Promise<void> {
   const db = getDb();
   const sql = `INSERT INTO predictions (race_id, car_num, snum, mark, total_score,
-                                         line_score, kyakushitsu_score, stats_score)
-               VALUES (?,?,?,?,?,?,?,?)
+                                         line_score, kyakushitsu_score, stats_score, formation)
+               VALUES (?,?,?,?,?,?,?,?,?)
                ON CONFLICT(race_id, car_num) DO UPDATE SET
                  mark=excluded.mark, total_score=excluded.total_score,
                  line_score=excluded.line_score, kyakushitsu_score=excluded.kyakushitsu_score,
-                 stats_score=excluded.stats_score, predicted_at=datetime('now')`;
+                 stats_score=excluded.stats_score, formation=excluded.formation,
+                 predicted_at=datetime('now')`;
   await db.batch(
-    scored.map((s) => ({
+    scored.map((s, i) => ({
       sql,
       args: [
         raceId,
@@ -425,6 +436,7 @@ export async function savePrediction(raceId: number, scored: ScoredEntry[]): Pro
         s.lineScore.score,
         s.kyakushitsuScore.score,
         s.statsScore.score,
+        i === 0 && honmeiFormation ? JSON.stringify(honmeiFormation) : null,
       ],
     }))
   );
@@ -432,7 +444,7 @@ export async function savePrediction(raceId: number, scored: ScoredEntry[]): Pro
 
 export async function getPredictionsForRace(raceId: number): Promise<PredictionRow[]> {
   const result = await getDb().execute({
-    sql: `SELECT car_num, snum, mark, total_score, line_score, kyakushitsu_score, stats_score
+    sql: `SELECT car_num, snum, mark, total_score, line_score, kyakushitsu_score, stats_score, formation
           FROM predictions WHERE race_id = ? ORDER BY total_score DESC`,
     args: [raceId],
   });
@@ -490,7 +502,7 @@ export async function getPredictionsForRaces(
   const rows: (PredictionRow & { race_id: number })[] = [];
   for (const chunk of chunkIds(raceIds)) {
     const result = await getDb().execute({
-      sql: `SELECT race_id, car_num, snum, mark, total_score, line_score, kyakushitsu_score, stats_score
+      sql: `SELECT race_id, car_num, snum, mark, total_score, line_score, kyakushitsu_score, stats_score, formation
             FROM predictions WHERE race_id IN (${chunk.map(() => "?").join(",")})
             ORDER BY race_id, total_score DESC`,
       args: chunk,
