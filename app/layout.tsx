@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Header } from "../components/Header";
+import { PullToRefresh } from "../components/PullToRefresh";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -50,7 +51,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-gray-50">
         <Header />
-        {children}
+        <PullToRefresh>{children}</PullToRefresh>
       </body>
     </html>
   );
