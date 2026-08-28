@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS entries (
     car_num       INTEGER NOT NULL,       -- 車番
     line_group    INTEGER,                -- ラインのグループ番号
     line_position TEXT,                   -- 先頭・番手・3番手など
+    pref          TEXT,                   -- 府県（地元の場合「東京（地元）」のように付与）
     created_at    TEXT NOT NULL DEFAULT to_char(now(), 'YYYY-MM-DD HH24:MI:SS'),
     UNIQUE (race_id, car_num)
 );

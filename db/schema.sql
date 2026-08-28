@@ -108,6 +108,11 @@ CREATE TABLE IF NOT EXISTS entries (
     car_num       INTEGER NOT NULL,       -- 車番
     line_group    INTEGER,                -- ラインのグループ番号
     line_position TEXT,                   -- 先頭・番手・3番手など
+    pref          TEXT,                   -- 府県（このレースの開催場が地元の場合
+                                           -- 「東京（地元）」のように末尾に付与される。
+                                           -- racersテーブルのprefは選手単位で毎回上書き
+                                           -- されレース単位の地元判定に使えないため、
+                                           -- こちらはレース出走のたびに保存する）。
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (race_id, car_num)
 );
