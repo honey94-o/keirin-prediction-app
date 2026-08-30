@@ -310,6 +310,55 @@ const ROOKIE_DEBUT_YM: Record<string, string> = {
   "130期": "202607", // 女子（130回生）もDB上は7月末が初出走
 };
 
+/**
+ * 開催場コード(jocd)→都道府県。ユーザー提案「地元」の検証・加点に使う。
+ * scripts/diagnose-jimoto-line.tsと同じマッピング（変更したら両方直すこと）。
+ */
+const JOCD_PREF: Record<string, string> = {
+  "11": "北海道", "12": "青森", "13": "福島", "21": "新潟", "22": "群馬",
+  "23": "茨城", "24": "栃木", "25": "埼玉", "26": "埼玉", "27": "東京",
+  "28": "東京", "31": "千葉", "34": "神奈川", "35": "神奈川", "36": "神奈川",
+  "37": "静岡", "38": "静岡", "42": "愛知", "43": "岐阜", "44": "岐阜",
+  "45": "愛知", "46": "富山", "47": "三重", "48": "三重", "53": "奈良",
+  "55": "和歌山", "56": "大阪", "61": "岡山", "62": "広島", "63": "山口",
+  "73": "徳島", "74": "高知", "75": "愛媛", "81": "福岡", "83": "福岡",
+  "84": "佐賀", "85": "長崎", "86": "大分", "87": "熊本",
+};
+
+/**
+ * 地元選手への加点。scripts/diagnose-jimoto-line.tsで検証（74,782出走）：
+ * 単体では地元選手の勝率19.3%(970/5031) vs 非地元13.9%(9726/69751)、
+ * 複勝率も52.9% vs 42.1%と明確な差があった。entry.prefの「（地元）」
+ * サフィックスは選手単位のracersテーブルが毎回上書きされる関係で必ずしも
+ * 「このレース」の地元判定と一致しない（複数レースに出る選手の場合、
+ * 直近スクレイプ時点の判定が残る）ため、判定はサフィックスに頼らず
+ * entry.prefの基本府県（サフィックスを除いた値）と開催場の都道府県
+ * （JOCD_PREF）を突き合わせる方式にした（過去データでも現在のスコアリング
+ * でも同じロジックで判定でき、backtest.tsでの検証結果と本番の挙動が一致する）。
+ *
+ * ただし+8点で組み込んでbacktestすると、◎的中率44.8%→45.0%・本命回収率
+ * 111.3%→112.0%とほぼ変化なし（データ件数が実行間で数十件ずれる誤差の
+ * 範囲内）だった。このプロジェクトで繰り返し確認している「単体では強い
+ * 信号でも、既存の重み付け平均スコアに混ぜると効果が消える」confound
+ * パターンと同じ形（このケースでは、地元選手は必然的にその開催場での
+ * 出走履歴が多くなりやすく、既存のcalculateSameConditionScore「同開催場
+ * 平均着順」と重複している可能性が高い）。そのため無効化（0点）で残す。
+ * 新人ボーナス等と違って加重平均ではなく加点方式なので、対象外の出走
+ * （非地元）には一切影響しない。
+ */
+const JIMOTO_BONUS = 0;
+
+function isJimoto(entry: EntryWithRacer, jocd: string): boolean {
+  const venuePref = JOCD_PREF[jocd];
+  if (!venuePref || !entry.pref) return false;
+  const basePref = entry.pref.replace(/（地元）$/, "").trim();
+  return basePref === venuePref;
+}
+
+function calculateJimotoBonus(entry: EntryWithRacer, jocd: string): number {
+  return isJimoto(entry, jocd) ? JIMOTO_BONUS : 0;
+}
+
 function calculateRookieClassBonus(
   entry: EntryWithRacer,
   kaisaiDate: string
@@ -623,6 +672,7 @@ export function calculateStatsScore(
   entry: EntryWithRacer,
   kaisaiDate: string,
   keirinjoName: string,
+  jocd: string,
   bankInfo: BankInfoRow | undefined,
   history: RacerHistoryRow[],
   positionWinRates: PositionWinRate[],
@@ -636,6 +686,8 @@ export function calculateStatsScore(
   const personalMoveResult = calculatePersonalMoveFitScore(entry);
   const leadResult = calculateLeadPositionScore(entry, allEntries ?? [entry]);
   const rookieResult = calculateRookieClassBonus(entry, kaisaiDate);
+  const jimotoBonus = calculateJimotoBonus(entry, jocd);
+  const jimotoMatch = isJimoto(entry, jocd);
   const rentaiScore = entry.rentairitu2 != null ? clamp(entry.rentairitu2) : null;
 
   // 選手個人の決まり手適性(personalMoveResult)は重み0.1/0.2の両方で検証したが、
@@ -663,7 +715,8 @@ export function calculateStatsScore(
       (personalMoveResult.score ?? 50) * 0) *
       otherScale +
       (leadResult.score ?? 50) * LEAD_POSITION_WEIGHT +
-      rookieResult.bonus
+      rookieResult.bonus +
+      jimotoBonus
   );
 
   return {
@@ -684,6 +737,7 @@ export function calculateStatsScore(
       新人期別: entry.debut_class
         ? `${entry.debut_class}（デビュー${rookieResult.monthsSinceDebut ?? "?"}ヶ月目・加点${rookieResult.bonus.toFixed(1)}）`
         : "不明",
+      地元: jimotoMatch ? `地元選手（加点は現在無効化中、詳細はJIMOTO_BONUSのコメント参照）` : "該当なし",
       注記: "オッズは意図的に不使用。天候はレース終了後にしか取得できないため未反映",
     },
   };
@@ -696,6 +750,7 @@ export function scoreRace(
   weights: ScoreWeights,
   kaisaiDate: string,
   keirinjoName: string,
+  jocd: string,
   bankInfo: BankInfoRow | undefined,
   historyBySnum: Record<string, RacerHistoryRow[]>,
   positionWinRatesBySnum: Record<string, PositionWinRate[]>,
@@ -708,6 +763,7 @@ export function scoreRace(
       entry,
       kaisaiDate,
       keirinjoName,
+      jocd,
       bankInfo,
       historyBySnum[entry.snum] ?? [],
       positionWinRatesBySnum[entry.snum] ?? [],

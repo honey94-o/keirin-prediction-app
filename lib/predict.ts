@@ -63,6 +63,7 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
     weights,
     race.kaisai_date,
     race.keirinjo_name,
+    race.jocd,
     bankInfo,
     historyBySnum,
     positionWinRatesBySnum,
