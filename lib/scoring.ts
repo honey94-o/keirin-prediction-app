@@ -37,11 +37,23 @@ export function calculateLineScore(
   const lineMates = allEntries.filter((e) => e.line_group === entry.line_group);
   const lineSize = lineMates.length;
 
+  // scripts/diagnose-gear-linesize-pairing.tsで人数別の真の勝率を見ると
+  // 単騎11.8%・2人15.9%・3人26.0%・4人以上42.3%と単調に伸び、3人と4人以上の
+  // 差も大きい（75,278出走）。4人以上だけ基礎点を80→95に上げて試したが、
+  // backtestでは◎的中率44.8%→44.3%と悪化した（10740→10791レース、+51件の
+  // 差分はあるが方向は明確）。既に3人以上を一律80点で優遇しており、
+  // 4人以上はレース自体が少ない（全体の2.4%）こともあって、そこをさらに
+  // 積み増しても他の要素との兼ね合いで効果が出なかったとみられる。現状維持。
   const baseByLineSize = lineSize >= 3 ? 80 : lineSize === 2 ? 60 : 40;
 
   const positionBonus =
     entry.line_position === "先頭" ? 5 : entry.line_position === "番手" ? 15 : 10;
 
+  // 同県ライン加点：scripts/diagnose-jimoto-line.tsの単体集計では同県ラインの方が
+  // ワンツー率が低かった（12.2% vs 混成23.1%、3047本/21435本）ため撤去を試したが、
+  // 実際にbacktestすると◎的中率が44.8%→44.6%とわずかに悪化した（同一10740レースの
+  // クリーンな比較）。単体の相関と、既存スコアに混ぜた時の効果は別物という、
+  // このプロジェクトで繰り返し確認しているパターン通りだったため、撤去せず現状維持する。
   const prefs = new Set(lineMates.map((e) => e.pref).filter(Boolean));
   const samePrefBonus = lineSize >= 2 && prefs.size === 1 ? 5 : 0;
 
@@ -125,7 +137,8 @@ export function classChangeAdjustmentFactor(kaisaiDate: string): number {
  */
 export function calculateKyakushitsuScore(
   entry: EntryWithRacer,
-  kaisaiDate: string
+  kaisaiDate: string,
+  allEntries: EntryWithRacer[]
 ): ScoreBreakdown {
   const classRankScore = entry.class_rank
     ? CLASS_RANK_SCORES[entry.class_rank] ?? 50
@@ -156,6 +169,21 @@ export function calculateKyakushitsuScore(
     fitScore = entry.line_position === "番手" ? 45 : entry.line_position === "先頭" ? 25 : 15;
   } else if (entry.kyakushitsu === "両") {
     fitScore = entry.line_position === "番手" ? 65 : entry.line_position === "先頭" ? 55 : 25;
+  }
+
+  // 先頭×番手の脚質ペア相性：ユーザー提案を受けてscripts/diagnose-gear-linesize-
+  // pairing.tsで検証（75,278出走からライン単位に集計）。先頭が追込型で番手も
+  // 追込型のライン（=誰も前に出る意志が無い組み合わせ）だけ、先頭勝率10.4%・
+  // ワンツー率4.9%と他の組み合わせ（15〜25%台）から明確に外れて低かった
+  // （n=789、他の組み合わせは概ねn=900〜12700）。この最悪ケースだけ追加減点する。
+  const OI_SENKO_OI_BANTE_PENALTY = 10;
+  if (entry.line_position === "先頭" && entry.kyakushitsu === "追") {
+    const bantesu = allEntries.find(
+      (e) => e.line_group === entry.line_group && e.line_position === "番手"
+    );
+    if (bantesu?.kyakushitsu === "追") {
+      fitScore = clamp(fitScore - OI_SENKO_OI_BANTE_PENALTY);
+    }
   }
 
   const baseScore = clamp(
@@ -758,7 +786,7 @@ export function scoreRace(
 ): ScoredEntry[] {
   const scored = entries.map((entry) => {
     const lineScore = calculateLineScore(entry, entries);
-    const kyakushitsuScore = calculateKyakushitsuScore(entry, kaisaiDate);
+    const kyakushitsuScore = calculateKyakushitsuScore(entry, kaisaiDate, entries);
     const statsScore = calculateStatsScore(
       entry,
       kaisaiDate,
