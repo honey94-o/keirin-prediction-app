@@ -941,6 +941,26 @@ export function formatFormationNotation(combinations: string[]): string | null {
 }
 
 /**
+ * レースの位置づけ（予選/準決勝/決勝等）をsyumoku文字列から判定する。
+ * scripts/diagnose-stage-holdout.tsで検証（前半/後半のアウトオブサンプル）：
+ * 予選は学習期間ROI96.5%→検証期間103.5%と一貫して他より弱く、決勝(127.2%→
+ * 153.6%)・選抜特選(130.8%→126.9%)・一般(127.1%→120.6%)は一貫して強かった
+ * （開催場フィルタで過学習だった9th findingと違い、傾向が検証期間でも
+ * 再現している）。scripts/daily-picks.tsで予選レースを厳選対象から除外する
+ * のに使う。
+ */
+export function raceStage(syumoku: string | null): string {
+  if (!syumoku) return "不明";
+  if (/決勝/.test(syumoku) && !/準々|準決/.test(syumoku)) return "決勝";
+  if (/準決勝/.test(syumoku)) return "準決勝";
+  if (/準々決勝/.test(syumoku)) return "準々決勝";
+  if (/選抜|特選/.test(syumoku)) return "選抜・特選";
+  if (/予選/.test(syumoku)) return "予選";
+  if (/一般/.test(syumoku)) return "一般";
+  return "その他";
+}
+
+/**
  * 総合スコア順（降順）の車番配列から3連単フォーメーション・3連複ボックスを生成する。
  * predictionsテーブルに保存済みの過去の予想（車番と合計スコアのみ）からも
  * 同じロジックで再現できるよう、ScoredEntryではなく車番配列を受け取る形にしている。

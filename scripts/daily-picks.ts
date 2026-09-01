@@ -16,6 +16,7 @@ function loadDotEnvLocal() {
 loadDotEnvLocal();
 
 import { predictRace } from "../lib/predict";
+import { raceStage } from "../lib/scoring";
 import { getRacesByDate, saveDailyPicks, enableReadCache } from "../lib/repository";
 import { todayJstStr, addDaysToDateStr } from "../lib/date";
 
@@ -27,6 +28,10 @@ import { todayJstStr, addDaysToDateStr } from "../lib/date";
  * （scripts/simulate-selective-strategy.tsの検証結果に基づく）。
  * daily-sync.yml実行のたびに呼ぶため、日中にオッズ・並び予想が更新されればその都度
  * 最新の予想に更新される。
+ *
+ * 予選レースはscripts/diagnose-stage-holdout.tsで検証済みの理由（raceStageの
+ * コメント参照）により、厳選の候補から除外する（daily_picksに保存しない＝
+ * getDailyPicksの「上位10件」選定に混ざらない）。
  */
 async function processDate(kaisaiDate: string): Promise<void> {
   const races = await getRacesByDate(kaisaiDate);
@@ -37,6 +42,7 @@ async function processDate(kaisaiDate: string): Promise<void> {
 
   const picks = races
     .map((race, i) => {
+      if (raceStage(race.syumoku) === "予選") return null;
       const prediction = predictions[i];
       if (!prediction || prediction.scored.length < 2) return null;
       const honmei = prediction.scored[0];
