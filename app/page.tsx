@@ -49,6 +49,11 @@ export default async function Home({
     if (!groups.has(race.jocd)) groups.set(race.jocd, []);
     groups.get(race.jocd)!.push(race);
   }
+  // 開催場一覧は取得順（keirinjo_name あいうえお順）のままだと発走順にならないため、
+  // 各開催場の最初のレースの発走時刻順に並べ替える。
+  const groupsByTime = [...groups.entries()].sort(([, a], [, b]) =>
+    (a[0].start_time ?? "").localeCompare(b[0].start_time ?? "")
+  );
 
   const tabs: { label: string; date: string }[] = [
     { label: "前日", date: prevDate },
@@ -177,7 +182,7 @@ export default async function Home({
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {[...groups.entries()].map(([jocd, groupRaces]) => {
+          {groupsByTime.map(([jocd, groupRaces]) => {
             const first = groupRaces[0];
             return (
               <Link
