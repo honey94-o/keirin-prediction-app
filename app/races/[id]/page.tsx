@@ -5,6 +5,7 @@ import { getPredictionsForRace, getRacesForEvent } from "../../../lib/repository
 import { recordPredictionAction } from "../../../lib/actions";
 import { CarNumberBadge } from "../../../components/CarNumberBadge";
 import { MarkBadge } from "../../../components/MarkBadge";
+import { RecentFormBadge } from "../../../components/RecentFormBadge";
 import { ScoreBar } from "../../../components/ScoreBar";
 import { RaceSwitcher } from "../../../components/RaceSwitcher";
 
@@ -85,6 +86,7 @@ export default async function RaceDetailPage({
               <Link href={`/racers/${s.entry.snum}`} className="font-semibold flex-1 truncate">
                 {s.entry.name}
               </Link>
+              <RecentFormBadge avgFinish={s.recentFormAvg} />
               <span className="text-xl font-bold tabular-nums">{s.totalScore.toFixed(1)}</span>
             </div>
             <div className="flex items-center gap-3 text-xs text-gray-500 mb-2">

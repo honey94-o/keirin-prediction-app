@@ -33,3 +33,17 @@ export function formatDateStr(dateStr: string): string {
 export function isValidDateStr(s: string | undefined): s is string {
   return !!s && /^\d{8}$/.test(s);
 }
+
+/**
+ * DBのTEXT型タイムスタンプ（"YYYY-MM-DD HH:MM:SS"、UTC。datetime('now')由来）を
+ * JST表示用の"MM/DD HH:MM"に変換する。最終同期時刻の表示用。
+ */
+export function formatUtcAsJst(utcStr: string): string {
+  const utcDate = new Date(`${utcStr.replace(" ", "T")}Z`);
+  const jst = new Date(utcDate.getTime() + 9 * 60 * 60 * 1000);
+  const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(jst.getUTCDate()).padStart(2, "0");
+  const hh = String(jst.getUTCHours()).padStart(2, "0");
+  const mm = String(jst.getUTCMinutes()).padStart(2, "0");
+  return `${m}/${d} ${hh}:${mm}`;
+}

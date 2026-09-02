@@ -12,6 +12,7 @@ import {
 } from "../../../../lib/repository";
 import { MarkBadge } from "../../../../components/MarkBadge";
 import { CarNumberBadge } from "../../../../components/CarNumberBadge";
+import { RecentFormBadge } from "../../../../components/RecentFormBadge";
 import { RaceSwitcher } from "../../../../components/RaceSwitcher";
 import { BankKimariteCard } from "../../../../components/BankKimariteCard";
 
@@ -91,6 +92,7 @@ export default async function RaceBetsPage({
             <MarkBadge mark={s.mark} />
             <CarNumberBadge carNum={s.entry.car_num} size="sm" />
             <span className="text-sm">{s.entry.name}</span>
+            <RecentFormBadge avgFinish={s.recentFormAvg} />
           </div>
         ))}
       </div>

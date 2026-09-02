@@ -3,6 +3,7 @@ import {
   getPredictionsForRaces,
   getResultsForRaces,
   getOddsForRaces,
+  getGirlsRaceIds,
   getRaceIdsWithPredictionAndResult,
   getRacesByDate,
 } from "./repository";
@@ -31,7 +32,8 @@ function computeRaceSummary(
   race: RaceRow,
   predictions: PredictionRow[],
   results: ResultRow[],
-  odds: OddsRow[]
+  odds: OddsRow[],
+  isGirlsRace: boolean
 ): RaceResultSummary {
   if (predictions.length === 0 || results.length === 0) {
     return {
@@ -45,6 +47,7 @@ function computeRaceSummary(
       roi: null,
       payoutYen: null,
       stakeYen: null,
+      isGirlsRace,
     };
   }
 
@@ -113,6 +116,7 @@ function computeRaceSummary(
     roi,
     payoutYen,
     stakeYen,
+    isGirlsRace,
   };
 }
 
@@ -124,11 +128,12 @@ function computeRaceSummary(
  */
 export async function getBulkRaceSummaries(raceIds: number[]): Promise<RaceResultSummary[]> {
   if (raceIds.length === 0) return [];
-  const [racesMap, predictionsMap, resultsMap, oddsMap] = await Promise.all([
+  const [racesMap, predictionsMap, resultsMap, oddsMap, girlsRaceIds] = await Promise.all([
     getRacesByIds(raceIds),
     getPredictionsForRaces(raceIds),
     getResultsForRaces(raceIds),
     getOddsForRaces(raceIds),
+    getGirlsRaceIds(raceIds),
   ]);
 
   const summaries: RaceResultSummary[] = [];
@@ -140,7 +145,8 @@ export async function getBulkRaceSummaries(raceIds: number[]): Promise<RaceResul
         race,
         predictionsMap.get(raceId) ?? [],
         resultsMap.get(raceId) ?? [],
-        oddsMap.get(raceId) ?? []
+        oddsMap.get(raceId) ?? [],
+        girlsRaceIds.has(raceId)
       )
     );
   }
@@ -182,11 +188,20 @@ function aggregateAccuracyStats(summaries: RaceResultSummary[]): AccuracyStats {
 /**
  * 予想・結果が揃っている直近レースを集計し、的中率・回収率を算出する
  * （件数はgetRaceIdsWithPredictionAndResultのデフォルト上限＝直近300件）。
+ * ガールズケイリン（ラインが無く決まり方が異なる）は除外する。
+ * ガールズ単体の集計はgetGirlsAccuracyStatsを使う。
  */
 export async function getOverallAccuracyStats(): Promise<AccuracyStats> {
   const raceIds = await getRaceIdsWithPredictionAndResult();
   const summaries = await getBulkRaceSummaries(raceIds);
-  return aggregateAccuracyStats(summaries);
+  return aggregateAccuracyStats(summaries.filter((s) => !s.isGirlsRace));
+}
+
+/** ガールズケイリンだけの的中率・回収率（getOverallAccuracyStatsのガールズ版）。 */
+export async function getGirlsAccuracyStats(): Promise<AccuracyStats> {
+  const raceIds = await getRaceIdsWithPredictionAndResult();
+  const summaries = await getBulkRaceSummaries(raceIds);
+  return aggregateAccuracyStats(summaries.filter((s) => s.isGirlsRace));
 }
 
 /**
@@ -204,13 +219,7 @@ export function yesterdayJst(): string {
  * 保存済みpredictions/results/oddsをバルク取得するだけの軽い処理になる
  * （毎回predictRaceで再計算すると1日分でもレース数が多く重いため）。
  */
-export async function getDailySummary(statDate: string): Promise<DailySummary> {
-  const races = await getRacesByDate(statDate);
-  const results = await getBulkRaceSummaries(races.map((r) => r.id));
-  // getRacesByDateはその日の全レース（結果未確定分も含む）を返すため、
-  // 予想・結果の両方が揃っている（honmeiHitが判定済みの）レースだけに絞る。
-  // そうしないと「結果確定レース数」に未確定分が混ざってしまう。
-  const summaries = results.filter((s) => s.honmeiHit != null);
+function buildDailySummary(statDate: string, summaries: RaceResultSummary[]): DailySummary {
   const stats = aggregateAccuracyStats(summaries);
 
   const topPayouts = summaries
@@ -229,4 +238,26 @@ export async function getDailySummary(statDate: string): Promise<DailySummary> {
     });
 
   return { ...stats, statDate, topPayouts };
+}
+
+/**
+ * 指定日（YYYYMMDD）のガールズケイリンを除いたレースだけを集計する（日別サマリー用）。
+ * ガールズ単体の集計はgetGirlsDailySummaryを使う。
+ */
+export async function getDailySummary(statDate: string): Promise<DailySummary> {
+  const races = await getRacesByDate(statDate);
+  const results = await getBulkRaceSummaries(races.map((r) => r.id));
+  // getRacesByDateはその日の全レース（結果未確定分も含む）を返すため、
+  // 予想・結果の両方が揃っている（honmeiHitが判定済みの）レースだけに絞る。
+  // そうしないと「結果確定レース数」に未確定分が混ざってしまう。
+  const summaries = results.filter((s) => s.honmeiHit != null && !s.isGirlsRace);
+  return buildDailySummary(statDate, summaries);
+}
+
+/** ガールズケイリンだけの日別サマリー（getDailySummaryのガールズ版）。 */
+export async function getGirlsDailySummary(statDate: string): Promise<DailySummary> {
+  const races = await getRacesByDate(statDate);
+  const results = await getBulkRaceSummaries(races.map((r) => r.id));
+  const summaries = results.filter((s) => s.honmeiHit != null && s.isGirlsRace);
+  return buildDailySummary(statDate, summaries);
 }

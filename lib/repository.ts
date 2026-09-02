@@ -86,6 +86,17 @@ export async function getAllRaces(): Promise<RaceRow[]> {
   return result.rows as unknown as RaceRow[];
 }
 
+/**
+ * 直近のデータ同期時刻（UTC、"YYYY-MM-DD HH:MM:SS"）を返す。
+ * racersはスクレイプのたびに（出走した選手ぶん）updated_atが更新されるため、
+ * daily-sync.ymlが最後に成功した時刻の目安として使える。データが無ければnull。
+ */
+export async function getLastSyncedAt(): Promise<string | null> {
+  const result = await getDb().execute(`SELECT MAX(updated_at) as last_synced FROM racers`);
+  const row = result.rows[0] as unknown as { last_synced: string | null } | undefined;
+  return row?.last_synced ?? null;
+}
+
 /** 指定日（YYYYMMDD）のレース一覧。レース一覧画面（`/`）は当日分だけを表示するため。 */
 export async function getRacesByDate(kaisaiDate: string): Promise<RaceRow[]> {
   const result = await getDb().execute({
@@ -528,6 +539,27 @@ export async function getResultsForRaces(raceIds: number[]): Promise<Map<number,
     rows.push(...(result.rows as unknown as (ResultRow & { race_id: number })[]));
   }
   return groupBy(rows);
+}
+
+/**
+ * 出走選手にL級（ガールズケイリン）が1人でもいるレースIDの集合を返す。
+ * lib/scoring.tsのisGirlsRaceと同じ判定基準（syumoku文字列は信用しない。
+ * 理由はisGirlsRaceのコメント参照）。ガールズはラインが無く決まり方が
+ * 通常のレースと異なるため、的中率・回収率の集計を分けるのに使う。
+ */
+export async function getGirlsRaceIds(raceIds: number[]): Promise<Set<number>> {
+  if (raceIds.length === 0) return new Set();
+  const ids = new Set<number>();
+  for (const chunk of chunkIds(raceIds)) {
+    const result = await getDb().execute({
+      sql: `SELECT DISTINCT e.race_id FROM entries e
+            JOIN racers rc ON rc.snum = e.snum
+            WHERE e.race_id IN (${chunk.map(() => "?").join(",")}) AND rc.class_rank LIKE 'L%'`,
+      args: chunk,
+    });
+    for (const row of result.rows as unknown as { race_id: number }[]) ids.add(row.race_id);
+  }
+  return ids;
 }
 
 export async function getOddsForRaces(raceIds: number[]): Promise<Map<number, OddsRow[]>> {

@@ -497,6 +497,53 @@ function calculateSameConditionScore(
   return { score, matchedRaces: matched.length, avgFinish };
 }
 
+const RECENT_FORM_EVENTS = 3; // 直近何"イベント"（1イベント=2〜4走ぶんのfinish_positions）を見るか
+
+/**
+ * 直近成績（開催場を問わない好調・不調の波）：scripts/diagnose-recent-form.tsで検証
+ * （77,252出走）。直近3イベント（calculateIntervalScoreと同じ年跨ぎ簡易近似で選ぶ）の
+ * finish_positionsを平均し、着順が良いほど高スコアにする。heikin_tokuten三分位で
+ * 層別しても効果が消えない（上位選手の中でも直近好調29.0%・不調10.7%と約3倍差）
+ * ことを確認済みで、既存の強さ指標（得点・連対率）とは別の情報を持つ。
+ * calculateSameConditionScoreと同じ線形マッピングを使う。
+ */
+function calculateRecentFormScore(
+  kaisaiDate: string,
+  history: RacerHistoryRow[]
+): { score: number | null; avgFinish: number | null; events: number } {
+  const raceMonth = Number(kaisaiDate.slice(4, 6));
+  const raceDay = Number(kaisaiDate.slice(6, 8));
+  const raceDoy = monthDayToDayOfYear(
+    `${String(raceMonth).padStart(2, "0")}/${String(raceDay).padStart(2, "0")}`
+  );
+  if (raceDoy == null) return { score: null, avgFinish: null, events: 0 };
+
+  const withDiff = history
+    .map((h) => {
+      const doy = monthDayToDayOfYear(h.race_date);
+      if (doy == null) return null;
+      let diff = raceDoy - doy;
+      if (diff <= 0) diff += 365; // 年跨ぎの近似（当日自身は除外するため<=0も繰り下げ）
+      return { diff, h };
+    })
+    .filter((x): x is { diff: number; h: RacerHistoryRow } => x != null)
+    .sort((a, b) => a.diff - b.diff)
+    .slice(0, RECENT_FORM_EVENTS);
+
+  const positions: number[] = [];
+  for (const { h } of withDiff) {
+    for (const p of h.finish_positions.split(",")) {
+      const n = Number(p);
+      if (Number.isFinite(n) && n > 0) positions.push(n);
+    }
+  }
+  if (positions.length === 0) return { score: null, avgFinish: null, events: withDiff.length };
+
+  const avgFinish = positions.reduce((a, b) => a + b, 0) / positions.length;
+  const score = clamp(100 - (avgFinish - 1) * 12.5);
+  return { score, avgFinish, events: withDiff.length };
+}
+
 /**
  * 位置別勝率：entries.line_position × results.finish_pos の自前集計から、
  * 今回の隊列内位置と同じ位置での勝率を評価する。
@@ -703,6 +750,9 @@ function lineupOrderScore(entry: ScoredEntry, allEntries: EntryWithRacer[]): num
  * 各要素はデータが無い場合ニュートラル(50点)にフォールバックする。
  */
 const LEAD_POSITION_WEIGHT = 0;
+// backtest.ts検証中は0のまま（表示系の変更を先にデプロイするため）。
+// 検証が済み次第、有効な重みに更新してこのコメントも更新する。
+const RECENT_FORM_WEIGHT = 0; // scripts/diagnose-recent-form.tsの検証結果を受けて検証中（calculateRecentFormScoreのコメント参照）
 
 export function calculateStatsScore(
   entry: EntryWithRacer,
@@ -718,6 +768,7 @@ export function calculateStatsScore(
   const bankResult = calculateBankFitScore(entry, venueKimarite, bankInfo);
   const intervalResult = calculateIntervalScore(kaisaiDate, history);
   const sameConditionResult = calculateSameConditionScore(keirinjoName, history);
+  const recentFormResult = calculateRecentFormScore(kaisaiDate, history);
   const positionResult = calculatePositionWinRateScore(entry, positionWinRates);
   const personalMoveResult = calculatePersonalMoveFitScore(entry);
   const leadResult = calculateLeadPositionScore(entry, allEntries ?? [entry]);
@@ -742,6 +793,7 @@ export function calculateStatsScore(
   // 加重平均に混ぜず最終スコアへの加点として適用する（対象外レースを
   // 一切歪めないため）。calculateRookieClassBonusのコメント参照。
   const otherScale = 1 - LEAD_POSITION_WEIGHT;
+  const baseScale = 1 - RECENT_FORM_WEIGHT; // 直近成績の重み分だけ既存項目を比例縮小する
   const score = clamp(
     ((bankResult.score ?? 50) * 0.2 +
       (intervalResult.score ?? 50) * 0.15 +
@@ -749,7 +801,8 @@ export function calculateStatsScore(
       (positionResult.score ?? 50) * 0.2 +
       (rentaiScore ?? 50) * 0.25 +
       (personalMoveResult.score ?? 50) * 0) *
-      otherScale +
+      baseScale * otherScale +
+      (recentFormResult.score ?? 50) * RECENT_FORM_WEIGHT * otherScale +
       (leadResult.score ?? 50) * LEAD_POSITION_WEIGHT +
       rookieResult.bonus +
       jimotoBonus
@@ -762,6 +815,9 @@ export function calculateStatsScore(
       出走間隔: intervalResult.days != null ? `${intervalResult.days}日` : "不明",
       同開催場平均着順: sameConditionResult.avgFinish?.toFixed(1) ?? "不明",
       同開催場該当数: sameConditionResult.matchedRaces,
+      直近成績平均着順: recentFormResult.avgFinish != null
+        ? `${recentFormResult.avgFinish.toFixed(1)}（${recentFormResult.events}イベント）`
+        : "不明",
       位置別勝率: positionResult.rawRate != null
         ? `${positionResult.rawRate.toFixed(0)}%(${positionResult.races}走・縮小推定後${positionResult.score?.toFixed(0)})`
         : "不明",
@@ -810,8 +866,9 @@ export function scoreRace(
       lineScore.score * weights.line +
       kyakushitsuScore.score * weights.kyakushitsu +
       statsScore.score * weights.stats;
+    const recentFormAvg = calculateRecentFormScore(kaisaiDate, historyBySnum[entry.snum] ?? []).avgFinish;
 
-    return { entry, lineScore, kyakushitsuScore, statsScore, totalScore };
+    return { entry, lineScore, kyakushitsuScore, statsScore, totalScore, recentFormAvg };
   });
 
   scored.sort((a, b) => b.totalScore - a.totalScore);

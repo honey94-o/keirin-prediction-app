@@ -1,7 +1,19 @@
 import Link from "next/link";
-import { getRaceIdsWithPrediction } from "../../lib/repository";
-import { getBulkRaceSummaries, getOverallAccuracyStats, getDailySummary, yesterdayJst } from "../../lib/accuracy";
+import {
+  getRaceIdsWithPrediction,
+  getDailyPicksResults,
+  getBarikataPicksResults,
+} from "../../lib/repository";
+import {
+  getBulkRaceSummaries,
+  getOverallAccuracyStats,
+  getGirlsAccuracyStats,
+  getDailySummary,
+  getGirlsDailySummary,
+  yesterdayJst,
+} from "../../lib/accuracy";
 import { addDaysToDateStr, formatDateStr, isValidDateStr } from "../../lib/date";
+import { formatFormationNotation } from "../../lib/scoring";
 
 // レース結果はGitHub Actions（Next.jsの外）からTursoへ書き込まれるため、
 // 静的生成だと反映されない。常に最新を読むよう動的レンダリングを強制する。
@@ -32,7 +44,23 @@ export default async function HistoryPage({
   const raceIds = await getRaceIdsWithPrediction();
   const summaries = await getBulkRaceSummaries(raceIds);
   const stats = await getOverallAccuracyStats();
+  const girlsStats = await getGirlsAccuracyStats();
   const daily = await getDailySummary(viewDate);
+  const girlsDaily = await getGirlsDailySummary(viewDate);
+  const [pickResults, barikataResults] = await Promise.all([
+    getDailyPicksResults(viewDate),
+    getBarikataPicksResults(viewDate),
+  ]);
+  const pickFinished = pickResults.filter((r) => r.finished);
+  const pickHits = pickFinished.filter((r) => r.hit).length;
+  const pickStake = pickFinished.reduce((sum, r) => sum + (r.stakeYen ?? 0), 0);
+  const pickPayout = pickFinished.reduce((sum, r) => sum + (r.payoutYen ?? 0), 0);
+  const pickRoi = pickStake > 0 ? (pickPayout / pickStake) * 100 : null;
+  const barikataFinished = barikataResults.filter((r) => r.finished);
+  const barikataHits = barikataFinished.filter((r) => r.hit).length;
+  const barikataStake = barikataFinished.reduce((sum, r) => sum + (r.stakeYen ?? 0), 0);
+  const barikataPayout = barikataFinished.reduce((sum, r) => sum + (r.payoutYen ?? 0), 0);
+  const barikataRoi = barikataStake > 0 ? (barikataPayout / barikataStake) * 100 : null;
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
@@ -48,6 +76,7 @@ export default async function HistoryPage({
           </Link>
           <h2 className="font-semibold text-sm text-gray-600">
             {formatDateStr(viewDate)}のサマリー
+            <span className="text-gray-400 font-normal">（ガールズ除く）</span>
           </h2>
           {nextDate <= latestDate ? (
             <Link
@@ -105,9 +134,145 @@ export default async function HistoryPage({
         )}
       </section>
 
+      {girlsDaily.totalRaces > 0 && (
+        <section className="bg-purple-50 border border-purple-200 rounded-lg shadow-sm p-4 mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-semibold bg-purple-600 text-white px-2 py-0.5 rounded-full">
+              ガールズケイリン
+            </span>
+            <span className="text-xs text-purple-800">
+              ラインが無く決まり方が違うため集計を分けています
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-y-1 text-sm mb-2 pb-2 border-b border-purple-200">
+            <div className="text-purple-700">{formatDateStr(viewDate)}</div>
+            <div className="text-right tabular-nums">
+              {girlsDaily.totalRaces}レース ・ ◎{fmtPct(girlsDaily.honmeiHitRate)} ・ 回収率
+              {fmtPct(girlsDaily.overallRoi)}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-y-1 text-sm">
+            <div className="text-purple-700">直近（{girlsStats.totalRaces}レース）</div>
+            <div className="text-right tabular-nums">
+              ◎{fmtPct(girlsStats.honmeiHitRate)} ・ 3連単{fmtPct(girlsStats.sanrentanHitRate)} ・ 回収率
+              {fmtPct(girlsStats.overallRoi)}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {pickResults.length > 0 && (
+        <section className="bg-amber-50 border border-amber-200 rounded-lg shadow-sm p-4 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold bg-amber-500 text-white px-2 py-0.5 rounded-full">
+                厳選レース
+              </span>
+              <span className="text-xs text-amber-800">{formatDateStr(viewDate)}の結果</span>
+            </div>
+            {pickFinished.length > 0 && (
+              <span className="text-xs font-semibold text-amber-900">
+                {pickHits}/{pickFinished.length}的中 ・{" "}
+                <span className={(pickRoi ?? 0) >= 100 ? "text-green-700" : ""}>
+                  {pickRoi?.toFixed(1)}%
+                </span>
+              </span>
+            )}
+          </div>
+          <ul className="flex flex-col divide-y divide-amber-100">
+            {pickResults.map((r) => {
+              const notation = r.pick.formation ? formatFormationNotation(r.pick.formation) : null;
+              return (
+                <li key={r.pick.race_id} className="py-1.5">
+                  <Link
+                    href={`/races/${r.pick.race_id}/bets`}
+                    className="flex items-center gap-2 active:bg-amber-100/50 -mx-1 px-1 rounded text-sm"
+                  >
+                    <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0">
+                      {r.pick.start_time ?? "--:--"}
+                    </span>
+                    <span className="text-gray-900 w-20 shrink-0 truncate">
+                      {r.pick.keirinjo_name}
+                      {r.pick.race_no}R
+                    </span>
+                    <span className="flex-1 font-mono text-xs text-gray-600 truncate">
+                      {notation ?? "-"}
+                    </span>
+                    {!r.finished ? (
+                      <span className="text-xs text-gray-400 shrink-0">結果未確定</span>
+                    ) : (
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full font-semibold shrink-0 ${
+                          r.hit ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-500"
+                        }`}
+                      >
+                        {r.hit ? "的中" : "不的中"}
+                      </span>
+                    )}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {barikataResults.length > 0 && (
+        <section className="bg-rose-50 border border-rose-200 rounded-lg shadow-sm p-4 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold bg-rose-600 text-white px-2 py-0.5 rounded-full">
+                バリカタ
+              </span>
+              <span className="text-xs text-rose-800">{formatDateStr(viewDate)}の結果</span>
+            </div>
+            {barikataFinished.length > 0 && (
+              <span className="text-xs font-semibold text-rose-900">
+                {barikataHits}/{barikataFinished.length}的中 ・{" "}
+                <span className={(barikataRoi ?? 0) >= 100 ? "text-green-700" : ""}>
+                  {barikataRoi?.toFixed(1)}%
+                </span>
+              </span>
+            )}
+          </div>
+          <ul className="flex flex-col divide-y divide-rose-100">
+            {barikataResults.map((r) => (
+              <li key={r.pick.race_id} className="py-1.5">
+                <Link
+                  href={`/races/${r.pick.race_id}/bets`}
+                  className="flex items-center gap-2 active:bg-rose-100/50 -mx-1 px-1 rounded text-sm"
+                >
+                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0">
+                    {r.pick.start_time ?? "--:--"}
+                  </span>
+                  <span className="text-gray-900 w-20 shrink-0 truncate">
+                    {r.pick.keirinjo_name}
+                    {r.pick.race_no}R
+                  </span>
+                  <span className="flex-1 font-mono font-bold text-rose-700 text-xs">
+                    {r.pick.combo}
+                  </span>
+                  {!r.finished ? (
+                    <span className="text-xs text-gray-400 shrink-0">結果未確定</span>
+                  ) : (
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full font-semibold shrink-0 ${
+                        r.hit ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-500"
+                      }`}
+                    >
+                      {r.hit ? "的中" : "不的中"}
+                    </span>
+                  )}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section className="bg-white rounded-lg shadow-sm p-4 mb-4">
         <h2 className="font-semibold text-sm text-gray-600 mb-2">
-          直近の成績（結果確定分 {stats.totalRaces}レース）
+          直近の成績（結果確定分 {stats.totalRaces}レース・ガールズ除く）
         </h2>
         <div className="grid grid-cols-2 gap-y-2 text-sm">
           <div>◎ 単勝的中率</div>
@@ -139,8 +304,13 @@ export default async function HistoryPage({
                 className="bg-white rounded-lg shadow-sm p-3 flex items-center justify-between active:bg-gray-50"
               >
                 <div>
-                  <div className="font-medium text-sm">
+                  <div className="font-medium text-sm flex items-center gap-1.5">
                     {formatDate(s.race.kaisai_date)} {s.race.keirinjo_name} {s.race.race_no}R
+                    {s.isGirlsRace && (
+                      <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">
+                        ガールズ
+                      </span>
+                    )}
                   </div>
                   {!resolved ? (
                     <div className="text-xs text-gray-400">結果未確定</div>

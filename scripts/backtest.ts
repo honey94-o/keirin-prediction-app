@@ -37,8 +37,11 @@ async function main() {
   // 同じ選手・開催場の集計を全レースぶん引き直すのを防ぐ（Turso の読取行数削減）。
   enableReadCache();
 
-  const jocdArg = process.argv[2]; // 例: "13,63" で開催場を絞り込み。省略時は結果があるレース全件
+  const jocdArg = process.argv.slice(2).find((a) => !a.startsWith("--")); // 例: "13,63" で開催場を絞り込み。省略時は結果があるレース全件
   const jocds = jocdArg ? jocdArg.split(",") : null;
+  // ガールズケイリンはラインが無く決まり方が違うため、既存の検証を汚染していないか
+  // 確認する用の絞り込み（本番のdaily_picks/scenario_stats選定には使わない、比較専用）。
+  const excludeGirls = process.argv.includes("--exclude-girls");
 
   const db = getDb();
   const raceIdsResult = await db.execute(
@@ -46,6 +49,7 @@ async function main() {
      JOIN races ra ON ra.id = r.race_id
      WHERE r.finish_pos IS NOT NULL
      ${jocds ? `AND ra.jocd IN (${jocds.map(() => "?").join(",")})` : ""}
+     ${excludeGirls ? `AND NOT EXISTS (SELECT 1 FROM entries e JOIN racers rc ON rc.snum = e.snum WHERE e.race_id = r.race_id AND rc.class_rank LIKE 'L%')` : ""}
      ORDER BY r.race_id`,
     jocds ?? []
   );
@@ -127,9 +131,10 @@ async function main() {
     }
   }
 
-  if (!jocds) {
-    // 開催場で絞り込んでいない（全レース対象の）実行結果だけをキャッシュに保存する。
-    // 一部開催場だけの実行結果で上書きすると、買い目提案画面の実績表示が偏るため。
+  if (!jocds && !excludeGirls) {
+    // 開催場・ガールズ除外などで絞り込んでいない（全レース対象の）実行結果だけを
+    // キャッシュに保存する。絞り込んだ実行結果で上書きすると、買い目提案画面の
+    // 実績表示が偏るため。
     await saveScenarioStats(
       [...scenarioStats.entries()].map(([label, stat]) => ({
         label,

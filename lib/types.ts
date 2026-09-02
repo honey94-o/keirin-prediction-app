@@ -124,6 +124,8 @@ export interface ScoredEntry {
   statsScore: ScoreBreakdown;
   totalScore: number;
   mark: "◎" | "○" | "▲" | "△" | "×";
+  // 直近成績（好調・不調の波）。calculateRecentFormScore参照。データ無ければnull。
+  recentFormAvg: number | null;
 }
 
 export interface ScoreWeights {
@@ -229,6 +231,7 @@ export interface RaceResultSummary {
   roi: number | null; // このレース単体の回収率(%)＝payoutYen/stakeYen*100。オッズはスナップショット時点の参考値
   payoutYen: number | null; // 的中した場合の払戻金額（100円賭け1点あたり）。不的中・未確定はnull
   stakeYen: number | null; // フォーメーション点数×100円の賭け金合計。複数レース集計時の加重平均に使う
+  isGirlsRace: boolean; // L級選手が1人でもいればガールズケイリン（ラインが無く決まり方が異なるため集計を分ける）
 }
 
 export interface AccuracyStats {

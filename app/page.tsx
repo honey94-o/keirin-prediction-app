@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { getRacesByDate, getDailyPicks, getBarikataPicks } from "../lib/repository";
-import { todayJstStr, addDaysToDateStr, formatDateStr, isValidDateStr } from "../lib/date";
+import { getRacesByDate, getDailyPicks, getBarikataPicks, getLastSyncedAt } from "../lib/repository";
+import { todayJstStr, addDaysToDateStr, formatDateStr, isValidDateStr, formatUtcAsJst } from "../lib/date";
 import { RefreshTrigger } from "../components/RefreshTrigger";
 import type { RaceRow } from "../lib/types";
 
@@ -25,6 +25,7 @@ export default async function Home({
   // 20回近く読むため、ここで全レース分まとめて呼ぶと表示が重くなる。予想は
   // レース選択後の詳細画面でだけ計算する）。
   const races = await getRacesByDate(viewDate);
+  const lastSyncedAt = await getLastSyncedAt();
 
   // 「本日の厳選レース」：結果未確定（前日以前は対象外）の日だけ、
   // scripts/daily-picks.tsが事前計算したdaily_picksからその日の本命marginが
@@ -67,7 +68,12 @@ export default async function Home({
         <h1 className="text-lg font-bold">開催場を選択</h1>
         <RefreshTrigger compact />
       </div>
-      <p className="text-sm text-gray-400 mb-3">{formatDateStr(viewDate)}</p>
+      <div className="flex items-baseline justify-between mb-3">
+        <p className="text-sm text-gray-400">{formatDateStr(viewDate)}</p>
+        {lastSyncedAt && (
+          <p className="text-xs text-gray-400">最終更新 {formatUtcAsJst(lastSyncedAt)}</p>
+        )}
+      </div>
 
       <div className="flex gap-1.5 mb-4">
         {tabs.map((tab) => {
@@ -190,7 +196,14 @@ export default async function Home({
                 href={`/venues/${jocd}?date=${viewDate}`}
                 className="flex items-center justify-between bg-white rounded-lg shadow-sm px-4 py-3 active:bg-gray-50"
               >
-                <div className="font-semibold text-gray-900">{first.keirinjo_name}</div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-gray-900">{first.keirinjo_name}</span>
+                  {first.grade_kbn && (
+                    <span className="text-[10px] font-semibold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                      {first.grade_kbn}
+                    </span>
+                  )}
+                </div>
                 <div className="text-right">
                   <div className="text-sm text-gray-500">{groupRaces.length}レース</div>
                   {first.start_time && (
