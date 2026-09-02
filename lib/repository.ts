@@ -1,6 +1,9 @@
 import { getDb } from "./db";
 import type {
   BankInfoRow,
+  BarikataPickResult,
+  BarikataPickRow,
+  BarikataPicksPerformance,
   DailyPickResult,
   DailyPickRow,
   DailyPicksPerformance,
@@ -746,6 +749,121 @@ export async function getDailyPicksPerformance(dates: string[]): Promise<DailyPi
 
   for (const date of dates) {
     const results = await getDailyPicksResults(date);
+    for (const r of results) {
+      if (!r.finished) continue;
+      races++;
+      if (r.hit) hits++;
+      stakeYen += r.stakeYen ?? 0;
+      payoutYen += r.payoutYen ?? 0;
+    }
+  }
+
+  return {
+    days: dates.length,
+    races,
+    hits,
+    stakeYen,
+    payoutYen,
+    roi: stakeYen > 0 ? (payoutYen / stakeYen) * 100 : null,
+  };
+}
+
+/**
+ * 「バリカタ」ピックを保存する。scripts/barikata-picks.tsから呼ぶ。
+ * daily_picksと同じくスナップショット方式（あとでスコアリングを変えても
+ * 過去の的中結果表示が変わらないようcomboを固定保存する）。
+ */
+export async function saveBarikataPicks(
+  picks: {
+    raceId: number;
+    kaisaiDate: string;
+    jocd: string;
+    keirinjoName: string;
+    raceNo: number;
+    startTime: string | null;
+    margin: number;
+    combo: string;
+    honmeiCarNum: number;
+    honmeiName: string;
+  }[]
+): Promise<void> {
+  if (picks.length === 0) return;
+  const db = getDb();
+  const sql = `INSERT INTO barikata_picks (race_id, kaisai_date, jocd, keirinjo_name, race_no,
+                                            start_time, margin, combo, honmei_car_num, honmei_name, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'))
+               ON CONFLICT(race_id) DO UPDATE SET
+                 margin=excluded.margin, combo=excluded.combo,
+                 honmei_car_num=excluded.honmei_car_num, honmei_name=excluded.honmei_name,
+                 start_time=excluded.start_time, updated_at=datetime('now')`;
+  await db.batch(
+    picks.map((p) => ({
+      sql,
+      args: [
+        p.raceId,
+        p.kaisaiDate,
+        p.jocd,
+        p.keirinjoName,
+        p.raceNo,
+        p.startTime,
+        p.margin,
+        p.combo,
+        p.honmeiCarNum,
+        p.honmeiName,
+      ],
+    }))
+  );
+}
+
+/** 指定日のバリカタピック（margin降順、既定で最大3件）。 */
+export async function getBarikataPicks(kaisaiDate: string, limit = 3): Promise<BarikataPickRow[]> {
+  const result = await getDb().execute({
+    sql: `SELECT race_id, kaisai_date, jocd, keirinjo_name, race_no, start_time, margin, combo,
+                 honmei_car_num, honmei_name
+          FROM barikata_picks WHERE kaisai_date = ? ORDER BY margin DESC LIMIT ?`,
+    args: [kaisaiDate, limit],
+  });
+  return result.rows as unknown as BarikataPickRow[];
+}
+
+/**
+ * 指定日のバリカタピックの的中結果（単一の並びcomboが実際の結果と一致したか、
+ * 1点=100円の的中判定）。
+ */
+export async function getBarikataPicksResults(kaisaiDate: string): Promise<BarikataPickResult[]> {
+  const picks = await getBarikataPicks(kaisaiDate);
+  if (picks.length === 0) return [];
+  const raceIds = picks.map((p) => p.race_id);
+  const [resultsMap, oddsMap] = await Promise.all([
+    getResultsForRaces(raceIds),
+    getOddsForRaces(raceIds),
+  ]);
+
+  return picks.map((pick) => {
+    const results = resultsMap.get(pick.race_id) ?? [];
+    const odds = oddsMap.get(pick.race_id) ?? [];
+    const actualCombo = resolveActualCombo(results, odds);
+    if (actualCombo == null) {
+      return { pick, finished: false, hit: null, stakeYen: null, payoutYen: null };
+    }
+    const stakeYen = 100;
+    const hit = pick.combo === actualCombo;
+    const hitOdds =
+      odds.find((o) => o.bet_type === "3連単" && o.combination === actualCombo)?.odds_value ?? null;
+    const payoutYen = hit && hitOdds != null ? 100 * hitOdds : 0;
+    return { pick, finished: true, hit, stakeYen, payoutYen };
+  });
+}
+
+/** 指定した日付リスト分のバリカタピック実績を合算する。 */
+export async function getBarikataPicksPerformance(dates: string[]): Promise<BarikataPicksPerformance> {
+  let races = 0;
+  let hits = 0;
+  let stakeYen = 0;
+  let payoutYen = 0;
+
+  for (const date of dates) {
+    const results = await getBarikataPicksResults(date);
     for (const r of results) {
       if (!r.finished) continue;
       races++;

@@ -278,3 +278,37 @@ export interface DailyPicksPerformance {
   payoutYen: number;
   roi: number | null; // 総払戻/総賭け金*100。races=0ならnull
 }
+
+/**
+ * 「バリカタ」ピック（margin>=8かつ予想1-2-3位が同ライン、単一の3連単の並びを
+ * 1点買いする前提の別枠）。db/schema.sqlのbarikata_picksコメント参照。
+ */
+export interface BarikataPickRow {
+  race_id: number;
+  kaisai_date: string;
+  jocd: string;
+  keirinjo_name: string;
+  race_no: number;
+  start_time: string | null;
+  margin: number;
+  combo: string; // "4-7-1"形式
+  honmei_car_num: number;
+  honmei_name: string;
+}
+
+export interface BarikataPickResult {
+  pick: BarikataPickRow;
+  finished: boolean;
+  hit: boolean | null;
+  stakeYen: number | null;
+  payoutYen: number | null;
+}
+
+export interface BarikataPicksPerformance {
+  days: number;
+  races: number;
+  hits: number;
+  stakeYen: number;
+  payoutYen: number;
+  roi: number | null;
+}

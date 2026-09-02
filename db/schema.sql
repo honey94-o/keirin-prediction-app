@@ -192,6 +192,27 @@ CREATE TABLE IF NOT EXISTS daily_picks (
 );
 CREATE INDEX IF NOT EXISTS idx_daily_picks_date ON daily_picks(kaisai_date, margin DESC);
 
+-- 「バリカタ」レース（scripts/diagnose-barikata.ts・-line.tsで検証）：
+-- margin>=8 かつ予想1-2-3位（スコア順）が同じライングループのレースだけを対象に、
+-- 3連単フォーメーションではなく単一の並び（1点、100円）で買う前提の別枠。
+-- 検証の結果、この条件のレースは単一の並び的中率が32.7%（margin単体の場合の
+-- 約2倍）、的中時平均オッズ4.13倍で、1点買いの回収率は約140%だった
+-- （厳選＝daily_picksのフォーメーション買いとは狙いが異なる別カテゴリ）。
+CREATE TABLE IF NOT EXISTS barikata_picks (
+    race_id        INTEGER PRIMARY KEY REFERENCES races(id) ON DELETE CASCADE,
+    kaisai_date    TEXT NOT NULL,
+    jocd           TEXT NOT NULL,
+    keirinjo_name  TEXT NOT NULL,
+    race_no        INTEGER NOT NULL,
+    start_time     TEXT,
+    margin         REAL NOT NULL,
+    combo          TEXT NOT NULL,      -- 予想1-2-3位の並び（例: "4-7-1"）。単一の3連単の買い目。
+    honmei_car_num INTEGER NOT NULL,
+    honmei_name    TEXT NOT NULL,
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_barikata_picks_date ON barikata_picks(kaisai_date, margin DESC);
+
 CREATE INDEX IF NOT EXISTS idx_predictions_race ON predictions(race_id);
 CREATE INDEX IF NOT EXISTS idx_entries_race ON entries(race_id);
 CREATE INDEX IF NOT EXISTS idx_results_race ON results(race_id);

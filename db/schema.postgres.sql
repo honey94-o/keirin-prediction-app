@@ -167,6 +167,22 @@ CREATE TABLE IF NOT EXISTS daily_picks (
 );
 CREATE INDEX IF NOT EXISTS idx_daily_picks_date ON daily_picks(kaisai_date, margin DESC);
 
+-- 「バリカタ」レース。db/schema.sqlのコメント参照。
+CREATE TABLE IF NOT EXISTS barikata_picks (
+    race_id        INTEGER PRIMARY KEY REFERENCES races(id) ON DELETE CASCADE,
+    kaisai_date    TEXT NOT NULL,
+    jocd           TEXT NOT NULL,
+    keirinjo_name  TEXT NOT NULL,
+    race_no        INTEGER NOT NULL,
+    start_time     TEXT,
+    margin         REAL NOT NULL,
+    combo          TEXT NOT NULL,
+    honmei_car_num INTEGER NOT NULL,
+    honmei_name    TEXT NOT NULL,
+    updated_at     TEXT NOT NULL DEFAULT to_char(now(), 'YYYY-MM-DD HH24:MI:SS')
+);
+CREATE INDEX IF NOT EXISTS idx_barikata_picks_date ON barikata_picks(kaisai_date, margin DESC);
+
 CREATE INDEX IF NOT EXISTS idx_predictions_race ON predictions(race_id);
 CREATE INDEX IF NOT EXISTS idx_entries_race ON entries(race_id);
 CREATE INDEX IF NOT EXISTS idx_results_race ON results(race_id);

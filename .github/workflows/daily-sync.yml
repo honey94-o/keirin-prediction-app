@@ -82,3 +82,9 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npx tsx scripts/daily-picks.ts
+
+      # 厳選と同じ理由（日中の並び予想更新等を反映）で全実行のたびに計算し直す。
+      - name: Compute today's/tomorrow's barikata picks
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx tsx scripts/barikata-picks.ts

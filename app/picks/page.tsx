@@ -3,6 +3,9 @@ import {
   getDailyPicks,
   getDailyPicksResults,
   getDailyPicksPerformance,
+  getBarikataPicks,
+  getBarikataPicksResults,
+  getBarikataPicksPerformance,
 } from "../../lib/repository";
 import { predictRace } from "../../lib/predict";
 import { formatFormationNotation } from "../../lib/scoring";
@@ -27,11 +30,21 @@ export default async function PicksPage({
     addDaysToDateStr(viewDate, -1 - i)
   );
 
-  const [picks, prevResults, performance30d] = await Promise.all([
-    getDailyPicks(viewDate),
-    getDailyPicksResults(prevDate),
-    getDailyPicksPerformance(last30Dates),
-  ]);
+  const [picks, prevResults, performance30d, barikataPicks, barikataPrevResults, barikataPerf30d] =
+    await Promise.all([
+      getDailyPicks(viewDate),
+      getDailyPicksResults(prevDate),
+      getDailyPicksPerformance(last30Dates),
+      getBarikataPicks(viewDate),
+      getBarikataPicksResults(prevDate),
+      getBarikataPicksPerformance(last30Dates),
+    ]);
+
+  const barikataPrevFinished = barikataPrevResults.filter((r) => r.finished);
+  const barikataPrevHits = barikataPrevFinished.filter((r) => r.hit).length;
+  const barikataPrevStake = barikataPrevFinished.reduce((sum, r) => sum + (r.stakeYen ?? 0), 0);
+  const barikataPrevPayout = barikataPrevFinished.reduce((sum, r) => sum + (r.payoutYen ?? 0), 0);
+  const barikataPrevRoi = barikataPrevStake > 0 ? (barikataPrevPayout / barikataPrevStake) * 100 : null;
 
   // 発走時刻順に並べ替える（本命の信頼度順ではなく、当日の時系列でタブを追える方が
   // 実際に馬券を買う時に使いやすいため）。
@@ -60,6 +73,100 @@ export default async function PicksPage({
       <p className="text-xs text-gray-400 mb-4">
         本命の信頼度が高い上位{items.length}レースを発走時刻順に表示。買い目は「本命」フォーメーション（1レース20点以内）が対象です。
       </p>
+
+      {/* バリカタ：margin・ライン決着から絞った単一の並び（1点買い）の実績・本日のピック */}
+      <section className="bg-rose-50 border border-rose-200 rounded-lg shadow-sm p-3 mb-4">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xs font-semibold bg-rose-600 text-white px-2 py-0.5 rounded-full">
+            バリカタ
+          </span>
+          <span className="text-xs text-rose-800">単一の並び（1点買い想定）</span>
+        </div>
+
+        {barikataPerf30d.races > 0 && (
+          <div className="grid grid-cols-3 gap-y-1 text-sm mb-3 pb-3 border-b border-rose-200">
+            <div className="text-rose-700">直近{PERFORMANCE_WINDOW_DAYS}日</div>
+            <div className="col-span-2 text-right tabular-nums">
+              的中率{((barikataPerf30d.hits / barikataPerf30d.races) * 100).toFixed(1)}% (
+              {barikataPerf30d.hits}/{barikataPerf30d.races})
+            </div>
+            <div className="text-rose-700">回収率</div>
+            <div
+              className={`col-span-2 text-right font-semibold tabular-nums ${
+                (barikataPerf30d.roi ?? 0) >= 100 ? "text-green-700" : "text-rose-900"
+              }`}
+            >
+              {barikataPerf30d.roi?.toFixed(1)}%
+            </div>
+          </div>
+        )}
+
+        {barikataPrevResults.length > 0 && (
+          <div className="mb-3 pb-3 border-b border-rose-200">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-rose-700">前日（{formatDateStr(prevDate)}）</span>
+              {barikataPrevFinished.length > 0 && (
+                <span className="text-xs font-semibold">
+                  {barikataPrevHits}/{barikataPrevFinished.length}的中 ・{" "}
+                  <span className={(barikataPrevRoi ?? 0) >= 100 ? "text-green-700" : "text-rose-900"}>
+                    {barikataPrevRoi?.toFixed(1)}%
+                  </span>
+                </span>
+              )}
+            </div>
+            <ul className="flex flex-col gap-1">
+              {barikataPrevResults.map((r) => (
+                <li key={r.pick.race_id} className="flex items-center gap-2 text-xs">
+                  <span className="text-gray-900 w-20 shrink-0 truncate">
+                    {r.pick.keirinjo_name}
+                    {r.pick.race_no}R
+                  </span>
+                  <span className="font-mono font-bold text-rose-700">{r.pick.combo}</span>
+                  {r.finished ? (
+                    <span
+                      className={`ml-auto px-1.5 py-0.5 rounded-full font-semibold ${
+                        r.hit ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-500"
+                      }`}
+                    >
+                      {r.hit ? `的中 ${(r.payoutYen ?? 0).toFixed(0)}円` : "不的中"}
+                    </span>
+                  ) : (
+                    <span className="ml-auto text-gray-400">結果未確定</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="text-xs text-rose-700 mb-1">
+          本日のバリカタ{barikataPicks.length > 0 ? `（${barikataPicks.length}件）` : ""}
+        </div>
+        {barikataPicks.length === 0 ? (
+          <p className="text-sm text-gray-400">条件を満たすレースはありません。</p>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {barikataPicks.map((p) => (
+              <li key={p.race_id}>
+                <Link
+                  href={`/races/${p.race_id}/bets`}
+                  className="flex items-center gap-2 bg-white rounded-lg px-2 py-1.5 text-sm active:bg-gray-50"
+                >
+                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0">
+                    {p.start_time ?? "--:--"}
+                  </span>
+                  <span className="text-gray-900 flex-1 truncate">
+                    {p.keirinjo_name}
+                    {p.race_no}R
+                  </span>
+                  <span className="font-mono font-bold text-rose-700">{p.combo}</span>
+                  <span className="text-xs text-rose-700 tabular-nums">差{p.margin.toFixed(1)}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       {/* 直近30日の実績回収率 */}
       <section className="bg-white rounded-lg shadow-sm p-3 mb-4">

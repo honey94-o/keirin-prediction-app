@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getRacesByDate, getDailyPicks } from "../lib/repository";
+import { getRacesByDate, getDailyPicks, getBarikataPicks } from "../lib/repository";
 import { todayJstStr, addDaysToDateStr, formatDateStr, isValidDateStr } from "../lib/date";
 import { RefreshTrigger } from "../components/RefreshTrigger";
 import type { RaceRow } from "../lib/types";
@@ -37,6 +37,12 @@ export default async function Home({
   // ホーム画面のプレビュー一覧は発走時刻順に並べ替える（時刻がバラバラなので
   // 時系列で見えた方が分かりやすい。タブ切り替え版は/picksで発走順に見られる）。
   const picksByTime = [...picks].sort((a, b) => (a.start_time ?? "").localeCompare(b.start_time ?? ""));
+
+  // 「本日のバリカタ」：margin>=8かつ予想1-2-3位が同ラインのレースを1日最大3件。
+  // 厳選（フォーメーション買い）とは別枠で、単一の並び（1点）を想定した高的中率
+  // 狙いのピック。scripts/barikata-picks.tsのコメント参照。
+  const barikataPicks = showPicks ? await getBarikataPicks(viewDate) : [];
+  const barikataByTime = [...barikataPicks].sort((a, b) => (a.start_time ?? "").localeCompare(b.start_time ?? ""));
 
   const groups = new Map<string, RaceRow[]>();
   for (const race of races) {
@@ -77,6 +83,46 @@ export default async function Home({
           );
         })}
       </div>
+
+      {barikataPicks.length > 0 && (
+        <section className="bg-rose-50 border border-rose-200 rounded-lg shadow-sm p-3 mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-semibold bg-rose-600 text-white px-2 py-0.5 rounded-full">
+              バリカタ
+            </span>
+            <span className="text-xs text-rose-800">
+              margin・ライン決着から絞った単一の並び（1点買い想定）
+            </span>
+          </div>
+          <ul className="flex flex-col gap-2">
+            {barikataByTime.map((p) => (
+              <li key={p.race_id}>
+                <Link
+                  href={`/races/${p.race_id}/bets`}
+                  className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 active:bg-gray-50"
+                >
+                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0">
+                    {p.start_time ?? "--:--"}
+                  </span>
+                  <span className="text-sm font-medium text-gray-900 flex-1 truncate">
+                    {p.keirinjo_name} {p.race_no}R
+                  </span>
+                  <span className="text-sm font-mono font-bold text-rose-700 tabular-nums whitespace-nowrap">
+                    {p.combo}
+                  </span>
+                  <span className="text-xs font-semibold text-rose-700 tabular-nums whitespace-nowrap">
+                    差{p.margin.toFixed(1)}点
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <p className="text-[10px] text-rose-700 mt-2 leading-relaxed">
+            単一の並び的中率は検証時点で32.7%・的中時平均オッズ4.13倍（1点買い回収率約140%、母数197件）。
+            必ず的中するわけではありません。
+          </p>
+        </section>
+      )}
 
       {picks.length > 0 && (
         <section className="bg-amber-50 border border-amber-200 rounded-lg shadow-sm p-3 mb-4">
