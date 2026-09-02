@@ -40,6 +40,17 @@ export default async function PicksPage({
       getBarikataPicksPerformance(last30Dates),
     ]);
 
+  // バリカタ・前日結果も厳選と同様、発走時刻順に並べ替える（DB取得はmargin DESC）。
+  const barikataByTime = [...barikataPicks].sort((a, b) =>
+    (a.start_time ?? "").localeCompare(b.start_time ?? "")
+  );
+  const barikataPrevResultsByTime = [...barikataPrevResults].sort((a, b) =>
+    (a.pick.start_time ?? "").localeCompare(b.pick.start_time ?? "")
+  );
+  const prevResultsByTime = [...prevResults].sort((a, b) =>
+    (a.pick.start_time ?? "").localeCompare(b.pick.start_time ?? "")
+  );
+
   const barikataPrevFinished = barikataPrevResults.filter((r) => r.finished);
   const barikataPrevHits = barikataPrevFinished.filter((r) => r.hit).length;
   const barikataPrevStake = barikataPrevFinished.reduce((sum, r) => sum + (r.stakeYen ?? 0), 0);
@@ -115,7 +126,7 @@ export default async function PicksPage({
               )}
             </div>
             <ul className="flex flex-col gap-1">
-              {barikataPrevResults.map((r) => (
+              {barikataPrevResultsByTime.map((r) => (
                 <li key={r.pick.race_id} className="flex items-center gap-2 text-xs">
                   <span className="text-gray-900 w-20 shrink-0 truncate">
                     {r.pick.keirinjo_name}
@@ -146,7 +157,7 @@ export default async function PicksPage({
           <p className="text-sm text-gray-400">条件を満たすレースはありません。</p>
         ) : (
           <ul className="flex flex-col gap-1">
-            {barikataPicks.map((p) => (
+            {barikataByTime.map((p) => (
               <li key={p.race_id}>
                 <Link
                   href={`/races/${p.race_id}/bets`}
@@ -214,7 +225,7 @@ export default async function PicksPage({
           <p className="text-sm text-gray-400">前日の厳選レースはありませんでした。</p>
         ) : (
           <ul className="flex flex-col divide-y divide-gray-100">
-            {prevResults.map((r) => {
+            {prevResultsByTime.map((r) => {
               const notation = r.pick.formation ? formatFormationNotation(r.pick.formation) : null;
               const raceRoi = r.stakeYen && r.stakeYen > 0 ? ((r.payoutYen ?? 0) / r.stakeYen) * 100 : null;
               return (
