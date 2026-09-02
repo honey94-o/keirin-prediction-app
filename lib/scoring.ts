@@ -186,6 +186,14 @@ export function calculateKyakushitsuScore(
     }
   }
 
+  // 単騎の追込型への追加減点は不採用：scripts/diagnose-solo-kyakushitsu.tsの
+  // 相関（単騎追込先頭の勝率3.8% vs 複数人ライン先頭10.2%、76,549出走）は
+  // 明確だったが、実装してbacktest.tsで検証したところ◎的中率44.6%→44.2%
+  // （n=10977、標準誤差約0.48ptなので誤差の範囲内）、本命回収率112.8%→113.8%と
+  // 的中率・回収率で結果が割れ、有意な改善とは言えなかったため見送り。
+  // 単独では強い相関でもスコアに混ぜると効果が消える／不明瞭になるという、
+  // 地元ボーナスや同県ライン加点削除でも見られたのと同じパターン。
+
   const baseScore = clamp(
     classRankScore * 0.25 + winRateScore * 0.3 + placeRateScore * 0.25 + fitScore * 0.2
   );
