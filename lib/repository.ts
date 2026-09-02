@@ -697,7 +697,7 @@ export async function getDailyPicks(kaisaiDate: string, limit = 10): Promise<Dai
  * 別スクレイパー由来の一部レースは全組み合わせのオッズ盤ごと保存されているため、
  * 組み合わせが1種類だけの時に限って信用する。
  */
-function resolveActualCombo(results: ResultRow[], odds: OddsRow[]): string | null {
+export function resolveActualCombo(results: ResultRow[], odds: OddsRow[]): string | null {
   const top3 = results
     .filter((r) => r.finish_pos != null && r.finish_pos <= 3)
     .sort((a, b) => (a.finish_pos ?? 0) - (b.finish_pos ?? 0));

@@ -2,7 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { predictRace } from "../../../../lib/predict";
 import { formatFormationNotation } from "../../../../lib/scoring";
-import { getScenarioStats, getRacesForEvent, getVenueKimariteRank } from "../../../../lib/repository";
+import {
+  getScenarioStats,
+  getRacesForEvent,
+  getVenueKimariteRank,
+  getResultsForRace,
+  getOddsForRace,
+  resolveActualCombo,
+} from "../../../../lib/repository";
 import { MarkBadge } from "../../../../components/MarkBadge";
 import { CarNumberBadge } from "../../../../components/CarNumberBadge";
 import { RaceSwitcher } from "../../../../components/RaceSwitcher";
@@ -23,6 +30,26 @@ export default async function RaceBetsPage({
   const scenarioStats = await getScenarioStats();
   const eventRaces = await getRacesForEvent(race.kaisai_date, race.jocd);
   const kimariteRank = await getVenueKimariteRank(race.jocd);
+
+  // レースが終わっていれば実際の着順・的中判定を表示する。actualComboの解決は
+  // lib/accuracy.tsのcomputeRaceSummary・scripts/backtest.tsと同じロジック
+  // （3連単払戻オッズの組み合わせを最優先、無ければresults.finish_posから組み立て）。
+  const [results, odds] = await Promise.all([getResultsForRace(raceId), getOddsForRace(raceId)]);
+  const nameByCarNum = new Map(scored.map((s) => [s.entry.car_num, s.entry.name]));
+  const finishOrder = results
+    .filter((r) => r.finish_pos != null)
+    .sort((a, b) => (a.finish_pos ?? 0) - (b.finish_pos ?? 0));
+  const top3Results = finishOrder.filter((r) => (r.finish_pos ?? 0) <= 3);
+  const raceFinished = top3Results.length >= 3;
+  const actualCombo = raceFinished ? resolveActualCombo(results, odds) : null;
+  const sanrentanHitOdds =
+    actualCombo != null
+      ? (odds.find((o) => o.bet_type === "3連単" && o.combination === actualCombo)?.odds_value ?? null)
+      : null;
+  const actualTop3Set = new Set(top3Results.map((r) => r.car_num));
+  const winnerCarNum = finishOrder.find((r) => r.finish_pos === 1)?.car_num ?? null;
+  const sortedActualTop3 =
+    actualTop3Set.size === 3 ? [...actualTop3Set].sort((a, b) => a - b).join("-") : null;
 
   // venues/[jocd]と同じ解決ロジック（自場実績→同周長グループ実績→bank_info静的値）。
   const kimariteRates =
@@ -68,6 +95,38 @@ export default async function RaceBetsPage({
         ))}
       </div>
 
+      {raceFinished && (
+        <section className="bg-gray-50 border border-gray-200 rounded-lg shadow-sm p-4 mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-semibold bg-gray-600 text-white px-2 py-0.5 rounded-full">
+              結果
+            </span>
+            {actualCombo && (
+              <span className="text-sm font-mono font-bold tabular-nums text-gray-900">
+                {actualCombo}
+              </span>
+            )}
+            {sanrentanHitOdds != null && (
+              <span className="text-xs text-gray-500 ml-auto">
+                3連単 {sanrentanHitOdds.toFixed(1)}倍（{(100 * sanrentanHitOdds).toFixed(0)}円）
+              </span>
+            )}
+          </div>
+          <ul className="flex flex-col gap-1">
+            {top3Results.map((r) => (
+              <li key={r.car_num} className="flex items-center gap-2 text-sm">
+                <span className="text-xs text-gray-400 w-8 shrink-0">{r.finish_pos}着</span>
+                <CarNumberBadge carNum={r.car_num} size="sm" />
+                <span className="text-gray-900">{nameByCarNum.get(r.car_num) ?? "-"}</span>
+                {r.finish_pos === 1 && r.kimarite && (
+                  <span className="text-xs text-gray-400 ml-auto">{r.kimarite}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {winSuggestion && (
         <section className="bg-amber-50 border border-amber-200 rounded-lg shadow-sm p-4 mb-4">
           <div className="flex items-center gap-2 mb-1">
@@ -77,6 +136,17 @@ export default async function RaceBetsPage({
             <span className="text-sm font-semibold">
               軸 {winSuggestion.carNum}. {winSuggestion.name}
             </span>
+            {raceFinished && (
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full font-semibold ml-auto ${
+                  winnerCarNum === winSuggestion.carNum
+                    ? "bg-red-100 text-red-700"
+                    : "bg-gray-100 text-gray-500"
+                }`}
+              >
+                {winnerCarNum === winSuggestion.carNum ? "的中" : "不的中"}
+              </span>
+            )}
           </div>
           <p className="text-xs text-gray-600">
             対抗とのスコア差が{winSuggestion.margin.toFixed(1)}点あり、この条件では単勝的中率が
@@ -92,6 +162,12 @@ export default async function RaceBetsPage({
           {scenarios.map((scenario) => {
             const notation = formatFormationNotation(scenario.formation.combinations);
             const stat = scenarioStats[scenario.label];
+            const scenarioHit = raceFinished && actualCombo != null
+              ? scenario.formation.combinations.includes(actualCombo)
+              : null;
+            const scenarioStakeYen = 100 * scenario.formation.combinations.length;
+            const scenarioPayoutYen =
+              scenarioHit && sanrentanHitOdds != null ? 100 * sanrentanHitOdds : 0;
             return (
               <section key={scenario.label} className="bg-white rounded-lg shadow-sm p-4">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -101,10 +177,28 @@ export default async function RaceBetsPage({
                   <span className="text-sm font-semibold">
                     軸 {scenario.axisCarNum}. {scenario.axisName}
                   </span>
+                  {scenarioHit != null && (
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                        scenarioHit ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-500"
+                      }`}
+                    >
+                      {scenarioHit ? "的中" : "不的中"}
+                    </span>
+                  )}
                   <span className="text-xs text-gray-400 ml-auto">
                     {scenario.formation.combinations.length}点
                   </span>
                 </div>
+
+                {scenarioHit != null && (
+                  <p className="text-xs text-gray-500 mb-1">
+                    買い目 {scenarioStakeYen}円 ・ 払戻 {scenarioPayoutYen.toFixed(0)}円 ・ 回収率{" "}
+                    <span className={scenarioPayoutYen >= scenarioStakeYen ? "text-green-700 font-semibold" : ""}>
+                      {((scenarioPayoutYen / scenarioStakeYen) * 100).toFixed(0)}%
+                    </span>
+                  </p>
+                )}
 
                 {scenario.likelyRank >= 2 && (
                   <p className="mb-1">
@@ -167,11 +261,22 @@ export default async function RaceBetsPage({
 
           {boxSuggestion && boxSuggestion.combinations.length > 0 && (
             <section className="bg-white rounded-lg shadow-sm p-4">
-              <h2 className="font-semibold mb-2">
+              <h2 className="font-semibold mb-2 flex items-center gap-2">
                 {boxSuggestion.betType}
-                <span className="text-xs text-gray-400 font-normal ml-2">
+                <span className="text-xs text-gray-400 font-normal">
                   {boxSuggestion.combinations.length}点
                 </span>
+                {raceFinished && sortedActualTop3 != null && (
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                      boxSuggestion.combinations.includes(sortedActualTop3)
+                        ? "bg-red-100 text-red-700"
+                        : "bg-gray-100 text-gray-500"
+                    }`}
+                  >
+                    {boxSuggestion.combinations.includes(sortedActualTop3) ? "的中" : "不的中"}
+                  </span>
+                )}
               </h2>
               <p className="text-xs text-gray-500 mb-3">
                 展開に依らず上位{top4.length}車を総当たり（決着順を絞らない保険的な買い方）
