@@ -778,6 +778,30 @@ function calculateBantesuPersonalStrengthBonus(
   return match.winRate >= BANTESU_STRONG_WINRATE_THRESHOLD ? BANTESU_PERSONAL_WINRATE_BONUS : 0;
 }
 
+/**
+ * 周回数による脚質フィット調整は不採用：scripts/diagnose-shukai.tsで検証
+ * （一般・選抜/特選ステージのみ、予選等のステージ偏りを除いた上で）した相関
+ * 自体は強く、周回数が多い（距離が長い）レースほど1着決まり手に占める捲り
+ * 割合が単調に増加（3周20.0%→4周25.1%→5周30.0%→6周35.3%）、差し割合は単調に
+ * 減少（62.4%→51.8%→48.9%→44.8%）し、train/testホールドアウト（4周 vs 6周の
+ * 捲り率）でも再現した（train 25.1%→34.9%、test 25.3%→35.9%）。
+ * しかし加点8点で実装しbacktest.tsで検証したところ、◎的中率44.6%→44.2%・
+ * 本命回収率112.8%→111.7%とどちらも横ばい〜わずかに悪化で、改善は確認
+ * できなかった。直近成績・番手個人勝率と3件連続で同じ結果（ホールドアウト込みで
+ * 相関は本物でも、既存スコアへの加点として実装すると効果が消える）となっており、
+ * このプロジェクトの加重ブレンド済みスコアはこの種の追加情報に対してすでに
+ * ある程度飽和している可能性がある。見送り、0のまま無効化する。
+ */
+const SHUKAI_ADJUSTMENT = 0;
+const SHUKAI_LONG_THRESHOLD = 5; // これ以上の周回数を「長距離」とみなす
+
+function calculateShukaiAdjustment(entry: EntryWithRacer, shukai: number | null | undefined): number {
+  if (shukai == null || shukai < SHUKAI_LONG_THRESHOLD) return 0;
+  if (entry.kyakushitsu === "両") return SHUKAI_ADJUSTMENT;
+  if (entry.kyakushitsu === "追") return -SHUKAI_ADJUSTMENT;
+  return 0;
+}
+
 const LEAD_POSITION_WEIGHT = 0;
 // 直近成績（calculateRecentFormScore）は不採用：diagnose-recent-form.tsの相関は
 // heikin_tokuten三分位で層別しても消えない強い信号だったが、weight=0.15でbacktest
@@ -797,7 +821,8 @@ export function calculateStatsScore(
   history: RacerHistoryRow[],
   positionWinRates: PositionWinRate[],
   venueKimarite?: VenueKimariteRates | null,
-  allEntries?: EntryWithRacer[]
+  allEntries?: EntryWithRacer[],
+  shukai?: number | null
 ): ScoreBreakdown {
   const bankResult = calculateBankFitScore(entry, venueKimarite, bankInfo);
   const intervalResult = calculateIntervalScore(kaisaiDate, history);
@@ -811,6 +836,7 @@ export function calculateStatsScore(
   const jimotoMatch = isJimoto(entry, jocd);
   const rentaiScore = entry.rentairitu2 != null ? clamp(entry.rentairitu2) : null;
   const bantesuBonus = calculateBantesuPersonalStrengthBonus(entry, positionWinRates);
+  const shukaiAdjustment = calculateShukaiAdjustment(entry, shukai);
 
   // 選手個人の決まり手適性(personalMoveResult)は重み0.1/0.2の両方で検証したが、
   // 重みを上げるほど◎的中率が単調に悪化した（重み0:42.3%→0.1:41.7%→0.2:40.5%、
@@ -841,7 +867,8 @@ export function calculateStatsScore(
       (leadResult.score ?? 50) * LEAD_POSITION_WEIGHT +
       rookieResult.bonus +
       jimotoBonus +
-      bantesuBonus
+      bantesuBonus +
+      shukaiAdjustment
   );
 
   return {
@@ -867,6 +894,7 @@ export function calculateStatsScore(
         : "不明",
       地元: jimotoMatch ? `地元選手（加点は現在無効化中、詳細はJIMOTO_BONUSのコメント参照）` : "該当なし",
       番手勝率加点: bantesuBonus > 0 ? `加点${bantesuBonus}（番手時勝率${positionResult.rawRate?.toFixed(0)}%）` : "該当なし",
+      周回数調整: shukaiAdjustment !== 0 ? `${shukaiAdjustment > 0 ? "+" : ""}${shukaiAdjustment}（${shukai}周）` : "該当なし",
       注記: "オッズは意図的に不使用。天候はレース終了後にしか取得できないため未反映",
     },
   };
@@ -883,7 +911,8 @@ export function scoreRace(
   bankInfo: BankInfoRow | undefined,
   historyBySnum: Record<string, RacerHistoryRow[]>,
   positionWinRatesBySnum: Record<string, PositionWinRate[]>,
-  venueKimarite?: VenueKimariteRates | null
+  venueKimarite?: VenueKimariteRates | null,
+  shukai?: number | null
 ): ScoredEntry[] {
   const scored = entries.map((entry) => {
     const lineScore = calculateLineScore(entry, entries);
@@ -897,7 +926,8 @@ export function scoreRace(
       historyBySnum[entry.snum] ?? [],
       positionWinRatesBySnum[entry.snum] ?? [],
       venueKimarite,
-      entries
+      entries,
+      shukai
     );
     const totalScore =
       lineScore.score * weights.line +

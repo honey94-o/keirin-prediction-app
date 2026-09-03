@@ -67,7 +67,8 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
     bankInfo,
     historyBySnum,
     positionWinRatesBySnum,
-    venueKimarite
+    venueKimarite,
+    race.shukai
   );
   const scenarios = generateScenarios(scored, venueKimarite ?? bankInfo);
   const boxSuggestion = generateBetSuggestions(scored).find(
