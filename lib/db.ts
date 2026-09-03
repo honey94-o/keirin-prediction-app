@@ -95,7 +95,16 @@ function getPool(): Pool {
         "DATABASE_URL is not set. Add it to .env.local (Neon connection string, see README デプロイ手順)."
       );
     }
-    pool = new Pool({ connectionString: stripQuotes(raw) });
+    pool = new Pool({
+      connectionString: stripQuotes(raw),
+      // タイムアウト未設定だと、Neon側の接続が応答なく死んだ場合にpgドライバが
+      // 無期限に待ち続けてしまう（scripts/backtest.tsが数時間ハングする形で
+      // 複数回発生・再現した）。withRetryのリトライ判定に引っかかるエラーを
+      // 確実に発生させ、詰まっても数十秒で気付ける・自動リトライできるようにする。
+      statement_timeout: 30_000, // 1クエリの上限（Postgres側で強制中断）
+      query_timeout: 30_000, // pgドライバ側のクライアント待受上限（保険で二重にかける）
+      connectionTimeoutMillis: 10_000, // プールから接続を確保するまでの上限
+    });
   }
   return pool;
 }
