@@ -5,6 +5,7 @@ import {
   getBankInfo,
   getRacerHistory,
   getPositionWinRates,
+  getSoloWinRate,
   getVenueKimariteRatesWithFallback,
 } from "./repository";
 import { scoreRace, generateBetSuggestions, generateScenarios, HIGH_CONFIDENCE_MARGIN } from "./scoring";
@@ -58,6 +59,11 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
   );
   const positionWinRatesBySnum = Object.fromEntries(positionEntries);
 
+  const soloEntries = await Promise.all(
+    entries.map(async (e) => [e.snum, await getSoloWinRate(e.snum)] as const)
+  );
+  const soloWinRateBySnum = Object.fromEntries(soloEntries);
+
   const scored = scoreRace(
     entries,
     weights,
@@ -68,7 +74,8 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
     historyBySnum,
     positionWinRatesBySnum,
     venueKimarite,
-    race.shukai
+    race.shukai,
+    soloWinRateBySnum
   );
   const scenarios = generateScenarios(scored, venueKimarite ?? bankInfo);
   const boxSuggestion = generateBetSuggestions(scored).find(

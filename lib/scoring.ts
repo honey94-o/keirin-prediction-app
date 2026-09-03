@@ -8,6 +8,7 @@ import type {
   ScoreBreakdown,
   ScoredEntry,
   ScoreWeights,
+  SoloWinRate,
   VenueKimariteRates,
 } from "./types";
 
@@ -802,6 +803,43 @@ function calculateShukaiAdjustment(entry: EntryWithRacer, shukai: number | null 
   return 0;
 }
 
+/**
+ * 単騎（自分のラインが自分だけ）時の個人成績による加点/減点：ユーザー提案
+ * （「単騎の勝率の高い選手が単騎で走ってたら加点、低い選手なら減点」）を受けて
+ * scripts/diagnose-solo-personal.tsで検証（77,955出走、leave-one-out）。単騎時の
+ * 個人勝率バケット別に実際の単騎勝率が低4.2%→中10.8%→高30.4%と非常に大きな
+ * 差があり、heikin_tokuten三分位で層別しても（地力下位3.4→3.8→23.8%、中位
+ * 4.0→16.6→37.9%、上位5.5→11.7→17.4%）、train/testホールドアウト（低4.0%→高
+ * 30.6%、低4.6%→高29.9%）でも一貫して再現した、このプロジェクトで最も
+ * クリアな信号。backtest.tsで加点±15・±25の2段階を検証：◎的中率44.6%→44.5%→
+ * 44.5%（誤差範囲内）、本命回収率112.8%→112.9%→113.2%と、加点を上げるほど
+ * 回収率がわずかに上向く一貫した傾向が出た（直近成績・番手個人勝率・周回数は
+ * いずれも実装すると明確に悪化したのに対し、これだけは害が無くむしろ微増）。
+ * ±25で採用。
+ */
+const SOLO_STRONG_BONUS = 25;
+const SOLO_WEAK_PENALTY = 25;
+const SOLO_MIN_RACES = 5;
+const SOLO_STRONG_THRESHOLD = 16; // %。診断の「高」バケット下限に合わせる
+const SOLO_WEAK_THRESHOLD = 8; // %。診断の「低」バケット上限に合わせる
+
+function isSoloInRace(entry: EntryWithRacer, allEntries: EntryWithRacer[]): boolean {
+  if (entry.line_group == null) return false;
+  return allEntries.filter((e) => e.line_group === entry.line_group).length === 1;
+}
+
+function calculateSoloPersonalAdjustment(
+  entry: EntryWithRacer,
+  allEntries: EntryWithRacer[],
+  soloWinRate: SoloWinRate | null | undefined
+): number {
+  if (!soloWinRate || soloWinRate.races < SOLO_MIN_RACES) return 0;
+  if (!isSoloInRace(entry, allEntries)) return 0;
+  if (soloWinRate.winRate >= SOLO_STRONG_THRESHOLD) return SOLO_STRONG_BONUS;
+  if (soloWinRate.winRate < SOLO_WEAK_THRESHOLD) return -SOLO_WEAK_PENALTY;
+  return 0;
+}
+
 const LEAD_POSITION_WEIGHT = 0;
 // 直近成績（calculateRecentFormScore）は不採用：diagnose-recent-form.tsの相関は
 // heikin_tokuten三分位で層別しても消えない強い信号だったが、weight=0.15でbacktest
@@ -822,7 +860,8 @@ export function calculateStatsScore(
   positionWinRates: PositionWinRate[],
   venueKimarite?: VenueKimariteRates | null,
   allEntries?: EntryWithRacer[],
-  shukai?: number | null
+  shukai?: number | null,
+  soloWinRate?: SoloWinRate | null
 ): ScoreBreakdown {
   const bankResult = calculateBankFitScore(entry, venueKimarite, bankInfo);
   const intervalResult = calculateIntervalScore(kaisaiDate, history);
@@ -837,6 +876,7 @@ export function calculateStatsScore(
   const rentaiScore = entry.rentairitu2 != null ? clamp(entry.rentairitu2) : null;
   const bantesuBonus = calculateBantesuPersonalStrengthBonus(entry, positionWinRates);
   const shukaiAdjustment = calculateShukaiAdjustment(entry, shukai);
+  const soloAdjustment = calculateSoloPersonalAdjustment(entry, allEntries ?? [entry], soloWinRate);
 
   // 選手個人の決まり手適性(personalMoveResult)は重み0.1/0.2の両方で検証したが、
   // 重みを上げるほど◎的中率が単調に悪化した（重み0:42.3%→0.1:41.7%→0.2:40.5%、
@@ -868,7 +908,8 @@ export function calculateStatsScore(
       rookieResult.bonus +
       jimotoBonus +
       bantesuBonus +
-      shukaiAdjustment
+      shukaiAdjustment +
+      soloAdjustment
   );
 
   return {
@@ -895,6 +936,9 @@ export function calculateStatsScore(
       地元: jimotoMatch ? `地元選手（加点は現在無効化中、詳細はJIMOTO_BONUSのコメント参照）` : "該当なし",
       番手勝率加点: bantesuBonus > 0 ? `加点${bantesuBonus}（番手時勝率${positionResult.rawRate?.toFixed(0)}%）` : "該当なし",
       周回数調整: shukaiAdjustment !== 0 ? `${shukaiAdjustment > 0 ? "+" : ""}${shukaiAdjustment}（${shukai}周）` : "該当なし",
+      単騎個人成績調整: soloAdjustment !== 0
+        ? `${soloAdjustment > 0 ? "+" : ""}${soloAdjustment}（単騎時勝率${soloWinRate?.winRate.toFixed(0)}%・${soloWinRate?.races}走）`
+        : "該当なし",
       注記: "オッズは意図的に不使用。天候はレース終了後にしか取得できないため未反映",
     },
   };
@@ -912,7 +956,8 @@ export function scoreRace(
   historyBySnum: Record<string, RacerHistoryRow[]>,
   positionWinRatesBySnum: Record<string, PositionWinRate[]>,
   venueKimarite?: VenueKimariteRates | null,
-  shukai?: number | null
+  shukai?: number | null,
+  soloWinRateBySnum?: Record<string, SoloWinRate | null>
 ): ScoredEntry[] {
   const scored = entries.map((entry) => {
     const lineScore = calculateLineScore(entry, entries);
@@ -927,7 +972,8 @@ export function scoreRace(
       positionWinRatesBySnum[entry.snum] ?? [],
       venueKimarite,
       entries,
-      shukai
+      shukai,
+      soloWinRateBySnum?.[entry.snum] ?? null
     );
     const totalScore =
       lineScore.score * weights.line +

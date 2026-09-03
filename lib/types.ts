@@ -165,6 +165,13 @@ export interface FavoriteRacerEntry {
   carNum: number;
 }
 
+/** 単騎（自分のラインが自分だけ）時の個人成績。calculateSoloPersonalAdjustment参照。 */
+export interface SoloWinRate {
+  races: number;
+  wins: number;
+  winRate: number; // 0-100（1着率）
+}
+
 export interface PositionWinRate {
   line_position: string;
   races: number;

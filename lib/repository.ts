@@ -19,6 +19,7 @@ import type {
   ScenarioStatsRow,
   ScoredEntry,
   ScoreWeights,
+  SoloWinRate,
   VenueKimariteRank,
   VenueKimariteRates,
 } from "./types";
@@ -34,6 +35,7 @@ const venueKimariteCache = new Map<string, Promise<VenueKimariteRates | null>>()
 const venueKimariteRankCache = new Map<string, Promise<VenueKimariteRank | null>>();
 const racerHistoryCache = new Map<string, Promise<RacerHistoryRow[]>>();
 const positionWinRatesCache = new Map<string, Promise<PositionWinRate[]>>();
+const soloWinRateCache = new Map<string, Promise<SoloWinRate | null>>();
 const bankInfoCache = new Map<string, Promise<BankInfoRow | undefined>>();
 // getScoreWeights は引数を取らないので固定キーで1件だけ持つ。
 const scoreWeightsCache = new Map<string, Promise<ScoreWeights>>();
@@ -49,6 +51,7 @@ export function clearReadCache(): void {
   venueKimariteRankCache.clear();
   racerHistoryCache.clear();
   positionWinRatesCache.clear();
+  soloWinRateCache.clear();
   bankInfoCache.clear();
   scoreWeightsCache.clear();
 }
@@ -467,6 +470,34 @@ async function fetchPositionWinRates(snum: string): Promise<PositionWinRate[]> {
     thirds: r.thirds,
     thirdRate: r.races > 0 ? (r.thirds / r.races) * 100 : 0,
   }));
+}
+
+/**
+ * 選手個人の「単騎（自分のラインが自分だけ）時」の勝率。scripts/diagnose-
+ * solo-personal.tsで検証（77,955出走、leave-one-out・heikin_tokuten三分位
+ * 層別・train/testホールドアウトいずれも再現した強い信号）。
+ * getPositionWinRatesはline_position（先頭/番手/3番手）別だが、単騎はWINTICKET上
+ * line_positionが常に"先頭"表記のため、複数人ラインの先頭と区別できていない。
+ * この関数だけ単騎かどうか（同レース同line_groupの出走が1人だけ）を
+ * 相関サブクエリで判定して分ける。
+ */
+export async function getSoloWinRate(snum: string): Promise<SoloWinRate | null> {
+  return memoized(soloWinRateCache, snum, () => fetchSoloWinRate(snum));
+}
+
+async function fetchSoloWinRate(snum: string): Promise<SoloWinRate | null> {
+  const result = await getDb().execute({
+    sql: `SELECT COUNT(*) as races, SUM(CASE WHEN r.finish_pos = 1 THEN 1 ELSE 0 END) as wins
+          FROM entries e
+          JOIN results r ON r.race_id = e.race_id AND r.car_num = e.car_num
+          WHERE e.snum = ? AND e.line_group IS NOT NULL
+            AND (SELECT COUNT(*) FROM entries e2
+                 WHERE e2.race_id = e.race_id AND e2.line_group = e.line_group) = 1`,
+    args: [snum],
+  });
+  const row = result.rows[0] as unknown as { races: number; wins: number } | undefined;
+  if (!row || row.races === 0) return null;
+  return { races: row.races, wins: row.wins, winRate: (row.wins / row.races) * 100 };
 }
 
 const DEFAULT_WEIGHTS: ScoreWeights = { line: 0.35, kyakushitsu: 0.35, stats: 0.3 };
