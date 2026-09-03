@@ -32,6 +32,9 @@ import { todayJstStr, addDaysToDateStr } from "../lib/date";
  * 予選レースはscripts/diagnose-stage-holdout.tsで検証済みの理由（raceStageの
  * コメント参照）により、厳選の候補から除外する（daily_picksに保存しない＝
  * getDailyPicksの「上位10件」選定に混ざらない）。
+ * 9人立てレースもscripts/diagnose-fieldsize.tsで検証済み（predictions実績、
+ * 予選を除いた上でも◎単勝的中率が9人立て27.6-30.0%・それ以外44.4-44.9%と
+ * 大きく低く、train/testホールドアウトでも再現）のため同様に除外する。
  */
 async function processDate(kaisaiDate: string): Promise<void> {
   const races = await getRacesByDate(kaisaiDate);
@@ -45,6 +48,7 @@ async function processDate(kaisaiDate: string): Promise<void> {
       if (raceStage(race.syumoku) === "予選") return null;
       const prediction = predictions[i];
       if (!prediction || prediction.scored.length < 2) return null;
+      if (prediction.scored.length === 9) return null;
       const honmei = prediction.scored[0];
       const taikou = prediction.scored[1];
       const honmeiScenario = prediction.scenarios.find((s) => s.label === "本命");

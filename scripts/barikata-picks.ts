@@ -44,6 +44,9 @@ async function processDate(kaisaiDate: string): Promise<void> {
     .map((race, i) => {
       const prediction = predictions[i];
       if (!prediction || prediction.scored.length < 3) return null;
+      // 9人立ては◎的中率が有意に低い（scripts/diagnose-fieldsize.ts、holdout検証済み）。
+      // 単一の並びを1点買いするバリカタは的中率の影響がより直接効くため同様に除外する。
+      if (prediction.scored.length === 9) return null;
       const { scored } = prediction;
       const honmei = scored[0];
       const taikou = scored[1];

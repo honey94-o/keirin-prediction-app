@@ -33,6 +33,93 @@ interface ScenarioStat {
   payout: number;
 }
 
+interface RaceOutcome {
+  skipped: boolean;
+  honmeiWin: boolean;
+  honmeiTop3: boolean;
+  scenarioResults: { label: string; stake: number; hit: boolean; payout: number }[];
+  hasScenarios: boolean;
+  combinedHit: boolean;
+  hasBox: boolean;
+  boxHit: boolean;
+}
+
+const SKIPPED_OUTCOME: RaceOutcome = {
+  skipped: true,
+  honmeiWin: false,
+  honmeiTop3: false,
+  scenarioResults: [],
+  hasScenarios: false,
+  combinedHit: false,
+  hasBox: false,
+  boxHit: false,
+};
+
+/**
+ * 1レースぶんの予測・的中判定をDBに触れない純粋な結果オブジェクトに詰めて返す。
+ * 集計（scenarioStats等の書き換え）は呼び出し側でレース順に依存しない形で
+ * 行うため、複数レースをPromise.allで同時に処理しても安全。
+ */
+async function processRace(raceId: number): Promise<RaceOutcome> {
+  const prediction = await predictRace(raceId);
+  if (!prediction) return SKIPPED_OUTCOME;
+  const { scored, scenarios, boxSuggestion } = prediction;
+  if (scored.length === 0) return SKIPPED_OUTCOME;
+
+  const honmeiFormationForSave = scenarios.find((s) => s.label === "本命")?.formation.combinations;
+  await savePrediction(raceId, scored, honmeiFormationForSave);
+
+  const results = await getResultsForRace(raceId);
+  const top3 = results
+    .filter((r) => r.finish_pos != null && r.finish_pos <= 3)
+    .sort((a, b) => (a.finish_pos ?? 0) - (b.finish_pos ?? 0));
+  if (top3.length < 3) return SKIPPED_OUTCOME;
+  const actualTop3Set = new Set(top3.map((r) => r.car_num));
+
+  const honmei = scored[0];
+  const honmeiWin = top3[0].car_num === honmei.entry.car_num;
+  const honmeiTop3 = actualTop3Set.has(honmei.entry.car_num);
+
+  const odds = (await getOddsForRace(raceId)).filter((o) => o.bet_type === "3連単");
+  // 払戻オッズには賭けの勝敗判定に使われる確定済みの正しい着順が入っているため
+  // 最優先で使う（同着があるとresults.finish_posだけからは1-2-3を一意に組み立て
+  // られないため。lib/accuracy.tsのcomputeRaceSummaryと同じ理由・同じ修正）。
+  // ただし初期の別スクレイパー由来の一部レースは全組み合わせのオッズ盤ごと
+  // 保存されている（最大210通り）ため、組み合わせが1種類だけの時に限って使う。
+  const distinctCombos = new Set(odds.map((o) => o.combination));
+  const officialCombo = distinctCombos.size === 1 ? odds[0].combination : null;
+  const actualCombo = officialCombo ?? top3.map((r) => r.car_num).join("-");
+  const hitOdds = odds.find((o) => o.combination === actualCombo)?.odds_value ?? null;
+
+  const scenarioResults = scenarios.map((scenario) => {
+    const stake = 100 * scenario.formation.combinations.length;
+    const hit = scenario.formation.combinations.includes(actualCombo);
+    const payout = hit && hitOdds != null ? 100 * hitOdds : 0;
+    return { label: scenario.label, stake, hit, payout };
+  });
+
+  const hasScenarios = scenarios.length > 0;
+  const combinedHit = scenarios.some((s) => s.formation.combinations.includes(actualCombo));
+
+  const hasBox = !!(boxSuggestion && boxSuggestion.combinations.length > 0);
+  let boxHit = false;
+  if (hasBox) {
+    const sortedActual = [...actualTop3Set].sort((a, b) => a - b).join("-");
+    boxHit = boxSuggestion!.combinations.includes(sortedActual);
+  }
+
+  return {
+    skipped: false,
+    honmeiWin,
+    honmeiTop3,
+    scenarioResults,
+    hasScenarios,
+    combinedHit,
+    hasBox,
+    boxHit,
+  };
+}
+
 async function main() {
   // 同じ選手・開催場の集計を全レースぶん引き直すのを防ぐ（Turso の読取行数削減）。
   enableReadCache();
@@ -64,70 +151,53 @@ async function main() {
   let honmeiTotal = 0;
   let skipped = 0;
 
-  for (const raceId of raceIds) {
-    const prediction = await predictRace(raceId);
-    if (!prediction) {
-      skipped++;
-      continue;
-    }
-    const { scored, scenarios, boxSuggestion } = prediction;
-    if (scored.length === 0) {
-      skipped++;
-      continue;
-    }
-
-    const honmeiFormationForSave = scenarios.find((s) => s.label === "本命")?.formation.combinations;
-    await savePrediction(raceId, scored, honmeiFormationForSave);
-
-    const results = await getResultsForRace(raceId);
-    const top3 = results
-      .filter((r) => r.finish_pos != null && r.finish_pos <= 3)
-      .sort((a, b) => (a.finish_pos ?? 0) - (b.finish_pos ?? 0));
-    if (top3.length < 3) {
-      skipped++;
-      continue;
-    }
-    const actualTop3Set = new Set(top3.map((r) => r.car_num));
-
-    const honmei = scored[0];
-    honmeiTotal++;
-    if (top3[0].car_num === honmei.entry.car_num) honmeiWinHits++;
-    if (actualTop3Set.has(honmei.entry.car_num)) honmeiTop3Hits++;
-
-    const odds = (await getOddsForRace(raceId)).filter((o) => o.bet_type === "3連単");
-    // 払戻オッズには賭けの勝敗判定に使われる確定済みの正しい着順が入っているため
-    // 最優先で使う（同着があるとresults.finish_posだけからは1-2-3を一意に組み立て
-    // られないため。lib/accuracy.tsのcomputeRaceSummaryと同じ理由・同じ修正）。
-    // ただし初期の別スクレイパー由来の一部レースは全組み合わせのオッズ盤ごと
-    // 保存されている（最大210通り）ため、組み合わせが1種類だけの時に限って使う。
-    const distinctCombos = new Set(odds.map((o) => o.combination));
-    const officialCombo = distinctCombos.size === 1 ? odds[0].combination : null;
-    const actualCombo = officialCombo ?? top3.map((r) => r.car_num).join("-");
-    const hitOdds = odds.find((o) => o.combination === actualCombo)?.odds_value ?? null;
-
-    for (const scenario of scenarios) {
-      const stat = scenarioStats.get(scenario.label) ?? { races: 0, hits: 0, stake: 0, payout: 0 };
-      stat.races++;
-      const stake = 100 * scenario.formation.combinations.length;
-      const hit = scenario.formation.combinations.includes(actualCombo);
-      const payout = hit && hitOdds != null ? 100 * hitOdds : 0;
-      if (hit) stat.hits++;
-      stat.stake += stake;
-      stat.payout += payout;
-      scenarioStats.set(scenario.label, stat);
-
-      combined.stake += stake;
-      combined.payout += payout;
-    }
-    if (scenarios.length > 0) {
-      combined.races++;
-      if (scenarios.some((s) => s.formation.combinations.includes(actualCombo))) combined.hits++;
+  // レースを順番に1件ずつawaitすると、DB往復のレイテンシがそのまま積み重なり
+  // 全体の所要時間に直結してしまう（レイテンシが平常時の10倍程度に悪化した際、
+  // 通常2〜4分で終わるbacktestが数時間かかる＝実質ハングに見える事象が発生した）。
+  // CONCURRENCY件ずつまとめてPromise.allで並行処理し、レイテンシの影響を
+  // 重ね合わせて吸収する（processRaceはDB書き込み先が独立しており、
+  // 集計はここでレース順に依存しない形でまとめて行うため安全）。
+  const CONCURRENCY = 10;
+  let processed = 0;
+  const startedAt = Date.now();
+  for (let i = 0; i < raceIds.length; i += CONCURRENCY) {
+    const chunk = raceIds.slice(i, i + CONCURRENCY);
+    const outcomes = await Promise.all(chunk.map((raceId) => processRace(raceId)));
+    const prevProcessed = processed;
+    processed += chunk.length;
+    if (Math.floor(processed / 500) > Math.floor(prevProcessed / 500)) {
+      const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(0);
+      console.log(`  進捗 ${processed}/${raceIds.length}（経過${elapsedSec}秒）`);
     }
 
-    if (boxSuggestion && boxSuggestion.combinations.length > 0) {
-      box.races++;
-      const sortedActual = [...actualTop3Set].sort((a, b) => a - b).join("-");
-      if (boxSuggestion.combinations.includes(sortedActual)) box.hits++;
+    for (const outcome of outcomes) {
+      if (outcome.skipped) {
+        skipped++;
+        continue;
+      }
+      honmeiTotal++;
+      if (outcome.honmeiWin) honmeiWinHits++;
+      if (outcome.honmeiTop3) honmeiTop3Hits++;
+
+      for (const sr of outcome.scenarioResults) {
+        const stat = scenarioStats.get(sr.label) ?? { races: 0, hits: 0, stake: 0, payout: 0 };
+        stat.races++;
+        if (sr.hit) stat.hits++;
+        stat.stake += sr.stake;
+        stat.payout += sr.payout;
+        scenarioStats.set(sr.label, stat);
+
+        combined.stake += sr.stake;
+        combined.payout += sr.payout;
+      }
+      if (outcome.hasScenarios) {
+        combined.races++;
+        if (outcome.combinedHit) combined.hits++;
+      }
+      if (outcome.hasBox) {
+        box.races++;
+        if (outcome.boxHit) box.hits++;
+      }
     }
   }
 

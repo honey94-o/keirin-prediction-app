@@ -749,10 +749,44 @@ function lineupOrderScore(entry: ScoredEntry, allEntries: EntryWithRacer[]): num
  * 予想スコアには反映していない。過去レースの振り返り分析用）。
  * 各要素はデータが無い場合ニュートラル(50点)にフォールバックする。
  */
+/**
+ * 番手選手個人の「番手時勝率」ボーナスは不採用：ユーザー提案（「番手選手の
+ * 一着率が多かったら差し決着になりそう」）を受けてscripts/diagnose-line-
+ * position-history.tsで検証（77,553出走、leave-one-out）、「そのレースで
+ * 番手が先頭より上位で入線した率」が番手時勝率バケット別に44.7%→48.8%→
+ * 56.9%と単調に増加する強い信号だった。scripts/diagnose-bantesu-redundancy.ts
+ * で単なる地力（heikin_tokuten）差の言い換えでもないことも確認済み。
+ * しかし加点10点で実装しbacktest.tsで検証したところ、◎的中率44.6%→44.8%
+ * （n≈11099、標準誤差約0.47ptなので誤差の範囲内）、本命回収率112.8%→111.2%と
+ * むしろ悪化し、明確な改善は確認できなかった。既存のcalculatePositionWinRateScore
+ * が薄めてでも同じ情報をある程度既に拾っており、追加の加点分が上乗せの効果を
+ * 生まなかったと考えられる。直近成績・単騎追込減点と同様、単独では強い相関でも
+ * ブレンドすると効果が消えるこのプロジェクトで繰り返し見られるパターンと一致
+ * するため見送り、0のまま無効化する。
+ */
+const BANTESU_PERSONAL_WINRATE_BONUS = 0;
+const BANTESU_MIN_RACES = 5;
+const BANTESU_STRONG_WINRATE_THRESHOLD = 20; // %。診断の「高」バケット下限に合わせる
+
+function calculateBantesuPersonalStrengthBonus(
+  entry: EntryWithRacer,
+  positionWinRates: PositionWinRate[]
+): number {
+  if (entry.line_position !== "番手") return 0;
+  const match = positionWinRates.find((p) => p.line_position === "番手");
+  if (!match || match.races < BANTESU_MIN_RACES) return 0;
+  return match.winRate >= BANTESU_STRONG_WINRATE_THRESHOLD ? BANTESU_PERSONAL_WINRATE_BONUS : 0;
+}
+
 const LEAD_POSITION_WEIGHT = 0;
-// backtest.ts検証中は0のまま（表示系の変更を先にデプロイするため）。
-// 検証が済み次第、有効な重みに更新してこのコメントも更新する。
-const RECENT_FORM_WEIGHT = 0; // scripts/diagnose-recent-form.tsの検証結果を受けて検証中（calculateRecentFormScoreのコメント参照）
+// 直近成績（calculateRecentFormScore）は不採用：diagnose-recent-form.tsの相関は
+// heikin_tokuten三分位で層別しても消えない強い信号だったが、weight=0.15でbacktest
+// したところ◎的中率は横ばい（44.6%→44.3%、n≈11000）なのに対し、本命回収率が
+// 112.8%→107.5%と明確に悪化した。的中率がほぼ変わらず回収率だけ下がったのは、
+// 番手/3着候補の入れ替わりで的中はしても払戻が小さい組み合わせに寄っている
+// ためと推測。強い標準相関がブレンドすると崩れるという、このプロジェクトで
+// 繰り返し確認されているパターンと一致するため見送り、0のまま無効化する。
+const RECENT_FORM_WEIGHT = 0;
 
 export function calculateStatsScore(
   entry: EntryWithRacer,
@@ -776,6 +810,7 @@ export function calculateStatsScore(
   const jimotoBonus = calculateJimotoBonus(entry, jocd);
   const jimotoMatch = isJimoto(entry, jocd);
   const rentaiScore = entry.rentairitu2 != null ? clamp(entry.rentairitu2) : null;
+  const bantesuBonus = calculateBantesuPersonalStrengthBonus(entry, positionWinRates);
 
   // 選手個人の決まり手適性(personalMoveResult)は重み0.1/0.2の両方で検証したが、
   // 重みを上げるほど◎的中率が単調に悪化した（重み0:42.3%→0.1:41.7%→0.2:40.5%、
@@ -805,7 +840,8 @@ export function calculateStatsScore(
       (recentFormResult.score ?? 50) * RECENT_FORM_WEIGHT * otherScale +
       (leadResult.score ?? 50) * LEAD_POSITION_WEIGHT +
       rookieResult.bonus +
-      jimotoBonus
+      jimotoBonus +
+      bantesuBonus
   );
 
   return {
@@ -830,6 +866,7 @@ export function calculateStatsScore(
         ? `${entry.debut_class}（デビュー${rookieResult.monthsSinceDebut ?? "?"}ヶ月目・加点${rookieResult.bonus.toFixed(1)}）`
         : "不明",
       地元: jimotoMatch ? `地元選手（加点は現在無効化中、詳細はJIMOTO_BONUSのコメント参照）` : "該当なし",
+      番手勝率加点: bantesuBonus > 0 ? `加点${bantesuBonus}（番手時勝率${positionResult.rawRate?.toFixed(0)}%）` : "該当なし",
       注記: "オッズは意図的に不使用。天候はレース終了後にしか取得できないため未反映",
     },
   };
