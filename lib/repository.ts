@@ -8,6 +8,7 @@ import type {
   DailyPickRow,
   DailyPicksPerformance,
   EntryWithRacer,
+  FavoriteRacerEntry,
   OddsRow,
   PositionWinRate,
   PredictionRow,
@@ -121,6 +122,75 @@ export async function getRacer(snum: string): Promise<RacerRow | undefined> {
     args: [snum],
   });
   return result.rows[0] as unknown as RacerRow | undefined;
+}
+
+export async function isFavoriteRacer(snum: string): Promise<boolean> {
+  const result = await getDb().execute({
+    sql: "SELECT 1 FROM favorite_racers WHERE snum = ?",
+    args: [snum],
+  });
+  return result.rows.length > 0;
+}
+
+export async function addFavoriteRacer(snum: string): Promise<void> {
+  await getDb().execute({
+    sql: "INSERT INTO favorite_racers (snum) VALUES (?) ON CONFLICT(snum) DO NOTHING",
+    args: [snum],
+  });
+}
+
+export async function removeFavoriteRacer(snum: string): Promise<void> {
+  await getDb().execute({
+    sql: "DELETE FROM favorite_racers WHERE snum = ?",
+    args: [snum],
+  });
+}
+
+/** お気に入り選手の一覧（/settings管理用）。登録が新しい順。 */
+export async function getFavoriteRacers(): Promise<RacerRow[]> {
+  const result = await getDb().execute(
+    `SELECT rc.* FROM favorite_racers f
+     JOIN racers rc ON rc.snum = f.snum
+     ORDER BY f.created_at DESC`
+  );
+  return result.rows as unknown as RacerRow[];
+}
+
+/** 指定日にお気に入り選手が出走するレース一覧（発走時刻順）。ホーム画面用。 */
+export async function getFavoriteRacerEntriesForDate(
+  kaisaiDate: string
+): Promise<FavoriteRacerEntry[]> {
+  const result = await getDb().execute({
+    sql: `SELECT ra.*, e.car_num as entry_car_num, rc.snum as racer_snum, rc.name as racer_name
+          FROM favorite_racers f
+          JOIN entries e ON e.snum = f.snum
+          JOIN races ra ON ra.id = e.race_id
+          JOIN racers rc ON rc.snum = f.snum
+          WHERE ra.kaisai_date = ?
+          ORDER BY ra.start_time`,
+    args: [kaisaiDate],
+  });
+  type Row = RaceRow & { entry_car_num: number; racer_snum: string; racer_name: string };
+  return (result.rows as unknown as Row[]).map((r) => ({
+    race: {
+      id: r.id,
+      kaisai_date: r.kaisai_date,
+      jocd: r.jocd,
+      keirinjo_name: r.keirinjo_name,
+      race_no: r.race_no,
+      syumoku: r.syumoku,
+      grade_kbn: r.grade_kbn,
+      kyori: r.kyori,
+      shukai: r.shukai,
+      start_time: r.start_time,
+      encp: r.encp,
+      tenki: r.tenki,
+      husoku: r.husoku,
+    },
+    snum: r.racer_snum,
+    racerName: r.racer_name,
+    carNum: r.entry_car_num,
+  }));
 }
 
 export async function getEntriesForRace(raceId: number): Promise<EntryWithRacer[]> {
@@ -370,20 +440,32 @@ async function fetchPositionWinRates(snum: string): Promise<PositionWinRate[]> {
   const result = await getDb().execute({
     sql: `SELECT e.line_position,
                  COUNT(*) as races,
-                 SUM(CASE WHEN r.finish_pos = 1 THEN 1 ELSE 0 END) as wins
+                 SUM(CASE WHEN r.finish_pos = 1 THEN 1 ELSE 0 END) as wins,
+                 SUM(CASE WHEN r.finish_pos = 2 THEN 1 ELSE 0 END) as seconds,
+                 SUM(CASE WHEN r.finish_pos = 3 THEN 1 ELSE 0 END) as thirds
           FROM entries e
           JOIN results r ON r.race_id = e.race_id AND r.snum = e.snum
           WHERE e.snum = ? AND e.line_position IS NOT NULL
           GROUP BY e.line_position`,
     args: [snum],
   });
-  const rows = result.rows as unknown as { line_position: string; races: number; wins: number }[];
+  const rows = result.rows as unknown as {
+    line_position: string;
+    races: number;
+    wins: number;
+    seconds: number;
+    thirds: number;
+  }[];
 
   return rows.map((r) => ({
     line_position: r.line_position,
     races: r.races,
     wins: r.wins,
     winRate: r.races > 0 ? (r.wins / r.races) * 100 : 0,
+    seconds: r.seconds,
+    secondRate: r.races > 0 ? (r.seconds / r.races) * 100 : 0,
+    thirds: r.thirds,
+    thirdRate: r.races > 0 ? (r.thirds / r.races) * 100 : 0,
   }));
 }
 

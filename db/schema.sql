@@ -213,6 +213,12 @@ CREATE TABLE IF NOT EXISTS barikata_picks (
 );
 CREATE INDEX IF NOT EXISTS idx_barikata_picks_date ON barikata_picks(kaisai_date, margin DESC);
 
+-- お気に入り選手登録。個人利用アプリのためユーザー区分なし（単一グローバルリスト）。
+CREATE TABLE IF NOT EXISTS favorite_racers (
+    snum        TEXT PRIMARY KEY REFERENCES racers(snum) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_predictions_race ON predictions(race_id);
 CREATE INDEX IF NOT EXISTS idx_entries_race ON entries(race_id);
 CREATE INDEX IF NOT EXISTS idx_results_race ON results(race_id);

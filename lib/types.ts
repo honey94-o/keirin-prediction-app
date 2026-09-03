@@ -157,11 +157,23 @@ export interface RaceScenario {
   likelyRank: number;
 }
 
+/** お気に入り選手が出走するレース（ホーム画面のお気に入りセクション用）。 */
+export interface FavoriteRacerEntry {
+  race: RaceRow;
+  snum: string;
+  racerName: string;
+  carNum: number;
+}
+
 export interface PositionWinRate {
   line_position: string;
   races: number;
   wins: number;
-  winRate: number; // 0-100
+  winRate: number; // 0-100（1着率）
+  seconds: number;
+  secondRate: number; // 0-100（2着率）
+  thirds: number;
+  thirdRate: number; // 0-100（3着率）
 }
 
 /**

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
-import { getRacer, getRacerHistory, getPositionWinRates } from "../../../lib/repository";
+import { getRacer, getRacerHistory, getPositionWinRates, isFavoriteRacer } from "../../../lib/repository";
 import { determineClassChange } from "../../../lib/scoring";
+import { toggleFavoriteRacerAction } from "../../../lib/actions";
 
 export default async function RacerDetailPage({
   params,
@@ -13,11 +14,25 @@ export default async function RacerDetailPage({
 
   const history = await getRacerHistory(snum);
   const positionWinRates = await getPositionWinRates(snum);
+  const isFavorite = await isFavoriteRacer(snum);
   const classChange = determineClassChange(racer);
+  const toggleFavorite = toggleFavoriteRacerAction.bind(null, snum, isFavorite);
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
-      <h1 className="text-lg font-bold mb-1">{racer.name}</h1>
+      <div className="flex items-center justify-between mb-1">
+        <h1 className="text-lg font-bold">{racer.name}</h1>
+        <form action={toggleFavorite}>
+          <button
+            type="submit"
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full active:opacity-70 ${
+              isFavorite ? "bg-yellow-400 text-yellow-900" : "bg-white border border-gray-300 text-gray-500"
+            }`}
+          >
+            {isFavorite ? "★ お気に入り" : "☆ お気に入り登録"}
+          </button>
+        </form>
+      </div>
       <p className="text-sm text-gray-500 mb-4">
         {racer.pref ?? "-"} / {racer.class_rank ?? "-"}
         {racer.prev_class_rank && racer.prev_class_rank !== racer.class_rank
@@ -97,7 +112,7 @@ export default async function RacerDetailPage({
 
       <section className="bg-white rounded-lg shadow-sm p-4 mb-4">
         <h2 className="font-semibold mb-2 text-sm text-gray-600">
-          隊列内位置別勝率
+          隊列内位置別成績
           <span className="text-xs text-gray-400 font-normal ml-2">
             自前集計・母数が少ないうちは参考程度
           </span>
@@ -105,14 +120,19 @@ export default async function RacerDetailPage({
         {positionWinRates.length === 0 ? (
           <p className="text-sm text-gray-400">まだデータがありません（結果の蓄積が必要）</p>
         ) : (
-          <div className="grid grid-cols-3 gap-y-2 text-sm">
+          <div className="grid grid-cols-5 gap-y-2 text-sm">
+            <div className="text-xs text-gray-400">位置</div>
+            <div className="text-right text-xs text-gray-400">1着</div>
+            <div className="text-right text-xs text-gray-400">2着</div>
+            <div className="text-right text-xs text-gray-400">3着</div>
+            <div className="text-right text-xs text-gray-400">走数</div>
             {positionWinRates.map((p) => (
               <div key={p.line_position} className="contents">
                 <div>{p.line_position}</div>
                 <div className="text-right tabular-nums">{p.winRate.toFixed(0)}%</div>
-                <div className="text-right text-gray-400">
-                  {p.wins}/{p.races}走
-                </div>
+                <div className="text-right tabular-nums">{p.secondRate.toFixed(0)}%</div>
+                <div className="text-right tabular-nums">{p.thirdRate.toFixed(0)}%</div>
+                <div className="text-right text-gray-400">{p.races}走</div>
               </div>
             ))}
           </div>

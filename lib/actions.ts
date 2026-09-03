@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { predictRace } from "./predict";
-import { savePrediction, setScoreWeights } from "./repository";
+import { savePrediction, setScoreWeights, addFavoriteRacer, removeFavoriteRacer } from "./repository";
 import type { ScoreWeights } from "./types";
 
 const GITHUB_REPO_OWNER = "honey94-o";
@@ -55,6 +55,21 @@ export async function recordPredictionAction(raceId: number): Promise<void> {
   await savePrediction(raceId, prediction.scored, honmeiFormation);
   revalidatePath(`/races/${raceId}`);
   revalidatePath("/history");
+}
+
+/** 選手ページのお気に入り登録/解除トグル。 */
+export async function toggleFavoriteRacerAction(
+  snum: string,
+  currentlyFavorite: boolean
+): Promise<void> {
+  if (currentlyFavorite) {
+    await removeFavoriteRacer(snum);
+  } else {
+    await addFavoriteRacer(snum);
+  }
+  revalidatePath(`/racers/${snum}`);
+  revalidatePath("/");
+  revalidatePath("/settings");
 }
 
 /**
