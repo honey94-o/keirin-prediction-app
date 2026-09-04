@@ -7,7 +7,14 @@ import {
   getFavoriteRacerEntriesForDate,
   getFavoriteRacers,
 } from "../lib/repository";
-import { todayJstStr, addDaysToDateStr, formatDateStr, isValidDateStr, formatUtcAsJst } from "../lib/date";
+import {
+  todayJstStr,
+  addDaysToDateStr,
+  formatDateStr,
+  isValidDateStr,
+  formatUtcAsJst,
+  nowJstHHMM,
+} from "../lib/date";
 import { RefreshTrigger } from "../components/RefreshTrigger";
 import type { RaceRow } from "../lib/types";
 
@@ -15,6 +22,23 @@ import type { RaceRow } from "../lib/types";
 // 直接更新するため、ビルド時の静的生成のままだと新しいレースが反映されない。
 // 常に最新のDBを読むよう動的レンダリングを強制する。
 export const dynamic = "force-dynamic";
+
+/**
+ * 開催場カードから買い目提案画面へ直接飛ぶ先のレースを選ぶ。
+ * 当日ならまだ発走していない一番近いレース（無ければ最終レース）、
+ * 翌日以降なら最初のレース、前日以前なら最終レースを返す
+ * （「今行くならどのレースを見たいか」に合わせた素朴な既定値）。
+ */
+function pickNearestRace(groupRaces: RaceRow[], viewDate: string, todayStr: string): RaceRow {
+  const sorted = [...groupRaces].sort((a, b) => (a.start_time ?? "").localeCompare(b.start_time ?? ""));
+  if (viewDate === todayStr) {
+    const now = nowJstHHMM();
+    const upcoming = sorted.find((r) => (r.start_time ?? "") >= now);
+    return upcoming ?? sorted[sorted.length - 1];
+  }
+  if (viewDate > todayStr) return sorted[0];
+  return sorted[sorted.length - 1];
+}
 
 export default async function Home({
   searchParams,
@@ -244,10 +268,11 @@ export default async function Home({
         <div className="flex flex-col gap-2">
           {groupsByTime.map(([jocd, groupRaces]) => {
             const first = groupRaces[0];
+            const nearestRace = pickNearestRace(groupRaces, viewDate, todayStr);
             return (
               <Link
                 key={jocd}
-                href={`/venues/${jocd}?date=${viewDate}`}
+                href={`/races/${nearestRace.id}/bets`}
                 className="flex items-center justify-between bg-white rounded-lg shadow-sm px-4 py-3 active:bg-gray-50"
               >
                 <div className="flex items-center gap-1.5">
@@ -259,9 +284,11 @@ export default async function Home({
                   )}
                 </div>
                 <div className="text-right">
-                  <div className="text-sm text-gray-500">{groupRaces.length}レース</div>
-                  {first.start_time && (
-                    <div className="text-xs text-gray-400">発走 {first.start_time}〜</div>
+                  <div className="text-sm text-gray-500">
+                    {groupRaces.length}レース中 {nearestRace.race_no}R
+                  </div>
+                  {nearestRace.start_time && (
+                    <div className="text-xs text-gray-400">発走 {nearestRace.start_time}</div>
                   )}
                 </div>
               </Link>

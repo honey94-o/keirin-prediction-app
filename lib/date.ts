@@ -13,6 +13,14 @@ export function todayJstStr(): string {
   return `${y}${m}${d}`;
 }
 
+/** 現在時刻をJSTの"HH:MM"で返す。races.start_timeと同じ書式なので直接比較できる。 */
+export function nowJstHHMM(): string {
+  const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const hh = String(jstNow.getUTCHours()).padStart(2, "0");
+  const mm = String(jstNow.getUTCMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
 export function addDaysToDateStr(dateStr: string, days: number): string {
   const y = Number(dateStr.slice(0, 4));
   const m = Number(dateStr.slice(4, 6));

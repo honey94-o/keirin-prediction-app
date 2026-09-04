@@ -73,6 +73,9 @@ export default async function RaceBetsPage({
       <RaceSwitcher races={eventRaces} currentRaceId={race.id} linkSuffix="/bets" />
       <h1 className="text-lg font-bold mb-1">
         {race.keirinjo_name} {race.race_no}R 買い目提案
+        {race.start_time && (
+          <span className="text-sm font-normal text-gray-500 ml-2">発走 {race.start_time}</span>
+        )}
       </h1>
       <p className="text-xs text-gray-400 mb-4">
         展開の分かれ目ごとに複数パターンを提示（参考値）
