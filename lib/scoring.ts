@@ -195,6 +195,30 @@ export function calculateKyakushitsuScore(
   // 単独では強い相関でもスコアに混ぜると効果が消える／不明瞭になるという、
   // 地元ボーナスや同県ライン加点削除でも見られたのと同じパターン。
 
+  // 番手/3番手：自分の級 vs 自分のラインの先頭選手の級：ユーザー提案を受けて
+  // scripts/diagnose-line-draft.tsで検証（78,477出走）。自分（番手/3番手）が
+  // 先頭より格下だと単勝的中率7.2%、同格だと10.6%、格上だと17.9%と大きな差が
+  // あり、自分自身の級班で層別しても（S1: 11.5→15.0→21.0%、S2: 9.1→10.4→17.1%、
+  // A1: 7.8→14.9→17.5%、A2: 7.1→7.7→13.5%）すべて同じ方向で単調に再現した。
+  // 「自分が先頭より格上＝そのラインの実質的なエースは自分」という、単なる
+  // 自分の実力の言い換えではない独立した情報と判断し、加点/減点として追加する。
+  // backtest.tsで検証（n=11198）：◎的中率44.6%→44.5%（誤差範囲内）、
+  // 本命回収率112.8%→113.1%と、単騎個人成績調整と同じく的中率は変えず回収率が
+  // わずかに上向く結果だったため加点10のまま採用。
+  const LINE_RANK_BONUS = 10; // 自分の級が自分のラインの先頭より格上の時の加点
+  const LINE_RANK_PENALTY = 10; // 自分の級が自分のラインの先頭より格下の時の減点
+  if ((entry.line_position === "番手" || entry.line_position === "3番手") && entry.class_rank) {
+    const senko = allEntries.find(
+      (e) => e.line_group === entry.line_group && e.line_position === "先頭"
+    );
+    const myClassScore = CLASS_RANK_SCORES[entry.class_rank];
+    const senkoClassScore = senko?.class_rank ? CLASS_RANK_SCORES[senko.class_rank] : undefined;
+    if (myClassScore != null && senkoClassScore != null) {
+      if (myClassScore > senkoClassScore) fitScore = clamp(fitScore + LINE_RANK_BONUS);
+      else if (myClassScore < senkoClassScore) fitScore = clamp(fitScore - LINE_RANK_PENALTY);
+    }
+  }
+
   const baseScore = clamp(
     classRankScore * 0.25 + winRateScore * 0.3 + placeRateScore * 0.25 + fitScore * 0.2
   );
