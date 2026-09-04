@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getRacer, getRacerHistory, getPositionWinRates, isFavoriteRacer } from "../../../lib/repository";
 import { determineClassChange } from "../../../lib/scoring";
 import { toggleFavoriteRacerAction } from "../../../lib/actions";
+import { BackButton } from "../../../components/BackButton";
 
 export default async function RacerDetailPage({
   params,
@@ -20,6 +21,7 @@ export default async function RacerDetailPage({
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
+      <BackButton />
       <div className="flex items-center justify-between mb-1">
         <h1 className="text-lg font-bold">{racer.name}</h1>
         <form action={toggleFavorite}>

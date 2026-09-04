@@ -163,6 +163,9 @@ export interface FavoriteRacerEntry {
   snum: string;
   racerName: string;
   carNum: number;
+  /** 結果確定後のみ入る（未確定はnull）。 */
+  finishPos: number | null;
+  kimarite: string | null;
 }
 
 /** 単騎（自分のラインが自分だけ）時の個人成績。calculateSoloPersonalAdjustment参照。 */

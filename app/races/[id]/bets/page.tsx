@@ -37,6 +37,7 @@ export default async function RaceBetsPage({
   // （3連単払戻オッズの組み合わせを最優先、無ければresults.finish_posから組み立て）。
   const [results, odds] = await Promise.all([getResultsForRace(raceId), getOddsForRace(raceId)]);
   const nameByCarNum = new Map(scored.map((s) => [s.entry.car_num, s.entry.name]));
+  const snumByCarNum = new Map(scored.map((s) => [s.entry.car_num, s.entry.snum]));
   const finishOrder = results
     .filter((r) => r.finish_pos != null)
     .sort((a, b) => (a.finish_pos ?? 0) - (b.finish_pos ?? 0));
@@ -91,7 +92,9 @@ export default async function RaceBetsPage({
           <div key={s.entry.entry_id} className="flex items-center gap-1 bg-white rounded-full pl-1 pr-2 py-1 shadow-sm">
             <MarkBadge mark={s.mark} />
             <CarNumberBadge carNum={s.entry.car_num} size="sm" />
-            <span className="text-sm">{s.entry.name}</span>
+            <Link href={`/racers/${s.entry.snum}`} className="text-sm">
+              {s.entry.name}
+            </Link>
             <RecentFormBadge avgFinish={s.recentFormAvg} />
           </div>
         ))}
@@ -119,7 +122,9 @@ export default async function RaceBetsPage({
               <li key={r.car_num} className="flex items-center gap-2 text-sm">
                 <span className="text-xs text-gray-400 w-8 shrink-0">{r.finish_pos}着</span>
                 <CarNumberBadge carNum={r.car_num} size="sm" />
-                <span className="text-gray-900">{nameByCarNum.get(r.car_num) ?? "-"}</span>
+                <Link href={`/racers/${snumByCarNum.get(r.car_num)}`} className="text-gray-900 underline">
+                  {nameByCarNum.get(r.car_num) ?? "-"}
+                </Link>
                 {r.finish_pos === 1 && r.kimarite && (
                   <span className="text-xs text-gray-400 ml-auto">{r.kimarite}</span>
                 )}
@@ -136,7 +141,10 @@ export default async function RaceBetsPage({
               単勝おすすめ
             </span>
             <span className="text-sm font-semibold">
-              軸 {winSuggestion.carNum}. {winSuggestion.name}
+              軸 {winSuggestion.carNum}.{" "}
+              <Link href={`/racers/${snumByCarNum.get(winSuggestion.carNum)}`} className="underline">
+                {winSuggestion.name}
+              </Link>
             </span>
             {raceFinished && (
               <span
@@ -177,7 +185,10 @@ export default async function RaceBetsPage({
                     {scenario.label}
                   </span>
                   <span className="text-sm font-semibold">
-                    軸 {scenario.axisCarNum}. {scenario.axisName}
+                    軸 {scenario.axisCarNum}.{" "}
+                    <Link href={`/racers/${snumByCarNum.get(scenario.axisCarNum)}`} className="underline">
+                      {scenario.axisName}
+                    </Link>
                   </span>
                   {scenarioHit != null && (
                     <span

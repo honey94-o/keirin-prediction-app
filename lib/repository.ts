@@ -159,21 +159,32 @@ export async function getFavoriteRacers(): Promise<RacerRow[]> {
   return result.rows as unknown as RacerRow[];
 }
 
-/** 指定日にお気に入り選手が出走するレース一覧（発走時刻順）。ホーム画面用。 */
+/**
+ * 指定日にお気に入り選手が出走するレース一覧（発走時刻順）。ホーム画面・
+ * /favorites用。結果が確定していればfinishPosも返す（LEFT JOIN、未確定はnull）。
+ */
 export async function getFavoriteRacerEntriesForDate(
   kaisaiDate: string
 ): Promise<FavoriteRacerEntry[]> {
   const result = await getDb().execute({
-    sql: `SELECT ra.*, e.car_num as entry_car_num, rc.snum as racer_snum, rc.name as racer_name
+    sql: `SELECT ra.*, e.car_num as entry_car_num, rc.snum as racer_snum, rc.name as racer_name,
+                 r.finish_pos, r.kimarite
           FROM favorite_racers f
           JOIN entries e ON e.snum = f.snum
           JOIN races ra ON ra.id = e.race_id
           JOIN racers rc ON rc.snum = f.snum
+          LEFT JOIN results r ON r.race_id = e.race_id AND r.car_num = e.car_num
           WHERE ra.kaisai_date = ?
           ORDER BY ra.start_time`,
     args: [kaisaiDate],
   });
-  type Row = RaceRow & { entry_car_num: number; racer_snum: string; racer_name: string };
+  type Row = RaceRow & {
+    entry_car_num: number;
+    racer_snum: string;
+    racer_name: string;
+    finish_pos: number | null;
+    kimarite: string | null;
+  };
   return (result.rows as unknown as Row[]).map((r) => ({
     race: {
       id: r.id,
@@ -193,6 +204,8 @@ export async function getFavoriteRacerEntriesForDate(
     snum: r.racer_snum,
     racerName: r.racer_name,
     carNum: r.entry_car_num,
+    finishPos: r.finish_pos,
+    kimarite: r.kimarite,
   }));
 }
 
