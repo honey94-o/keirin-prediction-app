@@ -77,34 +77,34 @@ export default async function PicksPage({
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
-      <Link href={`/?date=${viewDate}`} className="text-sm text-[#0d5c3f] mb-2 inline-block">
+      <Link href={`/?date=${viewDate}`} className="text-sm text-[#0d5c3f] mb-2 inline-block dark:text-emerald-400">
         ← ホームに戻る
       </Link>
-      <h1 className="text-lg font-bold mb-1">厳選レース（{formatDateStr(viewDate)}）</h1>
-      <p className="text-xs text-gray-400 mb-4">
+      <h1 className="text-lg font-bold mb-1 dark:text-gray-100">厳選レース（{formatDateStr(viewDate)}）</h1>
+      <p className="text-xs text-gray-400 mb-4 dark:text-gray-500">
         本命の信頼度が高い上位{items.length}レースを発走時刻順に表示。買い目は「本命」フォーメーション（1レース20点以内）が対象です。
       </p>
 
       {/* バリカタ：margin・ライン決着から絞った単一の並び（1点買い）の実績・本日のピック */}
-      <section className="bg-rose-50 border border-rose-200 rounded-lg shadow-sm p-3 mb-4">
+      <section className="bg-rose-50 border border-rose-200 rounded-lg shadow-sm p-3 mb-4 dark:bg-rose-950 dark:border-rose-900">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-xs font-semibold bg-rose-600 text-white px-2 py-0.5 rounded-full">
             バリカタ
           </span>
-          <span className="text-xs text-rose-800">単一の並び（1点買い想定）</span>
+          <span className="text-xs text-rose-800 dark:text-rose-400">単一の並び（1点買い想定）</span>
         </div>
 
         {barikataPerf30d.races > 0 && (
-          <div className="grid grid-cols-3 gap-y-1 text-sm mb-3 pb-3 border-b border-rose-200">
-            <div className="text-rose-700">直近{PERFORMANCE_WINDOW_DAYS}日</div>
-            <div className="col-span-2 text-right tabular-nums">
+          <div className="grid grid-cols-3 gap-y-1 text-sm mb-3 pb-3 border-b border-rose-200 dark:border-rose-900">
+            <div className="text-rose-700 dark:text-rose-400">直近{PERFORMANCE_WINDOW_DAYS}日</div>
+            <div className="col-span-2 text-right tabular-nums dark:text-gray-200">
               的中率{((barikataPerf30d.hits / barikataPerf30d.races) * 100).toFixed(1)}% (
               {barikataPerf30d.hits}/{barikataPerf30d.races})
             </div>
-            <div className="text-rose-700">回収率</div>
+            <div className="text-rose-700 dark:text-rose-400">回収率</div>
             <div
               className={`col-span-2 text-right font-semibold tabular-nums ${
-                (barikataPerf30d.roi ?? 0) >= 100 ? "text-green-700" : "text-rose-900"
+                (barikataPerf30d.roi ?? 0) >= 100 ? "text-green-700 dark:text-green-400" : "text-rose-900 dark:text-rose-300"
               }`}
             >
               {barikataPerf30d.roi?.toFixed(1)}%
@@ -113,13 +113,19 @@ export default async function PicksPage({
         )}
 
         {barikataPrevResults.length > 0 && (
-          <div className="mb-3 pb-3 border-b border-rose-200">
+          <div className="mb-3 pb-3 border-b border-rose-200 dark:border-rose-900">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-rose-700">前日（{formatDateStr(prevDate)}）</span>
+              <span className="text-xs text-rose-700 dark:text-rose-400">前日（{formatDateStr(prevDate)}）</span>
               {barikataPrevFinished.length > 0 && (
-                <span className="text-xs font-semibold">
+                <span className="text-xs font-semibold dark:text-gray-200">
                   {barikataPrevHits}/{barikataPrevFinished.length}的中 ・{" "}
-                  <span className={(barikataPrevRoi ?? 0) >= 100 ? "text-green-700" : "text-rose-900"}>
+                  <span
+                    className={
+                      (barikataPrevRoi ?? 0) >= 100
+                        ? "text-green-700 dark:text-green-400"
+                        : "text-rose-900 dark:text-rose-300"
+                    }
+                  >
                     {barikataPrevRoi?.toFixed(1)}%
                   </span>
                 </span>
@@ -128,21 +134,23 @@ export default async function PicksPage({
             <ul className="flex flex-col gap-1">
               {barikataPrevResultsByTime.map((r) => (
                 <li key={r.pick.race_id} className="flex items-center gap-2 text-xs">
-                  <span className="text-gray-900 w-20 shrink-0 truncate">
+                  <span className="text-gray-900 w-20 shrink-0 truncate dark:text-gray-100">
                     {r.pick.keirinjo_name}
                     {r.pick.race_no}R
                   </span>
-                  <span className="font-mono font-bold text-rose-700">{r.pick.combo}</span>
+                  <span className="font-mono font-bold text-rose-700 dark:text-rose-400">{r.pick.combo}</span>
                   {r.finished ? (
                     <span
                       className={`ml-auto px-1.5 py-0.5 rounded-full font-semibold ${
-                        r.hit ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-500"
+                        r.hit
+                          ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+                          : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
                       }`}
                     >
                       {r.hit ? `的中 ${(r.payoutYen ?? 0).toFixed(0)}円` : "不的中"}
                     </span>
                   ) : (
-                    <span className="ml-auto text-gray-400">結果未確定</span>
+                    <span className="ml-auto text-gray-400 dark:text-gray-500">結果未確定</span>
                   )}
                 </li>
               ))}
@@ -150,28 +158,30 @@ export default async function PicksPage({
           </div>
         )}
 
-        <div className="text-xs text-rose-700 mb-1">
+        <div className="text-xs text-rose-700 mb-1 dark:text-rose-400">
           本日のバリカタ{barikataPicks.length > 0 ? `（${barikataPicks.length}件）` : ""}
         </div>
         {barikataPicks.length === 0 ? (
-          <p className="text-sm text-gray-400">条件を満たすレースはありません。</p>
+          <p className="text-sm text-gray-400 dark:text-gray-500">条件を満たすレースはありません。</p>
         ) : (
           <ul className="flex flex-col gap-1">
             {barikataByTime.map((p) => (
               <li key={p.race_id}>
                 <Link
                   href={`/races/${p.race_id}/bets`}
-                  className="flex items-center gap-2 bg-white rounded-lg px-2 py-1.5 text-sm active:bg-gray-50"
+                  className="flex items-center gap-2 bg-white rounded-lg px-2 py-1.5 text-sm active:bg-gray-50 dark:bg-gray-800 dark:active:bg-gray-700"
                 >
-                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0">
+                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
                     {p.start_time ?? "--:--"}
                   </span>
-                  <span className="text-gray-900 flex-1 truncate">
+                  <span className="text-gray-900 flex-1 truncate dark:text-gray-100">
                     {p.keirinjo_name}
                     {p.race_no}R
                   </span>
-                  <span className="font-mono font-bold text-rose-700">{p.combo}</span>
-                  <span className="text-xs text-rose-700 tabular-nums">差{p.margin.toFixed(1)}</span>
+                  <span className="font-mono font-bold text-rose-700 dark:text-rose-400">{p.combo}</span>
+                  <span className="text-xs text-rose-700 tabular-nums dark:text-rose-400">
+                    差{p.margin.toFixed(1)}
+                  </span>
                 </Link>
               </li>
             ))}
@@ -180,25 +190,27 @@ export default async function PicksPage({
       </section>
 
       {/* 直近30日の実績回収率 */}
-      <section className="bg-white rounded-lg shadow-sm p-3 mb-4">
-        <h2 className="text-xs font-semibold text-gray-600 mb-2">
+      <section className="bg-white rounded-lg shadow-sm p-3 mb-4 dark:bg-gray-800">
+        <h2 className="text-xs font-semibold text-gray-600 mb-2 dark:text-gray-300">
           直近{PERFORMANCE_WINDOW_DAYS}日の実績（
           {formatDateStr(last30Dates[last30Dates.length - 1])} 〜 {formatDateStr(last30Dates[0])}）
         </h2>
         {performance30d.races === 0 ? (
-          <p className="text-sm text-gray-400">結果確定済みのデータがまだありません。</p>
+          <p className="text-sm text-gray-400 dark:text-gray-500">結果確定済みのデータがまだありません。</p>
         ) : (
           <div className="grid grid-cols-3 gap-y-1 text-sm">
-            <div className="text-gray-500">対象レース</div>
-            <div className="col-span-2 text-right tabular-nums">{performance30d.races}レース</div>
-            <div className="text-gray-500">的中率</div>
-            <div className="col-span-2 text-right tabular-nums">
+            <div className="text-gray-500 dark:text-gray-400">対象レース</div>
+            <div className="col-span-2 text-right tabular-nums dark:text-gray-200">
+              {performance30d.races}レース
+            </div>
+            <div className="text-gray-500 dark:text-gray-400">的中率</div>
+            <div className="col-span-2 text-right tabular-nums dark:text-gray-200">
               {((performance30d.hits / performance30d.races) * 100).toFixed(1)}% ({performance30d.hits}/{performance30d.races})
             </div>
-            <div className="text-gray-500">回収率</div>
+            <div className="text-gray-500 dark:text-gray-400">回収率</div>
             <div
               className={`col-span-2 text-right font-semibold tabular-nums ${
-                (performance30d.roi ?? 0) >= 100 ? "text-green-700" : "text-gray-700"
+                (performance30d.roi ?? 0) >= 100 ? "text-green-700 dark:text-green-400" : "text-gray-700 dark:text-gray-300"
               }`}
             >
               {performance30d.roi?.toFixed(1)}%
@@ -208,13 +220,15 @@ export default async function PicksPage({
       </section>
 
       {/* 前日の結果：買い目・結果・払い戻し・回収率をレースごとに、トータル回収率を上部に表示 */}
-      <section className="bg-white rounded-lg shadow-sm p-3 mb-4">
+      <section className="bg-white rounded-lg shadow-sm p-3 mb-4 dark:bg-gray-800">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-xs font-semibold text-gray-600">前日（{formatDateStr(prevDate)}）の結果</h2>
+          <h2 className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+            前日（{formatDateStr(prevDate)}）の結果
+          </h2>
           {prevFinished.length > 0 && (
-            <span className="text-xs font-semibold">
+            <span className="text-xs font-semibold dark:text-gray-200">
               {prevHits}/{prevFinished.length}的中 ・ トータル回収率
-              <span className={(prevRoi ?? 0) >= 100 ? "text-green-700" : "text-gray-700"}>
+              <span className={(prevRoi ?? 0) >= 100 ? "text-green-700 dark:text-green-400" : "text-gray-700 dark:text-gray-300"}>
                 {" "}
                 {prevRoi?.toFixed(1)}%
               </span>
@@ -222,9 +236,9 @@ export default async function PicksPage({
           )}
         </div>
         {prevResults.length === 0 ? (
-          <p className="text-sm text-gray-400">前日の厳選レースはありませんでした。</p>
+          <p className="text-sm text-gray-400 dark:text-gray-500">前日の厳選レースはありませんでした。</p>
         ) : (
-          <ul className="flex flex-col divide-y divide-gray-100">
+          <ul className="flex flex-col divide-y divide-gray-100 dark:divide-gray-700">
             {prevResultsByTime.map((r) => {
               const notation = r.pick.formation ? formatFormationNotation(r.pick.formation) : null;
               const raceRoi = r.stakeYen && r.stakeYen > 0 ? ((r.payoutYen ?? 0) / r.stakeYen) * 100 : null;
@@ -232,24 +246,26 @@ export default async function PicksPage({
                 <li key={r.pick.race_id} className="py-2">
                   <Link
                     href={`/races/${r.pick.race_id}/bets`}
-                    className="flex items-center gap-2 active:bg-gray-50 -mx-1 px-1 rounded"
+                    className="flex items-center gap-2 active:bg-gray-50 -mx-1 px-1 rounded dark:active:bg-gray-700"
                   >
-                    <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0">
+                    <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
                       {r.pick.start_time ?? "--:--"}
                     </span>
-                    <span className="text-sm text-gray-900 w-20 shrink-0 truncate">
+                    <span className="text-sm text-gray-900 w-20 shrink-0 truncate dark:text-gray-100">
                       {r.pick.keirinjo_name}
                       {r.pick.race_no}R
                     </span>
-                    <span className="flex-1 font-mono text-xs text-gray-600 truncate">
+                    <span className="flex-1 font-mono text-xs text-gray-600 truncate dark:text-gray-400">
                       {notation ?? "-"}
                     </span>
                     {!r.finished ? (
-                      <span className="text-xs text-gray-400 shrink-0">結果未確定</span>
+                      <span className="text-xs text-gray-400 shrink-0 dark:text-gray-500">結果未確定</span>
                     ) : (
                       <span
                         className={`text-xs px-2 py-0.5 rounded-full font-semibold shrink-0 ${
-                          r.hit ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-500"
+                          r.hit
+                            ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+                            : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
                         }`}
                       >
                         {r.hit ? "的中" : "不的中"}
@@ -257,10 +273,14 @@ export default async function PicksPage({
                     )}
                   </Link>
                   {r.finished && (
-                    <div className="flex items-center justify-end gap-4 mt-1 text-xs text-gray-500 tabular-nums">
+                    <div className="flex items-center justify-end gap-4 mt-1 text-xs text-gray-500 tabular-nums dark:text-gray-400">
                       <span>買い目 {r.stakeYen ?? 0}円</span>
                       <span>払戻 {(r.payoutYen ?? 0).toFixed(0)}円</span>
-                      <span className={raceRoi != null && raceRoi >= 100 ? "text-green-700 font-semibold" : ""}>
+                      <span
+                        className={
+                          raceRoi != null && raceRoi >= 100 ? "text-green-700 font-semibold dark:text-green-400" : ""
+                        }
+                      >
                         回収率 {raceRoi != null ? `${raceRoi.toFixed(0)}%` : "-"}
                       </span>
                     </div>
@@ -273,17 +293,17 @@ export default async function PicksPage({
       </section>
 
       {items.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center mt-8">
+        <p className="text-sm text-gray-400 text-center mt-8 dark:text-gray-500">
           {formatDateStr(viewDate)}の厳選レースはまだありません。
         </p>
       ) : (
         <>
           {/* 本日の買い目一覧（全件） */}
-          <section className="bg-white rounded-lg shadow-sm p-3 mb-4">
-            <h2 className="text-xs font-semibold text-gray-600 mb-2">
+          <section className="bg-white rounded-lg shadow-sm p-3 mb-4 dark:bg-gray-800">
+            <h2 className="text-xs font-semibold text-gray-600 mb-2 dark:text-gray-300">
               本日の買い目一覧（{items.length}レース）
             </h2>
-            <ul className="flex flex-col divide-y divide-gray-100">
+            <ul className="flex flex-col divide-y divide-gray-100 dark:divide-gray-700">
               {items.map(({ pick, prediction }) => {
                 const honmeiScenario = prediction.scenarios.find((s) => s.label === "本命");
                 const notation = honmeiScenario
@@ -291,17 +311,17 @@ export default async function PicksPage({
                   : null;
                 return (
                   <li key={pick.race_id} className="py-2 flex items-center gap-2">
-                    <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0">
+                    <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
                       {pick.start_time ?? "--:--"}
                     </span>
-                    <span className="text-sm text-gray-900 w-24 shrink-0 truncate">
+                    <span className="text-sm text-gray-900 w-24 shrink-0 truncate dark:text-gray-100">
                       {pick.keirinjo_name}
                       {pick.race_no}R
                     </span>
-                    <span className="flex-1 font-mono font-bold tabular-nums text-[#0d5c3f] text-sm truncate">
+                    <span className="flex-1 font-mono font-bold tabular-nums text-[#0d5c3f] text-sm truncate dark:text-emerald-400">
                       {notation ?? "-"}
                     </span>
-                    <span className="text-xs text-gray-400 shrink-0">
+                    <span className="text-xs text-gray-400 shrink-0 dark:text-gray-500">
                       {honmeiScenario?.formation.combinations.length ?? 0}点
                     </span>
                   </li>
@@ -310,12 +330,12 @@ export default async function PicksPage({
             </ul>
           </section>
 
-          <h2 className="text-xs font-semibold text-gray-600 mb-2">レースごとの詳細</h2>
+          <h2 className="text-xs font-semibold text-gray-600 mb-2 dark:text-gray-300">レースごとの詳細</h2>
           <PicksTabs items={items} />
         </>
       )}
 
-      <p className="text-xs text-gray-400 mt-6 leading-relaxed">
+      <p className="text-xs text-gray-400 mt-6 leading-relaxed dark:text-gray-500">
         選定方法：その日の本命（◎と対抗のスコア差）が大きい順に上位10件を機械的に選出。
         「直近{PERFORMANCE_WINDOW_DAYS}日の実績」は各日実際に表示した買い目のスナップショットで判定しており、
         後からスコアリングを調整しても過去の結果表示は変わりません。ギャンブルのため回収率100%超えを毎回保証するものではありません。

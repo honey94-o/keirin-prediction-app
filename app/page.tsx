@@ -156,13 +156,13 @@ export default async function Home({
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
       <div className="flex items-baseline justify-between mb-1">
-        <h1 className="text-lg font-bold">開催場を選択</h1>
+        <h1 className="text-lg font-bold dark:text-gray-100">開催場を選択</h1>
         <RefreshTrigger compact />
       </div>
       <div className="flex items-baseline justify-between mb-3">
-        <p className="text-sm text-gray-400">{formatDateStr(viewDate)}</p>
+        <p className="text-sm text-gray-400 dark:text-gray-500">{formatDateStr(viewDate)}</p>
         {lastSyncedAt && (
-          <p className="text-xs text-gray-400">最終更新 {formatUtcAsJst(lastSyncedAt)}</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500">最終更新 {formatUtcAsJst(lastSyncedAt)}</p>
         )}
       </div>
 
@@ -177,7 +177,7 @@ export default async function Home({
               className={`flex-1 text-center px-3 py-2 rounded-lg text-sm font-semibold ${
                 active
                   ? "bg-[#0d5c3f] text-white"
-                  : "bg-white text-gray-600 border border-gray-200"
+                  : "bg-white text-gray-600 border border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700"
               }`}
             >
               {tab.label}
@@ -187,57 +187,65 @@ export default async function Home({
       </div>
 
       {todaySummary && todaySummary.total > 0 && (
-        <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-2 mb-4">
+        <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-2 mb-4 dark:bg-gray-800 dark:border-gray-700">
           <span className="text-xs font-semibold bg-[#0d5c3f] text-white px-2 py-0.5 rounded-full">
             今日の的中
           </span>
-          <span className="text-sm font-bold tabular-nums">
+          <span className="text-sm font-bold tabular-nums dark:text-gray-100">
             {todaySummary.hits}/{todaySummary.total}
           </span>
-          <span className="text-xs text-gray-400">
+          <span className="text-xs text-gray-400 dark:text-gray-500">
             ({((todaySummary.hits / todaySummary.total) * 100).toFixed(0)}%)
           </span>
-          <span className="text-xs text-gray-400">厳選+バリカタ</span>
-          <Link href="/history" className="text-xs font-semibold text-[#0d5c3f] underline ml-auto whitespace-nowrap">
+          <span className="text-xs text-gray-400 dark:text-gray-500">厳選+バリカタ</span>
+          <Link
+            href="/history"
+            className="text-xs font-semibold text-[#0d5c3f] underline ml-auto whitespace-nowrap dark:text-emerald-400"
+          >
             日別履歴 →
           </Link>
         </div>
       )}
 
       {favoriteRacers.length > 0 && (
-        <section className="bg-yellow-50 border border-yellow-200 rounded-lg shadow-sm p-3 mb-4">
+        <section className="bg-yellow-50 border border-yellow-200 rounded-lg shadow-sm p-3 mb-4 dark:bg-yellow-950 dark:border-yellow-900">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold bg-yellow-500 text-white px-2 py-0.5 rounded-full">
                 ★ お気に入り
               </span>
-              <span className="text-xs text-yellow-800">{formatDateStr(viewDate)}の出走</span>
+              <span className="text-xs text-yellow-800 dark:text-yellow-400">{formatDateStr(viewDate)}の出走</span>
             </div>
-            <Link href="/favorites" className="text-xs font-semibold text-yellow-800 underline whitespace-nowrap">
+            <Link
+              href="/favorites"
+              className="text-xs font-semibold text-yellow-800 underline whitespace-nowrap dark:text-yellow-400"
+            >
               一覧を見る →
             </Link>
           </div>
           {favoriteEntries.length === 0 ? (
-            <p className="text-xs text-gray-400">この日の出走はありません</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">この日の出走はありません</p>
           ) : (
             <ul className="flex flex-col gap-2">
               {favoriteEntries.map((f) => (
                 <li key={`${f.race.id}-${f.snum}`}>
                   <Link
                     href={`/races/${f.race.id}/bets`}
-                    className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 active:bg-gray-50"
+                    className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 active:bg-gray-50 dark:bg-gray-800 dark:active:bg-gray-700"
                   >
-                    <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0">
+                    <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
                       {f.race.start_time ?? "--:--"}
                     </span>
-                    <span className="text-sm text-gray-900 flex-1 truncate">
+                    <span className="text-sm text-gray-900 flex-1 truncate dark:text-gray-100">
                       {f.race.keirinjo_name} {f.race.race_no}R
                     </span>
                     <StartingSoonBadge
                       minutes={startingSoonMinutes(f.race.start_time, viewDate, todayStr, nowHHMM)}
                     />
-                    <span className="text-xs text-yellow-700 tabular-nums shrink-0">{f.carNum}番</span>
-                    <span className="text-sm font-semibold text-gray-900 truncate max-w-[8rem]">
+                    <span className="text-xs text-yellow-700 tabular-nums shrink-0 dark:text-yellow-400">
+                      {f.carNum}番
+                    </span>
+                    <span className="text-sm font-semibold text-gray-900 truncate max-w-[8rem] dark:text-gray-100">
                       {f.racerName}
                     </span>
                   </Link>
@@ -249,12 +257,12 @@ export default async function Home({
       )}
 
       {barikataResults.length > 0 && (
-        <section className="bg-rose-50 border border-rose-200 rounded-lg shadow-sm p-3 mb-4">
+        <section className="bg-rose-50 border border-rose-200 rounded-lg shadow-sm p-3 mb-4 dark:bg-rose-950 dark:border-rose-900">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xs font-semibold bg-rose-600 text-white px-2 py-0.5 rounded-full">
               バリカタ
             </span>
-            <span className="text-xs text-rose-800">
+            <span className="text-xs text-rose-800 dark:text-rose-400">
               margin・ライン決着から絞った単一の並び（1点買い想定）
             </span>
           </div>
@@ -263,18 +271,18 @@ export default async function Home({
               <li key={p.race_id}>
                 <Link
                   href={`/races/${p.race_id}/bets`}
-                  className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 active:bg-gray-50"
+                  className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 active:bg-gray-50 dark:bg-gray-800 dark:active:bg-gray-700"
                 >
-                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0">
+                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
                     {p.start_time ?? "--:--"}
                   </span>
-                  <span className="text-sm font-medium text-gray-900 flex-1 truncate">
+                  <span className="text-sm font-medium text-gray-900 flex-1 truncate dark:text-gray-100">
                     {p.keirinjo_name} {p.race_no}R
                   </span>
-                  <span className="text-sm font-mono font-bold text-rose-700 tabular-nums whitespace-nowrap">
+                  <span className="text-sm font-mono font-bold text-rose-700 tabular-nums whitespace-nowrap dark:text-rose-400">
                     {p.combo}
                   </span>
-                  <span className="text-xs font-semibold text-rose-700 tabular-nums whitespace-nowrap">
+                  <span className="text-xs font-semibold text-rose-700 tabular-nums whitespace-nowrap dark:text-rose-400">
                     差{p.margin.toFixed(1)}点
                   </span>
                   <StartingSoonBadge
@@ -283,7 +291,9 @@ export default async function Home({
                   {finished && (
                     <span
                       className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-                        hit ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-400"
+                        hit
+                          ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+                          : "bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-400"
                       }`}
                     >
                       {hit ? "的中" : "不的中"}
@@ -293,7 +303,7 @@ export default async function Home({
               </li>
             ))}
           </ul>
-          <p className="text-[10px] text-rose-700 mt-2 leading-relaxed">
+          <p className="text-[10px] text-rose-700 mt-2 leading-relaxed dark:text-rose-400">
             単一の並び的中率は検証時点で32.7%・的中時平均オッズ4.13倍（1点買い回収率約140%、母数197件）。
             必ず的中するわけではありません。
           </p>
@@ -301,17 +311,19 @@ export default async function Home({
       )}
 
       {pickResults.length > 0 && (
-        <section className="bg-amber-50 border border-amber-200 rounded-lg shadow-sm p-3 mb-4">
+        <section className="bg-amber-50 border border-amber-200 rounded-lg shadow-sm p-3 mb-4 dark:bg-amber-950 dark:border-amber-900">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold bg-amber-500 text-white px-2 py-0.5 rounded-full">
                 厳選レース
               </span>
-              <span className="text-xs text-amber-800">本命の信頼度が高い上位{pickResults.length}レース</span>
+              <span className="text-xs text-amber-800 dark:text-amber-400">
+                本命の信頼度が高い上位{pickResults.length}レース
+              </span>
             </div>
             <Link
               href={`/picks?date=${viewDate}`}
-              className="text-xs font-semibold text-amber-800 underline whitespace-nowrap"
+              className="text-xs font-semibold text-amber-800 underline whitespace-nowrap dark:text-amber-400"
             >
               タブでまとめて見る →
             </Link>
@@ -321,18 +333,18 @@ export default async function Home({
               <li key={p.race_id}>
                 <Link
                   href={`/races/${p.race_id}/bets`}
-                  className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 active:bg-gray-50"
+                  className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 active:bg-gray-50 dark:bg-gray-800 dark:active:bg-gray-700"
                 >
-                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0">
+                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
                     {p.start_time ?? "--:--"}
                   </span>
-                  <span className="text-sm font-medium text-gray-900 flex-1 truncate">
+                  <span className="text-sm font-medium text-gray-900 flex-1 truncate dark:text-gray-100">
                     {p.keirinjo_name} {p.race_no}R
                   </span>
-                  <span className="text-xs text-gray-500 whitespace-nowrap">
+                  <span className="text-xs text-gray-500 whitespace-nowrap dark:text-gray-400">
                     軸 {p.honmei_car_num}.{p.honmei_name}
                   </span>
-                  <span className="text-xs font-semibold text-amber-700 tabular-nums whitespace-nowrap">
+                  <span className="text-xs font-semibold text-amber-700 tabular-nums whitespace-nowrap dark:text-amber-400">
                     差{p.margin.toFixed(1)}点
                   </span>
                   <StartingSoonBadge
@@ -341,7 +353,9 @@ export default async function Home({
                   {finished && (
                     <span
                       className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-                        hit ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-400"
+                        hit
+                          ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+                          : "bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-400"
                       }`}
                     >
                       {hit ? "的中" : "不的中"}
@@ -356,7 +370,7 @@ export default async function Home({
 
       {races.length === 0 ? (
         <div className="text-center mt-8">
-          <p className="text-gray-500 mb-4">
+          <p className="text-gray-500 mb-4 dark:text-gray-400">
             {formatDateStr(viewDate)}のレースはまだ取得されていません。
             {viewDate === todayStr &&
               "毎日朝5時頃に自動取得されますが、今すぐ取得することもできます。"}
@@ -373,11 +387,17 @@ export default async function Home({
                 key={jocd}
                 href={`/races/${nearestRace.id}/bets`}
                 className={`flex items-center justify-between rounded-lg shadow-sm px-4 py-3 ${
-                  allFinished ? "bg-gray-100 active:bg-gray-200" : "bg-white active:bg-gray-50"
+                  allFinished
+                    ? "bg-gray-100 active:bg-gray-200 dark:bg-gray-800/60 dark:active:bg-gray-700"
+                    : "bg-white active:bg-gray-50 dark:bg-gray-800 dark:active:bg-gray-700"
                 }`}
               >
                 <div className="flex items-center gap-1.5">
-                  <span className={`font-semibold ${allFinished ? "text-gray-400" : "text-gray-900"}`}>
+                  <span
+                    className={`font-semibold ${
+                      allFinished ? "text-gray-400 dark:text-gray-500" : "text-gray-900 dark:text-gray-100"
+                    }`}
+                  >
                     {first.keirinjo_name}
                   </span>
                   {(() => {
@@ -387,8 +407,8 @@ export default async function Home({
                       <span
                         className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
                           dayLabel === "最終日"
-                            ? "bg-rose-50 text-rose-600"
-                            : "bg-sky-50 text-sky-700"
+                            ? "bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400"
+                            : "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-400"
                         }`}
                       >
                         {dayLabel}
@@ -396,7 +416,7 @@ export default async function Home({
                     );
                   })()}
                   {first.grade_kbn && (
-                    <span className="text-[10px] font-semibold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] font-semibold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded dark:bg-gray-700 dark:text-gray-300">
                       {first.grade_kbn}
                     </span>
                   )}
@@ -407,8 +427,8 @@ export default async function Home({
                       <span
                         className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
                           stage === "予選"
-                            ? "bg-gray-100 text-gray-500"
-                            : "bg-emerald-50 text-emerald-700"
+                            ? "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+                            : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
                         }`}
                       >
                         {stage}
@@ -416,19 +436,23 @@ export default async function Home({
                     );
                   })()}
                   {allFinished && (
-                    <span className="text-[10px] font-semibold bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] font-semibold bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded dark:bg-gray-700 dark:text-gray-400">
                       終了
                     </span>
                   )}
                 </div>
                 <div className="text-right">
-                  <div className={`text-sm ${allFinished ? "text-gray-400" : "text-gray-500"}`}>
+                  <div
+                    className={`text-sm ${
+                      allFinished ? "text-gray-400 dark:text-gray-500" : "text-gray-500 dark:text-gray-400"
+                    }`}
+                  >
                     {allFinished
                       ? `全${groupRaces.length}レース終了`
                       : `${groupRaces.length}レース中 ${nearestRace.race_no}R`}
                   </div>
                   {!allFinished && nearestRace.start_time && (
-                    <div className="text-xs text-gray-400 flex items-center gap-1 justify-end">
+                    <div className="text-xs text-gray-400 flex items-center gap-1 justify-end dark:text-gray-500">
                       <span>発走 {nearestRace.start_time}</span>
                       <StartingSoonBadge
                         minutes={startingSoonMinutes(nearestRace.start_time, viewDate, todayStr, nowHHMM)}

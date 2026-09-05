@@ -41,7 +41,7 @@ export function WeightSettingsForm({ initialWeights }: { initialWeights: ScoreWe
         name="stats"
       />
 
-      <p className="text-xs text-gray-400">
+      <p className="text-xs text-gray-400 dark:text-gray-500">
         3つの比率で正規化されるため、合計が100でなくても構いません。
       </p>
 
@@ -71,8 +71,8 @@ function SliderRow({
   return (
     <label className="flex flex-col gap-1">
       <div className="flex justify-between text-sm">
-        <span className="font-medium">{label}</span>
-        <span className="tabular-nums text-gray-500">{normalizedPct}%</span>
+        <span className="font-medium dark:text-gray-100">{label}</span>
+        <span className="tabular-nums text-gray-500 dark:text-gray-400">{normalizedPct}%</span>
       </div>
       <input
         type="range"

@@ -25,12 +25,16 @@ export function RefreshTrigger({ compact = false }: { compact?: boolean }) {
         <button
           type="submit"
           disabled={pending}
-          className="text-xs text-[#0d5c3f] underline disabled:opacity-50"
+          className="text-xs text-[#0d5c3f] underline disabled:opacity-50 dark:text-emerald-400"
         >
           {pending ? "更新中…" : "今すぐ更新"}
         </button>
         {state && (
-          <p className={`text-xs mt-1 ${state.ok ? "text-green-700" : "text-red-600"}`}>
+          <p
+            className={`text-xs mt-1 ${
+              state.ok ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"
+            }`}
+          >
             {state.message}
           </p>
         )}
@@ -48,11 +52,15 @@ export function RefreshTrigger({ compact = false }: { compact?: boolean }) {
         {pending ? "更新を開始しています…" : "今すぐ更新する"}
       </button>
       {state && (
-        <p className={`text-xs mt-2 ${state.ok ? "text-green-700" : "text-red-600"}`}>
+        <p
+          className={`text-xs mt-2 ${
+            state.ok ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"
+          }`}
+        >
           {state.message}
         </p>
       )}
-      <p className="text-xs text-gray-400 mt-2">
+      <p className="text-xs text-gray-400 mt-2 dark:text-gray-500">
         全開催場のデータ取得を開始します（完了まで1〜2分ほどかかります）
       </p>
     </form>

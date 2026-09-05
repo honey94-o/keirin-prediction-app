@@ -125,7 +125,7 @@ export default async function RaceBetsPage({
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
       <div className="flex items-center justify-between mb-2">
-        <Link href={`/races/${race.id}`} className="text-sm text-[#0d5c3f] inline-block">
+        <Link href={`/races/${race.id}`} className="text-sm text-[#0d5c3f] inline-block dark:text-emerald-400">
           ← 出走表に戻る
         </Link>
         <VenueSwitcher venues={venueOptions} currentJocd={race.jocd} />
@@ -136,14 +136,16 @@ export default async function RaceBetsPage({
         linkSuffix="/bets"
         finishedRaceIds={finishedRaceIds}
       />
-      <h1 className="text-lg font-bold mb-1">
+      <h1 className="text-lg font-bold mb-1 dark:text-gray-100">
         {race.keirinjo_name} {race.race_no}R 買い目提案
         {race.start_time && (
-          <span className="text-sm font-normal text-gray-500 ml-2">発走 {race.start_time}</span>
+          <span className="text-sm font-normal text-gray-500 ml-2 dark:text-gray-400">
+            発走 {race.start_time}
+          </span>
         )}
       </h1>
       <div className="flex items-center justify-between mb-4">
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-gray-400 dark:text-gray-500">
           展開の分かれ目ごとに複数パターンを提示（参考値）
         </p>
         {winticketUrl && (
@@ -151,7 +153,7 @@ export default async function RaceBetsPage({
             href={winticketUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-[#0d5c3f] underline whitespace-nowrap ml-2 shrink-0"
+            className="text-xs text-[#0d5c3f] underline whitespace-nowrap ml-2 shrink-0 dark:text-emerald-400"
           >
             WINTICKETで{raceFinished ? "結果・映像を見る" : "確認する"} →
           </a>
@@ -169,10 +171,13 @@ export default async function RaceBetsPage({
 
       <div className="flex gap-2 mb-4 flex-wrap">
         {top4.map((s) => (
-          <div key={s.entry.entry_id} className="flex items-center gap-1 bg-white rounded-full pl-1 pr-2 py-1 shadow-sm">
+          <div
+            key={s.entry.entry_id}
+            className="flex items-center gap-1 bg-white rounded-full pl-1 pr-2 py-1 shadow-sm dark:bg-gray-800"
+          >
             <MarkBadge mark={s.mark} />
             <CarNumberBadge carNum={s.entry.car_num} size="sm" />
-            <Link href={`/racers/${s.entry.snum}`} className="text-sm">
+            <Link href={`/racers/${s.entry.snum}`} className="text-sm dark:text-gray-100">
               {s.entry.name}
             </Link>
             <RecentFormBadge avgFinish={s.recentFormAvg} />
@@ -181,25 +186,25 @@ export default async function RaceBetsPage({
       </div>
 
       {lines.length > 0 && (
-        <section className="bg-white rounded-lg shadow-sm p-3 mb-4">
-          <h2 className="text-xs font-semibold text-gray-500 mb-2">ライン構成</h2>
+        <section className="bg-white rounded-lg shadow-sm p-3 mb-4 dark:bg-gray-800">
+          <h2 className="text-xs font-semibold text-gray-500 mb-2 dark:text-gray-400">ライン構成</h2>
           <div className="flex flex-col gap-1.5">
             {lines.map((members) => (
               <div key={members[0].entry.line_group} className="flex items-center gap-1">
                 {members.map((s, i) => (
                   <div key={s.entry.car_num} className="flex items-center gap-1">
-                    {i > 0 && <span className="text-gray-300 text-xs">-</span>}
+                    {i > 0 && <span className="text-gray-300 text-xs dark:text-gray-600">-</span>}
                     <CarNumberBadge carNum={s.entry.car_num} size="sm" />
                   </div>
                 ))}
-                <span className="text-xs text-gray-400 ml-1 truncate">
+                <span className="text-xs text-gray-400 ml-1 truncate dark:text-gray-500">
                   {members.map((s) => s.entry.name).join("・")}
                 </span>
               </div>
             ))}
             {soloEntries.length > 0 && (
-              <div className="flex items-center gap-1.5 pt-1 border-t border-gray-100">
-                <span className="text-xs text-gray-400 shrink-0">単騎</span>
+              <div className="flex items-center gap-1.5 pt-1 border-t border-gray-100 dark:border-gray-700">
+                <span className="text-xs text-gray-400 shrink-0 dark:text-gray-500">単騎</span>
                 {soloEntries.map((s) => (
                   <CarNumberBadge key={s.entry.car_num} carNum={s.entry.car_num} size="sm" />
                 ))}
@@ -210,18 +215,18 @@ export default async function RaceBetsPage({
       )}
 
       {raceFinished && (
-        <section className="bg-gray-50 border border-gray-200 rounded-lg shadow-sm p-4 mb-4">
+        <section className="bg-gray-50 border border-gray-200 rounded-lg shadow-sm p-4 mb-4 dark:bg-gray-800/60 dark:border-gray-700">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xs font-semibold bg-gray-600 text-white px-2 py-0.5 rounded-full">
               結果
             </span>
             {actualCombo && (
-              <span className="text-sm font-mono font-bold tabular-nums text-gray-900">
+              <span className="text-sm font-mono font-bold tabular-nums text-gray-900 dark:text-gray-100">
                 {actualCombo}
               </span>
             )}
             {sanrentanHitOdds != null && (
-              <span className="text-xs text-gray-500 ml-auto">
+              <span className="text-xs text-gray-500 ml-auto dark:text-gray-400">
                 3連単 {sanrentanHitOdds.toFixed(1)}倍（{(100 * sanrentanHitOdds).toFixed(0)}円）
               </span>
             )}
@@ -229,13 +234,16 @@ export default async function RaceBetsPage({
           <ul className="flex flex-col gap-1">
             {top3Results.map((r) => (
               <li key={r.car_num} className="flex items-center gap-2 text-sm">
-                <span className="text-xs text-gray-400 w-8 shrink-0">{r.finish_pos}着</span>
+                <span className="text-xs text-gray-400 w-8 shrink-0 dark:text-gray-500">{r.finish_pos}着</span>
                 <CarNumberBadge carNum={r.car_num} size="sm" />
-                <Link href={`/racers/${snumByCarNum.get(r.car_num)}`} className="text-gray-900 underline">
+                <Link
+                  href={`/racers/${snumByCarNum.get(r.car_num)}`}
+                  className="text-gray-900 underline dark:text-gray-100"
+                >
                   {nameByCarNum.get(r.car_num) ?? "-"}
                 </Link>
                 {r.finish_pos === 1 && r.kimarite && (
-                  <span className="text-xs text-gray-400 ml-auto">{r.kimarite}</span>
+                  <span className="text-xs text-gray-400 ml-auto dark:text-gray-500">{r.kimarite}</span>
                 )}
               </li>
             ))}
@@ -244,12 +252,12 @@ export default async function RaceBetsPage({
       )}
 
       {winSuggestion && (
-        <section className="bg-amber-50 border border-amber-200 rounded-lg shadow-sm p-4 mb-4">
+        <section className="bg-amber-50 border border-amber-200 rounded-lg shadow-sm p-4 mb-4 dark:bg-amber-950 dark:border-amber-900">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs font-semibold bg-amber-500 text-white px-2 py-0.5 rounded-full">
               単勝おすすめ
             </span>
-            <span className="text-sm font-semibold">
+            <span className="text-sm font-semibold dark:text-gray-100">
               軸 {winSuggestion.carNum}.{" "}
               <Link href={`/racers/${snumByCarNum.get(winSuggestion.carNum)}`} className="underline">
                 {winSuggestion.name}
@@ -259,15 +267,15 @@ export default async function RaceBetsPage({
               <span
                 className={`text-xs px-2 py-0.5 rounded-full font-semibold ml-auto ${
                   winnerCarNum === winSuggestion.carNum
-                    ? "bg-red-100 text-red-700"
-                    : "bg-gray-100 text-gray-500"
+                    ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+                    : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
                 }`}
               >
                 {winnerCarNum === winSuggestion.carNum ? "的中" : "不的中"}
               </span>
             )}
           </div>
-          <p className="text-xs text-gray-600">
+          <p className="text-xs text-gray-600 dark:text-gray-300">
             対抗とのスコア差が{winSuggestion.margin.toFixed(1)}点あり、この条件では単勝的中率が
             高い傾向（実績81.7%以上）です。3連単を広げるより単勝で勝負するのもおすすめです。
           </p>
@@ -275,7 +283,7 @@ export default async function RaceBetsPage({
       )}
 
       {scenarios.length === 0 ? (
-        <p className="text-sm text-gray-500">出走数が少ないため買い目候補は生成されません。</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">出走数が少ないため買い目候補は生成されません。</p>
       ) : (
         <div className="flex flex-col gap-4">
           {scenarios.map((scenario) => {
@@ -288,12 +296,12 @@ export default async function RaceBetsPage({
             const scenarioPayoutYen =
               scenarioHit && sanrentanHitOdds != null ? 100 * sanrentanHitOdds : 0;
             return (
-              <section key={scenario.label} className="bg-white rounded-lg shadow-sm p-4">
+              <section key={scenario.label} className="bg-white rounded-lg shadow-sm p-4 dark:bg-gray-800">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-xs font-semibold bg-[#0d5c3f] text-white px-2 py-0.5 rounded-full">
                     {scenario.label}
                   </span>
-                  <span className="text-sm font-semibold">
+                  <span className="text-sm font-semibold dark:text-gray-100">
                     軸 {scenario.axisCarNum}.{" "}
                     <Link href={`/racers/${snumByCarNum.get(scenario.axisCarNum)}`} className="underline">
                       {scenario.axisName}
@@ -302,21 +310,29 @@ export default async function RaceBetsPage({
                   {scenarioHit != null && (
                     <span
                       className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-                        scenarioHit ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-500"
+                        scenarioHit
+                          ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+                          : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
                       }`}
                     >
                       {scenarioHit ? "的中" : "不的中"}
                     </span>
                   )}
-                  <span className="text-xs text-gray-400 ml-auto">
+                  <span className="text-xs text-gray-400 ml-auto dark:text-gray-500">
                     {scenario.formation.combinations.length}点
                   </span>
                 </div>
 
                 {scenarioHit != null && (
-                  <p className="text-xs text-gray-500 mb-1">
+                  <p className="text-xs text-gray-500 mb-1 dark:text-gray-400">
                     買い目 {scenarioStakeYen}円 ・ 払戻 {scenarioPayoutYen.toFixed(0)}円 ・ 回収率{" "}
-                    <span className={scenarioPayoutYen >= scenarioStakeYen ? "text-green-700 font-semibold" : ""}>
+                    <span
+                      className={
+                        scenarioPayoutYen >= scenarioStakeYen
+                          ? "text-green-700 font-semibold dark:text-green-400"
+                          : ""
+                      }
+                    >
                       {((scenarioPayoutYen / scenarioStakeYen) * 100).toFixed(0)}%
                     </span>
                   </p>
@@ -327,8 +343,8 @@ export default async function RaceBetsPage({
                     <span
                       className={
                         scenario.likelyRank === 2
-                          ? "text-xs font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full"
-                          : "text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full"
+                          ? "text-xs font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full dark:bg-amber-950 dark:text-amber-300"
+                          : "text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full dark:bg-gray-700 dark:text-gray-400"
                       }
                     >
                       {scenario.likelyRank === 2
@@ -338,15 +354,15 @@ export default async function RaceBetsPage({
                   </p>
                 )}
 
-                <p className="text-xs text-gray-500 mb-3">{scenario.reason}</p>
+                <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{scenario.reason}</p>
 
                 {stat && stat.races > 0 && (
                   <p className="text-xs mb-3">
                     <span
                       className={
                         stat.roi != null && stat.roi >= 100
-                          ? "text-green-700 font-semibold"
-                          : "text-gray-400"
+                          ? "text-green-700 font-semibold dark:text-green-400"
+                          : "text-gray-400 dark:text-gray-500"
                       }
                     >
                       実績: 的中{stat.hitRate.toFixed(1)}%
@@ -358,10 +374,10 @@ export default async function RaceBetsPage({
 
                 {notation && (
                   <>
-                    <p className="text-2xl font-bold tabular-nums font-mono text-[#0d5c3f] mb-1">
+                    <p className="text-2xl font-bold tabular-nums font-mono text-[#0d5c3f] mb-1 dark:text-emerald-400">
                       {notation}
                     </p>
-                    <p className="text-xs text-gray-400 mb-3">
+                    <p className="text-xs text-gray-400 mb-3 dark:text-gray-500">
                       軸-2着候補-3着候補（車番を連結表記。車券購入時にそのまま入力可能）
                     </p>
                   </>
@@ -371,7 +387,7 @@ export default async function RaceBetsPage({
                   {scenario.formation.combinations.map((combo) => (
                     <span
                       key={combo}
-                      className="px-2 py-1 rounded bg-gray-100 text-sm tabular-nums font-mono"
+                      className="px-2 py-1 rounded bg-gray-100 text-sm tabular-nums font-mono dark:bg-gray-700 dark:text-gray-100"
                     >
                       {combo}
                     </span>
@@ -382,32 +398,32 @@ export default async function RaceBetsPage({
           })}
 
           {boxSuggestion && boxSuggestion.combinations.length > 0 && (
-            <section className="bg-white rounded-lg shadow-sm p-4">
-              <h2 className="font-semibold mb-2 flex items-center gap-2">
+            <section className="bg-white rounded-lg shadow-sm p-4 dark:bg-gray-800">
+              <h2 className="font-semibold mb-2 flex items-center gap-2 dark:text-gray-100">
                 {boxSuggestion.betType}
-                <span className="text-xs text-gray-400 font-normal">
+                <span className="text-xs text-gray-400 font-normal dark:text-gray-500">
                   {boxSuggestion.combinations.length}点
                 </span>
                 {raceFinished && sortedActualTop3 != null && (
                   <span
                     className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
                       boxSuggestion.combinations.includes(sortedActualTop3)
-                        ? "bg-red-100 text-red-700"
-                        : "bg-gray-100 text-gray-500"
+                        ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+                        : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
                     }`}
                   >
                     {boxSuggestion.combinations.includes(sortedActualTop3) ? "的中" : "不的中"}
                   </span>
                 )}
               </h2>
-              <p className="text-xs text-gray-500 mb-3">
+              <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">
                 展開に依らず上位{top4.length}車を総当たり（決着順を絞らない保険的な買い方）
               </p>
               <div className="flex flex-wrap gap-2">
                 {boxSuggestion.combinations.map((combo) => (
                   <span
                     key={combo}
-                    className="px-2 py-1 rounded bg-gray-100 text-sm tabular-nums font-mono"
+                    className="px-2 py-1 rounded bg-gray-100 text-sm tabular-nums font-mono dark:bg-gray-700 dark:text-gray-100"
                   >
                     {combo}
                   </span>

@@ -17,7 +17,11 @@ export interface BankKimariteRanks {
 
 function RankLabel({ rank, total }: { rank: number | null; total: number }) {
   if (rank == null) return null;
-  return <span className="text-[10px] text-gray-400 ml-0.5">(全{total}場中{rank}位)</span>;
+  return (
+    <span className="text-[10px] text-gray-400 ml-0.5 dark:text-gray-500">
+      (全{total}場中{rank}位)
+    </span>
+  );
 }
 
 export function BankKimariteCard({
@@ -32,17 +36,17 @@ export function BankKimariteCard({
   featureText?: string | null;
 }) {
   return (
-    <section className="bg-white rounded-lg shadow-sm p-3 mb-4">
+    <section className="bg-white rounded-lg shadow-sm p-3 mb-4 dark:bg-gray-800">
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-xs font-semibold text-gray-600">このバンクの決まり手傾向</h2>
-        {sourceLabel && <span className="text-[10px] text-gray-400">{sourceLabel}</span>}
+        <h2 className="text-xs font-semibold text-gray-600 dark:text-gray-300">このバンクの決まり手傾向</h2>
+        {sourceLabel && <span className="text-[10px] text-gray-400 dark:text-gray-500">{sourceLabel}</span>}
       </div>
-      <div className="flex h-2 rounded-full overflow-hidden bg-gray-100">
+      <div className="flex h-2 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-700">
         <div style={{ width: `${rates.nige_pct}%` }} className="bg-sky-400" />
         <div style={{ width: `${rates.makuri_pct}%` }} className="bg-amber-400" />
         <div style={{ width: `${rates.sashi_pct}%` }} className="bg-rose-400" />
       </div>
-      <div className="flex flex-col gap-1 mt-2 text-xs text-gray-600">
+      <div className="flex flex-col gap-1 mt-2 text-xs text-gray-600 dark:text-gray-300">
         <span className="flex items-center gap-1">
           <span className="inline-block w-2 h-2 rounded-full bg-sky-400" />
           逃げ {rates.nige_pct.toFixed(0)}%
@@ -59,7 +63,9 @@ export function BankKimariteCard({
           {ranks && <RankLabel rank={ranks.sashiRank} total={ranks.totalVenues} />}
         </span>
       </div>
-      {featureText && <p className="text-xs text-gray-400 mt-2 leading-relaxed">{featureText}</p>}
+      {featureText && (
+        <p className="text-xs text-gray-400 mt-2 leading-relaxed dark:text-gray-500">{featureText}</p>
+      )}
     </section>
   );
 }

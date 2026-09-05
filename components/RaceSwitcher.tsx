@@ -42,8 +42,8 @@ export function RaceSwitcher({
               active
                 ? "bg-[#0d5c3f] text-white"
                 : finished
-                  ? "bg-gray-200 text-gray-500 border border-gray-200"
-                  : "bg-white text-gray-600 border border-gray-200"
+                  ? "bg-gray-200 text-gray-500 border border-gray-200 dark:bg-gray-700 dark:text-gray-400 dark:border-gray-700"
+                  : "bg-white text-gray-600 border border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700"
             }`}
           >
             {r.race_no}R

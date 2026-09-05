@@ -8,14 +8,14 @@ export function RecentFormBadge({ avgFinish }: { avgFinish: number | null }) {
   if (avgFinish == null) return null;
   if (avgFinish <= HOT_THRESHOLD) {
     return (
-      <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold bg-red-50 text-red-600 px-1.5 py-0.5 rounded-full shrink-0">
+      <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold bg-red-50 text-red-600 px-1.5 py-0.5 rounded-full shrink-0 dark:bg-red-950 dark:text-red-400">
         🔥好調
       </span>
     );
   }
   if (avgFinish >= COLD_THRESHOLD) {
     return (
-      <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full shrink-0">
+      <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full shrink-0 dark:bg-blue-950 dark:text-blue-400">
         📉不調
       </span>
     );

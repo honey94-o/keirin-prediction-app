@@ -32,7 +32,7 @@ export function VenueSwitcher({
         const target = venues.find((v) => v.jocd === e.target.value);
         if (target) router.push(`/races/${target.targetRaceId}/bets`);
       }}
-      className="text-xs font-semibold bg-white border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600 shrink-0 max-w-[8rem]"
+      className="text-xs font-semibold bg-white border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600 shrink-0 max-w-[8rem] dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300"
     >
       {venues.map((v) => (
         <option key={v.jocd} value={v.jocd}>

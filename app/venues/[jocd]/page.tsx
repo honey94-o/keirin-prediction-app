@@ -66,11 +66,11 @@ export default async function VenueRacesPage({
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
       <Link
         href={viewDate === todayJstStr() ? "/" : `/?date=${viewDate}`}
-        className="text-sm text-[#0d5c3f] mb-2 inline-block"
+        className="text-sm text-[#0d5c3f] mb-2 inline-block dark:text-emerald-400"
       >
         ← 開催場選択に戻る
       </Link>
-      <h1 className="text-lg font-bold mb-4">{first.keirinjo_name} レースを選択</h1>
+      <h1 className="text-lg font-bold mb-4 dark:text-gray-100">{first.keirinjo_name} レースを選択</h1>
 
       {kimariteRates && (
         <BankKimariteCard
@@ -86,20 +86,20 @@ export default async function VenueRacesPage({
           <li key={race.id}>
             <Link
               href={`/races/${race.id}/bets`}
-              className="flex items-center justify-between bg-white rounded-lg shadow-sm px-4 py-3 active:bg-gray-50"
+              className="flex items-center justify-between bg-white rounded-lg shadow-sm px-4 py-3 active:bg-gray-50 dark:bg-gray-800 dark:active:bg-gray-700"
             >
-              <span className="font-medium text-gray-900 flex items-center gap-1.5">
+              <span className="font-medium text-gray-900 flex items-center gap-1.5 dark:text-gray-100">
                 {race.race_no}R
                 {highConfidenceRaceIds.has(race.id) && (
-                  <span className="text-[10px] font-semibold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full">
+                  <span className="text-[10px] font-semibold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full dark:bg-amber-950 dark:text-amber-400">
                     高信頼度
                   </span>
                 )}
               </span>
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-gray-500 dark:text-gray-400">
                 {race.syumoku ?? ""} {race.grade_kbn ?? ""}
               </span>
-              <span className="text-sm text-gray-400">{race.start_time ?? ""}</span>
+              <span className="text-sm text-gray-400 dark:text-gray-500">{race.start_time ?? ""}</span>
             </Link>
           </li>
         ))}

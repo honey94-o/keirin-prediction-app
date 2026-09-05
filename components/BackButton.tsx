@@ -13,7 +13,7 @@ export function BackButton({ label = "← 戻る" }: { label?: string }) {
     <button
       type="button"
       onClick={() => router.back()}
-      className="text-sm text-[#0d5c3f] mb-2 inline-block"
+      className="text-sm text-[#0d5c3f] mb-2 inline-block dark:text-emerald-400"
     >
       {label}
     </button>
