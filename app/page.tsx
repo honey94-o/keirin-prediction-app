@@ -1,12 +1,13 @@
 import Link from "next/link";
 import {
   getRacesByDate,
-  getDailyPicks,
-  getBarikataPicks,
+  getDailyPicksResults,
+  getBarikataPicksResults,
   getLastSyncedAt,
   getFavoriteRacerEntriesForDate,
   getFavoriteRacers,
   getResultsForRaces,
+  isRaceFinished,
 } from "../lib/repository";
 import {
   todayJstStr,
@@ -16,10 +17,11 @@ import {
   formatUtcAsJst,
   nowJstHHMM,
   parseEncp,
+  minutesBetween,
 } from "../lib/date";
 import { RefreshTrigger } from "../components/RefreshTrigger";
 import { raceStage } from "../lib/scoring";
-import type { RaceRow, ResultRow } from "../lib/types";
+import type { RaceRow } from "../lib/types";
 
 // GitHub Actions（daily-sync.yml、1日2回自動実行）がNext.jsの外からTursoを
 // 直接更新するため、ビルド時の静的生成のままだと新しいレースが反映されない。
@@ -49,12 +51,6 @@ function pickNearestRace(groupRaces: RaceRow[], viewDate: string, todayStr: stri
  * 翌日分のレース有無では判定しない――daily-syncは基本的に当日分しか事前取得しない
  * ため、日中に見ると翌日データが未取得で常に「最終日」になってしまう。
  */
-/** 着順が3人分以上確定していればそのレースは終了とみなす（bets画面のraceFinishedと同じ基準）。 */
-function isRaceFinished(raceId: number, resultsByRaceId: Map<number, ResultRow[]>): boolean {
-  const results = resultsByRaceId.get(raceId) ?? [];
-  return results.filter((r) => r.finish_pos != null).length >= 3;
-}
-
 function eventDayLabel(groupRaces: RaceRow[]): string | null {
   const parsed = groupRaces.map((r) => parseEncp(r.encp)).find((p) => p != null);
   if (!parsed) return null;
@@ -90,34 +86,50 @@ export default async function Home({
   // 122日分の実データを検証した結果、margin自体にしきい値を設けるより
   // 「その日の中での相対的な上位」を機械的に選ぶ方が、1日の採用件数を安定して
   // 確保しつつ30日ローリング回収率も安定した（詳細はgetDailyPicksのコメント参照）。
+  // 結果が確定した分は的中/不的中バッジも出したいので、一覧取得と同時に判定
+  // 済みのgetDailyPicksResults/getBarikataPicksResultsを使う（内部でgetDailyPicks等を
+  // 呼んでいるため、showPicks=falseの日は呼ばず余計なクエリを増やさない）。
   const showPicks = viewDate === todayStr || viewDate === nextDate;
-  const picks = showPicks ? await getDailyPicks(viewDate) : [];
+  const pickResults = showPicks ? await getDailyPicksResults(viewDate) : [];
   // ホーム画面のプレビュー一覧は発走時刻順に並べ替える（時刻がバラバラなので
   // 時系列で見えた方が分かりやすい。タブ切り替え版は/picksで発走順に見られる）。
-  const picksByTime = [...picks].sort((a, b) => (a.start_time ?? "").localeCompare(b.start_time ?? ""));
+  const picksByTime = [...pickResults].sort((a, b) =>
+    (a.pick.start_time ?? "").localeCompare(b.pick.start_time ?? "")
+  );
 
   // 「本日のバリカタ」：margin>=8かつ予想1-2-3位が同ラインのレースを1日最大3件。
   // 厳選（フォーメーション買い）とは別枠で、単一の並び（1点）を想定した高的中率
   // 狙いのピック。scripts/barikata-picks.tsのコメント参照。
-  const barikataPicks = showPicks ? await getBarikataPicks(viewDate) : [];
-  const barikataByTime = [...barikataPicks].sort((a, b) => (a.start_time ?? "").localeCompare(b.start_time ?? ""));
+  const barikataResults = showPicks ? await getBarikataPicksResults(viewDate) : [];
+  const barikataByTime = [...barikataResults].sort((a, b) =>
+    (a.pick.start_time ?? "").localeCompare(b.pick.start_time ?? "")
+  );
 
   // 「お気に入り選手のレース」：選択中の日（前日/当日/翌日タブと連動）に
   // お気に入り登録済みの選手が出走するレースを発走時刻順に表示する。
   const favoriteEntries = await getFavoriteRacerEntriesForDate(viewDate);
   // レースが無い日でも/favoritesへの入口は出しておきたいので、登録数だけ別途取得する。
   const favoriteRacers = await getFavoriteRacers();
+  // 「まもなく発走」バッジ判定用（当日タブでのみ意味を持つ）。
+  const nowHHMM = nowJstHHMM();
 
   const groups = new Map<string, RaceRow[]>();
   for (const race of races) {
     if (!groups.has(race.jocd)) groups.set(race.jocd, []);
     groups.get(race.jocd)!.push(race);
   }
-  // 開催場一覧は取得順（keirinjo_name あいうえお順）のままだと発走順にならないため、
-  // 各開催場の最初のレースの発走時刻順に並べ替える。
-  const groupsByTime = [...groups.entries()].sort(([, a], [, b]) =>
-    (a[0].start_time ?? "").localeCompare(b[0].start_time ?? "")
-  );
+  // 開催場一覧は発走時刻順に並べる。ただし当日の全レースが終了した開催場は
+  // まだ買い目を確認していない開催場が埋もれないよう、時刻に関係なく末尾に回す。
+  const groupsByTime = [...groups.entries()]
+    .map(([jocd, groupRaces]) => ({
+      jocd,
+      groupRaces,
+      allFinished: groupRaces.every((r) => isRaceFinished(resultsByRaceId.get(r.id) ?? [])),
+    }))
+    .sort((a, b) => {
+      if (a.allFinished !== b.allFinished) return a.allFinished ? 1 : -1;
+      return (a.groupRaces[0].start_time ?? "").localeCompare(b.groupRaces[0].start_time ?? "");
+    });
 
   const tabs: { label: string; date: string }[] = [
     { label: "前日", date: prevDate },
@@ -175,31 +187,44 @@ export default async function Home({
             <p className="text-xs text-gray-400">この日の出走はありません</p>
           ) : (
             <ul className="flex flex-col gap-2">
-              {favoriteEntries.map((f) => (
-                <li key={`${f.race.id}-${f.snum}`}>
-                  <Link
-                    href={`/races/${f.race.id}/bets`}
-                    className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 active:bg-gray-50"
-                  >
-                    <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0">
-                      {f.race.start_time ?? "--:--"}
-                    </span>
-                    <span className="text-sm text-gray-900 flex-1 truncate">
-                      {f.race.keirinjo_name} {f.race.race_no}R
-                    </span>
-                    <span className="text-xs text-yellow-700 tabular-nums shrink-0">{f.carNum}番</span>
-                    <span className="text-sm font-semibold text-gray-900 truncate max-w-[8rem]">
-                      {f.racerName}
-                    </span>
-                  </Link>
-                </li>
-              ))}
+              {favoriteEntries.map((f) => {
+                const minutesToStart =
+                  viewDate === todayStr && f.race.start_time
+                    ? minutesBetween(nowHHMM, f.race.start_time)
+                    : null;
+                const startingSoon =
+                  minutesToStart != null && minutesToStart >= 0 && minutesToStart <= 30;
+                return (
+                  <li key={`${f.race.id}-${f.snum}`}>
+                    <Link
+                      href={`/races/${f.race.id}/bets`}
+                      className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 active:bg-gray-50"
+                    >
+                      <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0">
+                        {f.race.start_time ?? "--:--"}
+                      </span>
+                      <span className="text-sm text-gray-900 flex-1 truncate">
+                        {f.race.keirinjo_name} {f.race.race_no}R
+                      </span>
+                      {startingSoon && (
+                        <span className="text-[10px] font-semibold bg-red-500 text-white px-1.5 py-0.5 rounded-full shrink-0">
+                          あと{minutesToStart}分
+                        </span>
+                      )}
+                      <span className="text-xs text-yellow-700 tabular-nums shrink-0">{f.carNum}番</span>
+                      <span className="text-sm font-semibold text-gray-900 truncate max-w-[8rem]">
+                        {f.racerName}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
       )}
 
-      {barikataPicks.length > 0 && (
+      {barikataResults.length > 0 && (
         <section className="bg-rose-50 border border-rose-200 rounded-lg shadow-sm p-3 mb-4">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xs font-semibold bg-rose-600 text-white px-2 py-0.5 rounded-full">
@@ -210,7 +235,7 @@ export default async function Home({
             </span>
           </div>
           <ul className="flex flex-col gap-2">
-            {barikataByTime.map((p) => (
+            {barikataByTime.map(({ pick: p, finished, hit }) => (
               <li key={p.race_id}>
                 <Link
                   href={`/races/${p.race_id}/bets`}
@@ -228,6 +253,15 @@ export default async function Home({
                   <span className="text-xs font-semibold text-rose-700 tabular-nums whitespace-nowrap">
                     差{p.margin.toFixed(1)}点
                   </span>
+                  {finished && (
+                    <span
+                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                        hit ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-400"
+                      }`}
+                    >
+                      {hit ? "的中" : "不的中"}
+                    </span>
+                  )}
                 </Link>
               </li>
             ))}
@@ -239,14 +273,14 @@ export default async function Home({
         </section>
       )}
 
-      {picks.length > 0 && (
+      {pickResults.length > 0 && (
         <section className="bg-amber-50 border border-amber-200 rounded-lg shadow-sm p-3 mb-4">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold bg-amber-500 text-white px-2 py-0.5 rounded-full">
                 厳選レース
               </span>
-              <span className="text-xs text-amber-800">本命の信頼度が高い上位{picks.length}レース</span>
+              <span className="text-xs text-amber-800">本命の信頼度が高い上位{pickResults.length}レース</span>
             </div>
             <Link
               href={`/picks?date=${viewDate}`}
@@ -256,7 +290,7 @@ export default async function Home({
             </Link>
           </div>
           <ul className="flex flex-col gap-2">
-            {picksByTime.map((p) => (
+            {picksByTime.map(({ pick: p, finished, hit }) => (
               <li key={p.race_id}>
                 <Link
                   href={`/races/${p.race_id}/bets`}
@@ -274,6 +308,15 @@ export default async function Home({
                   <span className="text-xs font-semibold text-amber-700 tabular-nums whitespace-nowrap">
                     差{p.margin.toFixed(1)}点
                   </span>
+                  {finished && (
+                    <span
+                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                        hit ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-400"
+                      }`}
+                    >
+                      {hit ? "的中" : "不的中"}
+                    </span>
+                  )}
                 </Link>
               </li>
             ))}
@@ -292,10 +335,9 @@ export default async function Home({
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {groupsByTime.map(([jocd, groupRaces]) => {
+          {groupsByTime.map(({ jocd, groupRaces, allFinished }) => {
             const first = groupRaces[0];
             const nearestRace = pickNearestRace(groupRaces, viewDate, todayStr);
-            const allFinished = groupRaces.every((r) => isRaceFinished(r.id, resultsByRaceId));
             return (
               <Link
                 key={jocd}

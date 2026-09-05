@@ -591,6 +591,11 @@ export async function getPredictionsForRace(raceId: number): Promise<PredictionR
   return result.rows as unknown as PredictionRow[];
 }
 
+/** 着順が3人分以上確定していればそのレースは終了とみなす（ホーム画面・出走表・買い目提案で共通利用）。 */
+export function isRaceFinished(results: ResultRow[]): boolean {
+  return results.filter((r) => r.finish_pos != null).length >= 3;
+}
+
 export async function getResultsForRace(raceId: number): Promise<ResultRow[]> {
   const result = await getDb().execute({
     sql: "SELECT car_num, snum, finish_pos, kimarite FROM results WHERE race_id = ? ORDER BY finish_pos",

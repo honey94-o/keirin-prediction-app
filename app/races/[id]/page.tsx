@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { predictRace } from "../../../lib/predict";
-import { getPredictionsForRace, getRacesForEvent } from "../../../lib/repository";
+import {
+  getPredictionsForRace,
+  getRacesForEvent,
+  getResultsForRaces,
+  isRaceFinished,
+} from "../../../lib/repository";
 import { recordPredictionAction } from "../../../lib/actions";
 import { CarNumberBadge } from "../../../components/CarNumberBadge";
 import { MarkBadge } from "../../../components/MarkBadge";
@@ -30,10 +35,14 @@ export default async function RaceDetailPage({
   const alreadyRecorded = (await getPredictionsForRace(raceId)).length > 0;
   const recordPredictionForRace = recordPredictionAction.bind(null, raceId);
   const eventRaces = await getRacesForEvent(race.kaisai_date, race.jocd);
+  const eventResults = await getResultsForRaces(eventRaces.map((r) => r.id));
+  const finishedRaceIds = new Set(
+    eventRaces.filter((r) => isRaceFinished(eventResults.get(r.id) ?? [])).map((r) => r.id)
+  );
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
-      <RaceSwitcher races={eventRaces} currentRaceId={race.id} />
+      <RaceSwitcher races={eventRaces} currentRaceId={race.id} finishedRaceIds={finishedRaceIds} />
       <div className="mb-4">
         <h1 className="text-lg font-bold">
           {race.keirinjo_name} {race.race_no}R

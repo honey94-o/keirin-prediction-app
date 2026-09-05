@@ -21,6 +21,13 @@ export function nowJstHHMM(): string {
   return `${hh}:${mm}`;
 }
 
+/** "HH:MM"同士の分差（to - from）。深夜跨ぎは考慮しない（発走時刻比較の他の箇所と同じ簡易実装）。 */
+export function minutesBetween(fromHHMM: string, toHHMM: string): number {
+  const [fh, fm] = fromHHMM.split(":").map(Number);
+  const [th, tm] = toHHMM.split(":").map(Number);
+  return th * 60 + tm - (fh * 60 + fm);
+}
+
 export function addDaysToDateStr(dateStr: string, days: number): string {
   const y = Number(dateStr.slice(0, 4));
   const m = Number(dateStr.slice(4, 6));

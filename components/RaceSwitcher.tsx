@@ -8,11 +8,14 @@ export function RaceSwitcher({
   races,
   currentRaceId,
   linkSuffix = "",
+  finishedRaceIds,
 }: {
   races: RaceRow[];
   currentRaceId: number;
   /** 遷移先のパス末尾（例: "/bets"）。省略時は出走表画面（/races/[id]）に遷移する。 */
   linkSuffix?: string;
+  /** 着順確定済みのレースID集合。渡された場合、終了済みタブを淡色表示にする。 */
+  finishedRaceIds?: Set<number>;
 }) {
   const activeRef = useRef<HTMLAnchorElement>(null);
 
@@ -29,6 +32,7 @@ export function RaceSwitcher({
     <div className="flex gap-1.5 overflow-x-auto pb-1 mb-3 -mx-4 px-4">
       {races.map((r) => {
         const active = r.id === currentRaceId;
+        const finished = !active && (finishedRaceIds?.has(r.id) ?? false);
         return (
           <Link
             key={r.id}
@@ -37,10 +41,12 @@ export function RaceSwitcher({
             className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-semibold ${
               active
                 ? "bg-[#0d5c3f] text-white"
-                : "bg-white text-gray-600 border border-gray-200"
+                : finished
+                  ? "bg-gray-50 text-gray-400 border border-gray-100"
+                  : "bg-white text-gray-600 border border-gray-200"
             }`}
           >
-            {r.race_no}R
+            {r.race_no}R{finished ? " ✓" : ""}
           </Link>
         );
       })}

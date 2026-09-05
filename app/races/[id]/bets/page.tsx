@@ -7,8 +7,10 @@ import {
   getRacesForEvent,
   getVenueKimariteRank,
   getResultsForRace,
+  getResultsForRaces,
   getOddsForRace,
   resolveActualCombo,
+  isRaceFinished,
 } from "../../../../lib/repository";
 import { MarkBadge } from "../../../../components/MarkBadge";
 import { CarNumberBadge } from "../../../../components/CarNumberBadge";
@@ -32,6 +34,10 @@ export default async function RaceBetsPage({
   const scenarioStats = await getScenarioStats();
   const eventRaces = await getRacesForEvent(race.kaisai_date, race.jocd);
   const kimariteRank = await getVenueKimariteRank(race.jocd);
+  const eventResults = await getResultsForRaces(eventRaces.map((r) => r.id));
+  const finishedRaceIds = new Set(
+    eventRaces.filter((r) => isRaceFinished(eventResults.get(r.id) ?? [])).map((r) => r.id)
+  );
 
   // レースが終わっていれば実際の着順・的中判定を表示する。actualComboの解決は
   // lib/accuracy.tsのcomputeRaceSummary・scripts/backtest.tsと同じロジック
@@ -65,7 +71,7 @@ export default async function RaceBetsPage({
     .filter((r) => r.finish_pos != null)
     .sort((a, b) => (a.finish_pos ?? 0) - (b.finish_pos ?? 0));
   const top3Results = finishOrder.filter((r) => (r.finish_pos ?? 0) <= 3);
-  const raceFinished = top3Results.length >= 3;
+  const raceFinished = isRaceFinished(results);
   const actualCombo = raceFinished ? resolveActualCombo(results, odds) : null;
   const sanrentanHitOdds =
     actualCombo != null
@@ -96,7 +102,12 @@ export default async function RaceBetsPage({
       <Link href={`/races/${race.id}`} className="text-sm text-[#0d5c3f] mb-2 inline-block">
         ← 出走表に戻る
       </Link>
-      <RaceSwitcher races={eventRaces} currentRaceId={race.id} linkSuffix="/bets" />
+      <RaceSwitcher
+        races={eventRaces}
+        currentRaceId={race.id}
+        linkSuffix="/bets"
+        finishedRaceIds={finishedRaceIds}
+      />
       <h1 className="text-lg font-bold mb-1">
         {race.keirinjo_name} {race.race_no}R 買い目提案
         {race.start_time && (
