@@ -42,11 +42,11 @@ export function RaceSwitcher({
               active
                 ? "bg-[#0d5c3f] text-white"
                 : finished
-                  ? "bg-gray-50 text-gray-400 border border-gray-100"
+                  ? "bg-gray-200 text-gray-500 border border-gray-200"
                   : "bg-white text-gray-600 border border-gray-200"
             }`}
           >
-            {r.race_no}R{finished ? " ✓" : ""}
+            {r.race_no}R
           </Link>
         );
       })}
