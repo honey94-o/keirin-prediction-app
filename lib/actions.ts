@@ -14,6 +14,33 @@ export interface TriggerSyncResult {
 }
 
 /**
+ * 実行中・キュー待ちのdaily-sync.yml実行があるか確認する。daily-sync.ymlの
+ * concurrencyグループ（cancel-in-progress: false）により、実行中に追加で
+ * dispatchしても並列実行はされずキューに積まれるだけ——つまり連打しても
+ * データが壊れることはないが、同じ内容を何重にも積むだけで、自分の順番が
+ * 後ろに押し出されて逆に最新データが出るまで長引く。判定できない場合
+ * （API障害等）は誤ってブロックしないようfalseを返す。
+ */
+async function isDailySyncRunning(token: string): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/workflows/daily-sync.yml/runs?per_page=5`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+        },
+      }
+    );
+    if (!res.ok) return false;
+    const data = (await res.json()) as { workflow_runs?: { status: string }[] };
+    return (data.workflow_runs ?? []).some((r) => r.status !== "completed");
+  } catch {
+    return false;
+  }
+}
+
+/**
  * レースがまだ表示されていない時に「今すぐ更新」で使う手動トリガー。
  * daily-sync.yml（全43開催場の自動取得ワークフロー）をGitHub APIで
  * 即時実行する。Vercelのサーバーレス関数はPlaywright等を直接実行できず、
@@ -25,6 +52,13 @@ export async function triggerDailySyncAction(): Promise<TriggerSyncResult> {
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
     return { ok: false, message: "GITHUB_TOKENが未設定です（サーバー設定を確認してください）" };
+  }
+
+  if (await isDailySyncRunning(token)) {
+    return {
+      ok: true,
+      message: "既に更新中です。完了まで（数分〜十数分）お待ちください。",
+    };
   }
 
   const res = await fetch(
