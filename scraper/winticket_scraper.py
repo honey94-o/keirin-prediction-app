@@ -608,6 +608,24 @@ def scrape_cup(
     return races
 
 
+# jocd(開催場コード) → WINTICKETの開催場スラッグ。WINTICKET側にjocdからスラッグへの
+# 対応表が公開されていないため、日程ページを実際に叩いて確認した実測値（当時のDBの
+# races.jocd/keirinjo_nameとの突き合わせ含む）。千葉・福井・向日町・高松の4場は
+# 調査当時レースが観測できず未確認のため意図的に含めていない（sync_results_only.py
+# はこの4場のレースだけ結果取得をスキップする）。app/lib/winticket.tsに同じ内容がある。
+JOCD_TO_WINTICKET_SLUG = {
+    "11": "hakodate", "12": "aomori", "13": "iwakidaira", "21": "yahiko",
+    "22": "maebashi", "23": "toride", "24": "utsunomiya", "25": "omiya",
+    "26": "seibuen", "27": "keiokaku", "28": "tachikawa", "31": "matsudo",
+    "34": "kawasaki", "35": "hiratsuka", "36": "odawara", "37": "ito",
+    "38": "shizuoka", "42": "nagoya", "43": "gifu", "44": "ogaki",
+    "45": "toyohashi", "46": "toyama", "47": "matsusaka", "48": "yokkaichi",
+    "53": "nara", "55": "wakayama", "56": "kishiwada", "61": "tamano",
+    "62": "hiroshima", "63": "hofu", "73": "komatsushima", "74": "kochi",
+    "75": "matsuyama", "81": "kokura", "83": "kurume", "84": "takeo",
+    "85": "sasebo", "86": "beppu", "87": "kumamoto",
+}
+
 ALL_VENUE_SLUGS = [
     "hakodate", "aomori", "iwakidaira", "yahiko", "maebashi", "toride", "utsunomiya",
     "omiya", "seibuen", "keiokaku", "tachikawa", "matsudo", "chiba", "kawasaki",

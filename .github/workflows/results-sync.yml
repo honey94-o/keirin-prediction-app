@@ -1,0 +1,39 @@
+name: Sync race results only (fast)
+
+# daily-sync.yml（1日4回、全43開催場を出走表から辿り直すため1回30〜40分かかる）とは別に、
+# 発走時刻を過ぎたのに着順がまだ確定していないレースだけをピンポイントでWINTICKETの
+# 結果ページに見に行く軽量版。全開催場を辿り直さないため1回あたり数秒〜数分で終わる。
+# ホーム画面の「本日終了」表示ができるだけ早く反映されるよう、15分おきに実行する
+# （詳細・DB書き込み範囲の制限はscraper/sync_results_only.py参照）。
+#
+# publicリポジトリのためGitHub Actionsの実行時間は無料。チェック対象が無ければ
+# DBに1回問い合わせるだけで数秒以内に終わるため、深夜帯を除外する等の調整はしていない。
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "*/15 * * * *"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    # 15分おきに起動するため、万一1回の実行が長引いても後続をキューイングせず、
+    # 最新の状態を見に行く新しい実行だけを残す（古い実行の続行に意味がないため）。
+    concurrency:
+      group: results-sync
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: scraper
+        run: pip install -r requirements.txt
+
+      - name: Sync unfinished race results
+        working-directory: scraper
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -u sync_results_only.py
