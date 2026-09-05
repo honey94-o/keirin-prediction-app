@@ -14,6 +14,14 @@
       Python側のdatetime.fromisoformat()パース処理を変えずに済ませる）。
 ローカル実行時は .env.local を読み込む（python-dotenvがあれば）。
 GitHub Actions実行時はSecretsから環境変数として渡される想定。
+
+接続はThreadedConnectionPoolで管理する（以前は単一のグローバル接続を使い回し、
+close()を実質no-opにしていた——psycopg2.connect()の毎回のTCP+TLSハンドシェイクが
+1レースあたり数十回のDB往復で無視できないコストだったため）。winticket_scraper.py
+の全開催場スキャンを開催場単位で並列化するにあたり、単一コネクションを複数スレッドが
+同時にcursor操作するとプロトコルが壊れるため、スレッドごとに別コネクションが要る。
+プールならgetconn/putconnは（connect()と違い）ハンドシェイクを伴わないため、
+両方の問題（再接続コスト・スレッド安全性）を同時に解決できる。
 """
 import os
 import re
@@ -23,6 +31,7 @@ from typing import Any, Callable, Sequence, TypeVar
 
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
 
 _ENV_LOADED = False
 
@@ -101,29 +110,33 @@ class PgClient:
                 _with_retry(cur.execute)(text, list(args))
 
     def close(self) -> None:
-        # 呼び出し側（winticket_scraper.py等）はTurso時代の慣習で「1回のDB操作の
-        # まとまり毎にget_client()→...→client.close()」を何十〜何百回も繰り返す。
-        # psycopg2.connect()は毎回TCP+TLSハンドシェイクが走り、Tursoの軽量な
-        # HTTPリクエストと比べてこの接続コストが無視できない（1レースあたり
-        # 数十回のDB往復×接続張り直しで実測30秒/レース超まで悪化した）。
-        # 呼び出し側のコードは変えずに済ませたいので、closeを実質no-opにして
-        # モジュールレベルの単一コネクションを使い回す。
-        pass
+        # プールへ返却する（接続自体は切らない。呼び出し側は引き続き
+        # 「1回のDB操作のまとまり毎にget_client()→...→client.close()」の
+        # パターンのままでよい——putconnはgetconnと対で、ハンドシェイクを伴わない）。
+        _get_pool().putconn(self._conn)
 
 
-_conn = None
+_pool: psycopg2.pool.ThreadedConnectionPool | None = None
 
 
-def get_client() -> PgClient:
-    global _conn
+def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
+    global _pool
     _load_dotenv_once()
-    if _conn is None or _conn.closed:
+    if _pool is None:
         url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
         if not url:
             raise RuntimeError(
                 "DATABASE_URL が設定されていません。.env.local を用意するか、"
                 "環境変数として設定してください（README参照）。"
             )
-        _conn = psycopg2.connect(url)
-        _conn.autocommit = True
-    return PgClient(_conn)
+        # maxconnは開催場並列数（winticket_scraper.py --all-venuesの
+        # VENUE_CONCURRENCY）より余裕を持たせる。1スクリプトプロセス内で
+        # 完結する（プロセス跨ぎでは共有しない）。
+        _pool = psycopg2.pool.ThreadedConnectionPool(1, 20, url)
+    return _pool
+
+
+def get_client() -> PgClient:
+    conn = _get_pool().getconn()
+    conn.autocommit = True
+    return PgClient(conn)

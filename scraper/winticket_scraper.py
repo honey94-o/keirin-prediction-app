@@ -20,6 +20,7 @@ KEIRIN.JP側の選手登録番号と体系が異なる可能性があるため�
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import datetime
 import re
 import time
@@ -37,6 +38,15 @@ USER_AGENT = (
     "keirin-prediction-app/0.1 (personal use, non-commercial backtest tool)"
 )
 REQUEST_INTERVAL_SEC = 1.5
+
+# --all-venuesで同時に処理する開催場数。各開催場は自分のリクエスト間隔
+# （REQUEST_INTERVAL_SEC）を守ったまま独立して進むため、WINTICKETへの
+# 見かけ上の同時接続数はこの数までしか増えない（1開催場あたりの頻度は変えない）。
+# 実測: 1レースあたり約23秒（うちスリープは3秒分のみ、残りはWINTICKET側の
+# 応答待ち）かかっていたため、開催場単位の並列化で待ち時間そのものを
+# 重ねられる。詳細はdb.pyのThreadedConnectionPool移行コメント参照
+# （スレッド間でDB接続を共有しないための前提条件）。
+VENUE_CONCURRENCY = 5
 
 # 開催(cup)は3〜4日、GIなど大きい開催では6日程度続く。cup_idの先頭8桁は
 # 「開催初日」なので、取得対象を初日だけで判定すると対象期間より前に始まった
@@ -691,6 +701,22 @@ def scrape_venue_recent(
     return all_races
 
 
+def _process_venue(
+    venue: str, since_date: datetime.date, completed_days: set[tuple[str, str]]
+) -> int:
+    print(f"=== {venue} ===")
+
+    def save_one(result: tuple[RaceData, list[RacerHistoryEntry]]) -> None:
+        race, histories = result
+        save_to_db(race, bank_info=None, histories=histories)
+
+    races = scrape_venue_recent(
+        venue, since_date, on_race=save_one, completed_days=completed_days
+    )
+    print(f"{venue}: {len(races)}件保存")
+    return len(races)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="WINTICKETから過去レースを取得してTursoに保存する")
     group = parser.add_mutually_exclusive_group(required=True)
@@ -699,6 +725,12 @@ def main() -> None:
         "--all-venues", action="store_true", help="全43開催場を対象にする（節度あるアクセス間隔のため長時間かかる）"
     )
     parser.add_argument("--days-back", type=int, default=7, help="何日前まで遡るか（デフォルト7日）")
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=VENUE_CONCURRENCY,
+        help=f"--all-venues時に同時処理する開催場数（デフォルト{VENUE_CONCURRENCY}）",
+    )
     args = parser.parse_args()
 
     since_date = datetime.date.today() - datetime.timedelta(days=args.days_back)
@@ -712,19 +744,21 @@ def main() -> None:
     )
     print(f"着順が揃っている開催日: {len(completed_days)}件（この日は取得をスキップする）")
 
+    # --venue（単一開催場）はconcurrency=1と同義になり、実質これまで通り逐次実行。
+    concurrency = max(1, args.concurrency) if args.all_venues else 1
+
     total = 0
-    for venue in venues:
-        print(f"=== {venue} ===")
-
-        def save_one(result: tuple[RaceData, list[RacerHistoryEntry]]) -> None:
-            race, histories = result
-            save_to_db(race, bank_info=None, histories=histories)
-
-        races = scrape_venue_recent(
-            venue, since_date, on_race=save_one, completed_days=completed_days
-        )
-        print(f"{venue}: {len(races)}件保存")
-        total += len(races)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+        future_to_venue = {
+            executor.submit(_process_venue, venue, since_date, completed_days): venue
+            for venue in venues
+        }
+        for future in concurrent.futures.as_completed(future_to_venue):
+            venue = future_to_venue[future]
+            try:
+                total += future.result()
+            except Exception as exc:  # noqa: BLE001 - 1開催場の失敗で全体を止めない
+                print(f"  警告: {venue} の処理中に例外が発生し中断: {exc}")
 
     print(f"\n合計 {total} レースを保存しました（Turso）")
 

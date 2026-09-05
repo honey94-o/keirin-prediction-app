@@ -61,28 +61,31 @@ def main():
     args = parser.parse_args()
 
     client = get_client()
-    venues = get_known_venues(client)
-    existing = set() if args.force else get_existing_jocds(client)
-    targets = [(jocd, name) for jocd, name in venues if jocd not in existing]
+    try:
+        venues = get_known_venues(client)
+        existing = set() if args.force else get_existing_jocds(client)
+        targets = [(jocd, name) for jocd, name in venues if jocd not in existing]
 
-    print(f"races テーブルの開催場: {len(venues)}件 / 未取得: {len(targets)}件")
-    if not targets:
-        print("取得対象なし（--force で再取得できます）")
-        return
+        print(f"races テーブルの開催場: {len(venues)}件 / 未取得: {len(targets)}件")
+        if not targets:
+            print("取得対象なし（--force で再取得できます）")
+            return
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page(user_agent=USER_AGENT)
-        try:
-            for i, (jocd, name) in enumerate(targets, 1):
-                try:
-                    info = scrape_bank_info(page, jocd)
-                    save_bank_info(client, jocd, name, info)
-                    print(f"[{i}/{len(targets)}] {name}({jocd}): 直線{info.tyokusen} 周長{info.shuutyou}m 保存完了")
-                except Exception as exc:  # noqa: BLE001 - 1開催場の失敗で全体を止めない
-                    print(f"[{i}/{len(targets)}] {name}({jocd}): 失敗 - {exc}")
-        finally:
-            browser.close()
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(user_agent=USER_AGENT)
+            try:
+                for i, (jocd, name) in enumerate(targets, 1):
+                    try:
+                        info = scrape_bank_info(page, jocd)
+                        save_bank_info(client, jocd, name, info)
+                        print(f"[{i}/{len(targets)}] {name}({jocd}): 直線{info.tyokusen} 周長{info.shuutyou}m 保存完了")
+                    except Exception as exc:  # noqa: BLE001 - 1開催場の失敗で全体を止めない
+                        print(f"[{i}/{len(targets)}] {name}({jocd}): 失敗 - {exc}")
+            finally:
+                browser.close()
+    finally:
+        client.close()
 
 
 if __name__ == "__main__":

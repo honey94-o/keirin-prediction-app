@@ -1,7 +1,7 @@
 """発走時刻を過ぎたのにまだ着順が確定していないレースだけ、WINTICKETの結果ページを
 直接見に行って結果・払戻を反映する軽量スクリプト。
 
-winticket_scraper.py --all-venues は出走表から辿り直すため1回30〜40分かかり、
+winticket_scraper.py --all-venues は出走表から辿り直すため時間がかかり、
 日中にレースが終わってからホーム画面の「終了」表示に反映されるまで数時間ラグが
 あった（次の定期実行=daily-sync.ymlを待つしかなかったため）。このスクリプトは
 既にDBにある本日のレース・出走（entries）情報をそのまま使い、結果ページへの
@@ -59,24 +59,30 @@ def fetch_unfinished_races(kaisai_date: str) -> list[tuple]:
     """指定日（YYYYMMDD）で着順(finish_pos)が3件未満のレースを返す
     （id, jocd, keirinjo_name, race_no, encp, start_time）。"""
     client = get_client()
-    result = client.execute(
-        """
-        SELECT r.id, r.jocd, r.keirinjo_name, r.race_no, r.encp, r.start_time
-        FROM races r
-        WHERE r.kaisai_date = ?
-          AND r.encp IS NOT NULL
-          AND (SELECT COUNT(*) FROM results res
-               WHERE res.race_id = r.id AND res.finish_pos IS NOT NULL) < 3
-        ORDER BY r.start_time
-        """,
-        [kaisai_date],
-    )
+    try:
+        result = client.execute(
+            """
+            SELECT r.id, r.jocd, r.keirinjo_name, r.race_no, r.encp, r.start_time
+            FROM races r
+            WHERE r.kaisai_date = ?
+              AND r.encp IS NOT NULL
+              AND (SELECT COUNT(*) FROM results res
+                   WHERE res.race_id = r.id AND res.finish_pos IS NOT NULL) < 3
+            ORDER BY r.start_time
+            """,
+            [kaisai_date],
+        )
+    finally:
+        client.close()
     return result.rows
 
 
 def fetch_entries(race_id: int) -> list[tuple]:
     client = get_client()
-    result = client.execute("SELECT car_num, snum FROM entries WHERE race_id = ?", [race_id])
+    try:
+        result = client.execute("SELECT car_num, snum FROM entries WHERE race_id = ?", [race_id])
+    finally:
+        client.close()
     return result.rows
 
 
@@ -97,8 +103,11 @@ def save_results_and_odds(race_id: int, results: list[dict], odds: list[dict]) -
                VALUES (?,?,?,?)""",
             [race_id, o["bet_type"], o["combination"], o["odds_value"]],
         ))
-    if statements:
-        client.batch(statements)
+    try:
+        if statements:
+            client.batch(statements)
+    finally:
+        client.close()
 
 
 def check_due_races(kaisai_date: str) -> tuple[int, int]:
