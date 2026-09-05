@@ -61,7 +61,7 @@ export function RefreshTrigger({ compact = false }: { compact?: boolean }) {
         </p>
       )}
       <p className="text-xs text-gray-400 mt-2 dark:text-gray-500">
-        全開催場のデータ取得を開始します（完了まで1〜2分ほどかかります）
+        全開催場のデータ取得を開始します（完了まで数分〜十数分ほどかかります）
       </p>
     </form>
   );

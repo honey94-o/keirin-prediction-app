@@ -41,7 +41,15 @@ export async function triggerDailySyncAction(): Promise<TriggerSyncResult> {
   );
 
   if (res.status === 204) {
-    return { ok: true, message: "更新を開始しました。1〜2分後にこのページを開き直してください。" };
+    // 「開始できたか」の返事であり、取得完了の合図ではない（GitHub Actionsの
+    // dispatchは受理された時点で204を返すため一瞬で戻る）。全43開催場の実際の
+    // 取得はここから数分〜十数分かかる（daily-sync.ymlのworkflow_dispatch実行
+    // 履歴で実測できる。以前「1〜2分」と表示していたが、実測30〜40分に対して
+    // 大幅に楽観的すぎたため訂正した）。
+    return {
+      ok: true,
+      message: "更新を開始しました。全開催場の取得には数分〜十数分かかります。少し時間を置いてから開き直してください。",
+    };
   }
   const body = await res.text();
   return { ok: false, message: `更新開始に失敗しました (${res.status}): ${body.slice(0, 200)}` };
