@@ -79,7 +79,9 @@ export default async function RaceBetsPage({
       : null;
   // WINTICKETのレース結果ページ（決まり手・レース映像あり）。開催場のスラッグが
   // 未判明の場合（lib/winticket.ts参照）やencpが無い場合はnullになりリンクを出さない。
-  const resultVideoUrl = raceFinished ? buildWinticketResultUrl(race) : null;
+  // 結果未確定でも出す：うちのDB側の結果反映（daily-sync.yml・sync_results_only.py）
+  // より先にWINTICKET本家で結果が出ていることがあるため、その場で直接確認できるように。
+  const winticketUrl = buildWinticketResultUrl(race);
   const actualTop3Set = new Set(top3Results.map((r) => r.car_num));
   const winnerCarNum = finishOrder.find((r) => r.finish_pos === 1)?.car_num ?? null;
   const sortedActualTop3 =
@@ -114,9 +116,21 @@ export default async function RaceBetsPage({
           <span className="text-sm font-normal text-gray-500 ml-2">発走 {race.start_time}</span>
         )}
       </h1>
-      <p className="text-xs text-gray-400 mb-4">
-        展開の分かれ目ごとに複数パターンを提示（参考値）
-      </p>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs text-gray-400">
+          展開の分かれ目ごとに複数パターンを提示（参考値）
+        </p>
+        {winticketUrl && (
+          <a
+            href={winticketUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-[#0d5c3f] underline whitespace-nowrap ml-2 shrink-0"
+          >
+            WINTICKETで{raceFinished ? "結果・映像を見る" : "確認する"} →
+          </a>
+        )}
+      </div>
 
       {kimariteRates && (
         <BankKimariteCard
@@ -200,16 +214,6 @@ export default async function RaceBetsPage({
               </li>
             ))}
           </ul>
-          {resultVideoUrl && (
-            <a
-              href={resultVideoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-[#0d5c3f] underline mt-2 inline-block"
-            >
-              WINTICKETでレース映像を見る →
-            </a>
-          )}
         </section>
       )}
 
