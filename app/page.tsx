@@ -16,6 +16,7 @@ import {
   nowJstHHMM,
 } from "../lib/date";
 import { RefreshTrigger } from "../components/RefreshTrigger";
+import { raceStage } from "../lib/scoring";
 import type { RaceRow } from "../lib/types";
 
 // GitHub Actions（daily-sync.yml、1日2回自動実行）がNext.jsの外からTursoを
@@ -282,6 +283,21 @@ export default async function Home({
                       {first.grade_kbn}
                     </span>
                   )}
+                  {(() => {
+                    const stage = raceStage(nearestRace.syumoku);
+                    if (stage === "不明") return null;
+                    return (
+                      <span
+                        className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                          stage === "予選"
+                            ? "bg-gray-100 text-gray-500"
+                            : "bg-emerald-50 text-emerald-700"
+                        }`}
+                      >
+                        {stage}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <div className="text-right">
                   <div className="text-sm text-gray-500">

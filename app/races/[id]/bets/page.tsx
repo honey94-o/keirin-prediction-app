@@ -38,6 +38,28 @@ export default async function RaceBetsPage({
   const [results, odds] = await Promise.all([getResultsForRace(raceId), getOddsForRace(raceId)]);
   const nameByCarNum = new Map(scored.map((s) => [s.entry.car_num, s.entry.name]));
   const snumByCarNum = new Map(scored.map((s) => [s.entry.car_num, s.entry.snum]));
+
+  // ライン構成：先頭→番手→3番手の順に並べる。scoredは既にtotalScore降順のため、
+  // Mapの挿入順を使うだけで「◎を含むラインが先頭に来る」表示順になる。
+  const LINE_POSITION_ORDER: Record<string, number> = { 先頭: 0, 番手: 1, "3番手": 2 };
+  const lineGroups = new Map<number, typeof scored>();
+  const soloEntries: typeof scored = [];
+  for (const s of scored) {
+    if (s.entry.line_group == null) {
+      soloEntries.push(s);
+      continue;
+    }
+    const arr = lineGroups.get(s.entry.line_group) ?? [];
+    arr.push(s);
+    lineGroups.set(s.entry.line_group, arr);
+  }
+  const lines = [...lineGroups.values()].map((members) =>
+    [...members].sort(
+      (a, b) =>
+        (LINE_POSITION_ORDER[a.entry.line_position ?? ""] ?? 9) -
+        (LINE_POSITION_ORDER[b.entry.line_position ?? ""] ?? 9)
+    )
+  );
   const finishOrder = results
     .filter((r) => r.finish_pos != null)
     .sort((a, b) => (a.finish_pos ?? 0) - (b.finish_pos ?? 0));
@@ -102,6 +124,35 @@ export default async function RaceBetsPage({
           </div>
         ))}
       </div>
+
+      {lines.length > 0 && (
+        <section className="bg-white rounded-lg shadow-sm p-3 mb-4">
+          <h2 className="text-xs font-semibold text-gray-500 mb-2">ライン構成</h2>
+          <div className="flex flex-col gap-1.5">
+            {lines.map((members) => (
+              <div key={members[0].entry.line_group} className="flex items-center gap-1">
+                {members.map((s, i) => (
+                  <div key={s.entry.car_num} className="flex items-center gap-1">
+                    {i > 0 && <span className="text-gray-300 text-xs">-</span>}
+                    <CarNumberBadge carNum={s.entry.car_num} size="sm" />
+                  </div>
+                ))}
+                <span className="text-xs text-gray-400 ml-1 truncate">
+                  {members.map((s) => s.entry.name).join("・")}
+                </span>
+              </div>
+            ))}
+            {soloEntries.length > 0 && (
+              <div className="flex items-center gap-1.5 pt-1 border-t border-gray-100">
+                <span className="text-xs text-gray-400 shrink-0">単騎</span>
+                {soloEntries.map((s) => (
+                  <CarNumberBadge key={s.entry.car_num} carNum={s.entry.car_num} size="sm" />
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {raceFinished && (
         <section className="bg-gray-50 border border-gray-200 rounded-lg shadow-sm p-4 mb-4">
