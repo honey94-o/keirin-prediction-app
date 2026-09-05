@@ -15,6 +15,7 @@ import { CarNumberBadge } from "../../../../components/CarNumberBadge";
 import { RecentFormBadge } from "../../../../components/RecentFormBadge";
 import { RaceSwitcher } from "../../../../components/RaceSwitcher";
 import { BankKimariteCard } from "../../../../components/BankKimariteCard";
+import { buildWinticketResultUrl } from "../../../../lib/winticket";
 
 export default async function RaceBetsPage({
   params,
@@ -70,6 +71,9 @@ export default async function RaceBetsPage({
     actualCombo != null
       ? (odds.find((o) => o.bet_type === "3連単" && o.combination === actualCombo)?.odds_value ?? null)
       : null;
+  // WINTICKETのレース結果ページ（決まり手・レース映像あり）。開催場のスラッグが
+  // 未判明の場合（lib/winticket.ts参照）やencpが無い場合はnullになりリンクを出さない。
+  const resultVideoUrl = raceFinished ? buildWinticketResultUrl(race) : null;
   const actualTop3Set = new Set(top3Results.map((r) => r.car_num));
   const winnerCarNum = finishOrder.find((r) => r.finish_pos === 1)?.car_num ?? null;
   const sortedActualTop3 =
@@ -185,6 +189,16 @@ export default async function RaceBetsPage({
               </li>
             ))}
           </ul>
+          {resultVideoUrl && (
+            <a
+              href={resultVideoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-[#0d5c3f] underline mt-2 inline-block"
+            >
+              WINTICKETでレース映像を見る →
+            </a>
+          )}
         </section>
       )}
 

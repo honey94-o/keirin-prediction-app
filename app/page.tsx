@@ -14,6 +14,7 @@ import {
   isValidDateStr,
   formatUtcAsJst,
   nowJstHHMM,
+  parseEncp,
 } from "../lib/date";
 import { RefreshTrigger } from "../components/RefreshTrigger";
 import { raceStage } from "../lib/scoring";
@@ -39,6 +40,21 @@ function pickNearestRace(groupRaces: RaceRow[], viewDate: string, todayStr: stri
   }
   if (viewDate > todayStr) return sorted[0];
   return sorted[sorted.length - 1];
+}
+
+/**
+ * 開催の何日目かを表示用ラベルにする。1日目は「初日」、その日に決勝レースが
+ * 含まれるなら「最終日」（決勝は必ず開催最終日に組まれるため）、それ以外は「N日目」。
+ * 翌日分のレース有無では判定しない――daily-syncは基本的に当日分しか事前取得しない
+ * ため、日中に見ると翌日データが未取得で常に「最終日」になってしまう。
+ */
+function eventDayLabel(groupRaces: RaceRow[]): string | null {
+  const parsed = groupRaces.map((r) => parseEncp(r.encp)).find((p) => p != null);
+  if (!parsed) return null;
+  const hasFinalToday = groupRaces.some((r) => raceStage(r.syumoku) === "決勝");
+  if (hasFinalToday) return "最終日";
+  if (parsed.day === 1) return "初日";
+  return `${parsed.day}日目`;
 }
 
 export default async function Home({
@@ -278,6 +294,21 @@ export default async function Home({
               >
                 <div className="flex items-center gap-1.5">
                   <span className="font-semibold text-gray-900">{first.keirinjo_name}</span>
+                  {(() => {
+                    const dayLabel = eventDayLabel(groupRaces);
+                    if (!dayLabel) return null;
+                    return (
+                      <span
+                        className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                          dayLabel === "最終日"
+                            ? "bg-rose-50 text-rose-600"
+                            : "bg-sky-50 text-sky-700"
+                        }`}
+                      >
+                        {dayLabel}
+                      </span>
+                    );
+                  })()}
                   {first.grade_kbn && (
                     <span className="text-[10px] font-semibold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
                       {first.grade_kbn}

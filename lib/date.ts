@@ -43,6 +43,18 @@ export function isValidDateStr(s: string | undefined): s is string {
 }
 
 /**
+ * race.encp（WINTICKET由来、"wt:{cupId}/{day}/{raceNo}"形式）から開催情報を取り出す。
+ * cupIdは開催初日(YYYYMMDD)+jocd(2桁)の10桁で同じ開催なら日を跨いでも共通なため、
+ * 「この開催の最終日か」の判定に使える（scraper/winticket_scraper.pyのdocstring参照）。
+ */
+export function parseEncp(encp: string | null): { cupId: string; day: number; raceNo: number } | null {
+  if (!encp) return null;
+  const m = /^wt:(\d{10})\/(\d+)\/(\d+)$/.exec(encp);
+  if (!m) return null;
+  return { cupId: m[1], day: Number(m[2]), raceNo: Number(m[3]) };
+}
+
+/**
  * DBのTEXT型タイムスタンプ（"YYYY-MM-DD HH:MM:SS"、UTC。datetime('now')由来）を
  * JST表示用の"MM/DD HH:MM"に変換する。最終同期時刻の表示用。
  */
