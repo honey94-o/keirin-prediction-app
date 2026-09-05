@@ -903,6 +903,27 @@ export async function getDailyPicksResults(kaisaiDate: string): Promise<DailyPic
   });
 }
 
+/**
+ * 指定した日付ごとに、厳選+バリカタを合算した的中実績を返す（新しい順に呼ぶ想定、
+ * 順序はdatesの通り）。ホーム画面の「今日の的中」サマリーを複数日ぶん振り返る
+ * /history向け。getDailyPicksPerformance/getBarikataPicksPerformanceは複数日を
+ * 1つに合算するのに対し、こちらは日ごとの内訳を残す点が違う。
+ */
+export async function getCombinedPickHitHistory(
+  dates: string[]
+): Promise<{ date: string; hits: number; total: number }[]> {
+  const rows: { date: string; hits: number; total: number }[] = [];
+  for (const date of dates) {
+    const [pickResults, barikataResults] = await Promise.all([
+      getDailyPicksResults(date),
+      getBarikataPicksResults(date),
+    ]);
+    const finished = [...pickResults, ...barikataResults].filter((r) => r.finished);
+    rows.push({ date, hits: finished.filter((r) => r.hit).length, total: finished.length });
+  }
+  return rows;
+}
+
 /** 指定した日付リスト分の厳選ピック実績を合算する（回収率は総払戻/総賭け金）。 */
 export async function getDailyPicksPerformance(dates: string[]): Promise<DailyPicksPerformance> {
   let races = 0;

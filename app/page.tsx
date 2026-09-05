@@ -20,30 +20,13 @@ import {
   minutesBetween,
 } from "../lib/date";
 import { RefreshTrigger } from "../components/RefreshTrigger";
-import { raceStage } from "../lib/scoring";
+import { raceStage, pickNearestRace } from "../lib/scoring";
 import type { RaceRow } from "../lib/types";
 
 // GitHub Actions（daily-sync.yml、1日2回自動実行）がNext.jsの外からTursoを
 // 直接更新するため、ビルド時の静的生成のままだと新しいレースが反映されない。
 // 常に最新のDBを読むよう動的レンダリングを強制する。
 export const dynamic = "force-dynamic";
-
-/**
- * 開催場カードから買い目提案画面へ直接飛ぶ先のレースを選ぶ。
- * 当日ならまだ発走していない一番近いレース（無ければ最終レース）、
- * 翌日以降なら最初のレース、前日以前なら最終レースを返す
- * （「今行くならどのレースを見たいか」に合わせた素朴な既定値）。
- */
-function pickNearestRace(groupRaces: RaceRow[], viewDate: string, todayStr: string): RaceRow {
-  const sorted = [...groupRaces].sort((a, b) => (a.start_time ?? "").localeCompare(b.start_time ?? ""));
-  if (viewDate === todayStr) {
-    const now = nowJstHHMM();
-    const upcoming = sorted.find((r) => (r.start_time ?? "") >= now);
-    return upcoming ?? sorted[sorted.length - 1];
-  }
-  if (viewDate > todayStr) return sorted[0];
-  return sorted[sorted.length - 1];
-}
 
 /**
  * 開催の何日目かを表示用ラベルにする。1日目は「初日」、その日に決勝レースが
@@ -214,7 +197,10 @@ export default async function Home({
           <span className="text-xs text-gray-400">
             ({((todaySummary.hits / todaySummary.total) * 100).toFixed(0)}%)
           </span>
-          <span className="text-xs text-gray-400 ml-auto">厳選+バリカタ</span>
+          <span className="text-xs text-gray-400">厳選+バリカタ</span>
+          <Link href="/history" className="text-xs font-semibold text-[#0d5c3f] underline ml-auto whitespace-nowrap">
+            日別履歴 →
+          </Link>
         </div>
       )}
 

@@ -3,6 +3,7 @@ import {
   getRaceIdsWithPrediction,
   getDailyPicksResults,
   getBarikataPicksResults,
+  getCombinedPickHitHistory,
 } from "../../lib/repository";
 import {
   getBulkRaceSummaries,
@@ -12,8 +13,10 @@ import {
   getGirlsDailySummary,
   yesterdayJst,
 } from "../../lib/accuracy";
-import { addDaysToDateStr, formatDateStr, isValidDateStr } from "../../lib/date";
+import { addDaysToDateStr, formatDateStr, isValidDateStr, todayJstStr } from "../../lib/date";
 import { formatFormationNotation } from "../../lib/scoring";
+
+const COMBINED_HISTORY_DAYS = 14;
 
 // レース結果はGitHub Actions（Next.jsの外）からTursoへ書き込まれるため、
 // 静的生成だと反映されない。常に最新を読むよう動的レンダリングを強制する。
@@ -41,6 +44,13 @@ export default async function HistoryPage({
   const prevDate = addDaysToDateStr(viewDate, -1);
   const nextDate = addDaysToDateStr(viewDate, 1);
 
+  // 「今日の的中」（ホーム画面）を複数日ぶん振り返れるように、当日を含む直近N日の
+  // 厳選+バリカタ合算的中実績を日別に並べる。
+  const historyDates = Array.from({ length: COMBINED_HISTORY_DAYS }, (_, i) =>
+    addDaysToDateStr(todayJstStr(), -i)
+  );
+  const combinedHistory = await getCombinedPickHitHistory(historyDates);
+
   const raceIds = await getRaceIdsWithPrediction();
   const summaries = await getBulkRaceSummaries(raceIds);
   const stats = await getOverallAccuracyStats();
@@ -65,6 +75,41 @@ export default async function HistoryPage({
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
       <h1 className="text-lg font-bold mb-4">予想履歴・精度検証</h1>
+
+      {combinedHistory.some((d) => d.total > 0) && (
+        <section className="bg-white rounded-lg shadow-sm p-4 mb-4">
+          <h2 className="font-semibold text-sm text-gray-600 mb-2">
+            今日の的中（厳選+バリカタ合算）・直近{COMBINED_HISTORY_DAYS}日
+          </h2>
+          <ul className="flex flex-col divide-y divide-gray-100">
+            {combinedHistory
+              .filter((d) => d.total > 0)
+              .map((d) => (
+                <li key={d.date}>
+                  <Link
+                    // 「本日」はgetDailySummary側が結果確定済み扱いしないため専用の
+                    // 日別詳細を持たない。ホーム画面（今まさに進行中のビュー）に戻す。
+                    href={d.date === todayJstStr() ? "/" : `/history?date=${d.date}`}
+                    className="flex items-center justify-between text-sm py-1.5 active:bg-gray-50 -mx-1 px-1 rounded"
+                  >
+                    <span className="text-gray-700">
+                      {formatDateStr(d.date)}
+                      {d.date === todayJstStr() && (
+                        <span className="text-xs text-gray-400 ml-1">(本日・進行中)</span>
+                      )}
+                    </span>
+                    <span className="font-semibold tabular-nums">
+                      {d.hits}/{d.total}
+                      <span className="text-xs text-gray-400 ml-1">
+                        ({((d.hits / d.total) * 100).toFixed(0)}%)
+                      </span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+          </ul>
+        </section>
+      )}
 
       <section className="bg-white rounded-lg shadow-sm p-4 mb-4">
         <div className="flex items-center justify-between mb-2">

@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { predictRace } from "../../../../lib/predict";
-import { formatFormationNotation } from "../../../../lib/scoring";
+import { formatFormationNotation, pickNearestRace } from "../../../../lib/scoring";
+import { todayJstStr } from "../../../../lib/date";
 import {
   getScenarioStats,
   getRacesForEvent,
+  getRacesByDate,
   getVenueKimariteRank,
   getResultsForRace,
   getResultsForRaces,
@@ -16,6 +18,7 @@ import { MarkBadge } from "../../../../components/MarkBadge";
 import { CarNumberBadge } from "../../../../components/CarNumberBadge";
 import { RecentFormBadge } from "../../../../components/RecentFormBadge";
 import { RaceSwitcher } from "../../../../components/RaceSwitcher";
+import { VenueSwitcher, type VenueOption } from "../../../../components/VenueSwitcher";
 import { BankKimariteCard } from "../../../../components/BankKimariteCard";
 import { buildWinticketResultUrl } from "../../../../lib/winticket";
 
@@ -38,6 +41,26 @@ export default async function RaceBetsPage({
   const finishedRaceIds = new Set(
     eventRaces.filter((r) => isRaceFinished(eventResults.get(r.id) ?? [])).map((r) => r.id)
   );
+
+  // 他の開催場へトップに戻らず移動できるドロップダウン用。同日の全レースを
+  // 開催場ごとにまとめ、各開催場の「今行くならこのレース」1件を選択肢にする
+  // （ホーム画面の開催場カードと同じpickNearestRaceのロジック）。
+  const todayStr = todayJstStr();
+  const racesOnSameDate = await getRacesByDate(race.kaisai_date);
+  const venueGroups = new Map<string, typeof racesOnSameDate>();
+  for (const r of racesOnSameDate) {
+    if (!venueGroups.has(r.jocd)) venueGroups.set(r.jocd, []);
+    venueGroups.get(r.jocd)!.push(r);
+  }
+  const venueOptions: VenueOption[] = [...venueGroups.entries()]
+    .map(([jocd, groupRaces]) => ({
+      jocd,
+      keirinjoName: groupRaces[0].keirinjo_name,
+      startTime: groupRaces[0].start_time,
+      targetRaceId: pickNearestRace(groupRaces, race.kaisai_date, todayStr).id,
+    }))
+    .sort((a, b) => (a.startTime ?? "").localeCompare(b.startTime ?? ""))
+    .map(({ jocd, keirinjoName, targetRaceId }) => ({ jocd, keirinjoName, targetRaceId }));
 
   // レースが終わっていれば実際の着順・的中判定を表示する。actualComboの解決は
   // lib/accuracy.tsのcomputeRaceSummary・scripts/backtest.tsと同じロジック
@@ -101,9 +124,12 @@ export default async function RaceBetsPage({
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
-      <Link href={`/races/${race.id}`} className="text-sm text-[#0d5c3f] mb-2 inline-block">
-        ← 出走表に戻る
-      </Link>
+      <div className="flex items-center justify-between mb-2">
+        <Link href={`/races/${race.id}`} className="text-sm text-[#0d5c3f] inline-block">
+          ← 出走表に戻る
+        </Link>
+        <VenueSwitcher venues={venueOptions} currentJocd={race.jocd} />
+      </div>
       <RaceSwitcher
         races={eventRaces}
         currentRaceId={race.id}

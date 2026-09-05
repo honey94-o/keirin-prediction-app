@@ -1,8 +1,10 @@
+import { nowJstHHMM } from "./date";
 import type {
   BankInfoRow,
   BetSuggestion,
   EntryWithRacer,
   PositionWinRate,
+  RaceRow,
   RaceScenario,
   RacerHistoryRow,
   ScoreBreakdown,
@@ -1151,6 +1153,24 @@ export function formatFormationNotation(combinations: string[]): string | null {
  * 再現している）。scripts/daily-picks.tsで予選レースを厳選対象から除外する
  * のに使う。
  */
+/**
+ * 開催場カード・買い目提案画面の開催場切り替えから飛ぶ先のレースを選ぶ。
+ * 当日ならまだ発走していない一番近いレース（無ければ最終レース）、
+ * 翌日以降なら最初のレース、前日以前なら最終レースを返す
+ * （「今行くならどのレースを見たいか」に合わせた素朴な既定値）。
+ * app/page.tsx（開催場一覧）とapp/races/[id]/bets/page.tsx（開催場切り替え）で共有する。
+ */
+export function pickNearestRace(groupRaces: RaceRow[], viewDate: string, todayStr: string): RaceRow {
+  const sorted = [...groupRaces].sort((a, b) => (a.start_time ?? "").localeCompare(b.start_time ?? ""));
+  if (viewDate === todayStr) {
+    const now = nowJstHHMM();
+    const upcoming = sorted.find((r) => (r.start_time ?? "") >= now);
+    return upcoming ?? sorted[sorted.length - 1];
+  }
+  if (viewDate > todayStr) return sorted[0];
+  return sorted[sorted.length - 1];
+}
+
 export function raceStage(syumoku: string | null): string {
   if (!syumoku) return "不明";
   if (/決勝/.test(syumoku) && !/準々|準決/.test(syumoku)) return "決勝";
