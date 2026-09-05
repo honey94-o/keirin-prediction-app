@@ -6,6 +6,7 @@ import {
   getLastSyncedAt,
   getFavoriteRacerEntriesForDate,
   getFavoriteRacers,
+  getResultsForRaces,
 } from "../lib/repository";
 import {
   todayJstStr,
@@ -18,7 +19,7 @@ import {
 } from "../lib/date";
 import { RefreshTrigger } from "../components/RefreshTrigger";
 import { raceStage } from "../lib/scoring";
-import type { RaceRow } from "../lib/types";
+import type { RaceRow, ResultRow } from "../lib/types";
 
 // GitHub Actions（daily-sync.yml、1日2回自動実行）がNext.jsの外からTursoを
 // 直接更新するため、ビルド時の静的生成のままだと新しいレースが反映されない。
@@ -48,6 +49,12 @@ function pickNearestRace(groupRaces: RaceRow[], viewDate: string, todayStr: stri
  * 翌日分のレース有無では判定しない――daily-syncは基本的に当日分しか事前取得しない
  * ため、日中に見ると翌日データが未取得で常に「最終日」になってしまう。
  */
+/** 着順が3人分以上確定していればそのレースは終了とみなす（bets画面のraceFinishedと同じ基準）。 */
+function isRaceFinished(raceId: number, resultsByRaceId: Map<number, ResultRow[]>): boolean {
+  const results = resultsByRaceId.get(raceId) ?? [];
+  return results.filter((r) => r.finish_pos != null).length >= 3;
+}
+
 function eventDayLabel(groupRaces: RaceRow[]): string | null {
   const parsed = groupRaces.map((r) => parseEncp(r.encp)).find((p) => p != null);
   if (!parsed) return null;
@@ -74,6 +81,8 @@ export default async function Home({
   // レース選択後の詳細画面でだけ計算する）。
   const races = await getRacesByDate(viewDate);
   const lastSyncedAt = await getLastSyncedAt();
+  // 開催場カードを「本日終了」でグレーアウトするための判定に使う（1クエリで全レース分まとめて取得）。
+  const resultsByRaceId = await getResultsForRaces(races.map((r) => r.id));
 
   // 「本日の厳選レース」：結果未確定（前日以前は対象外）の日だけ、
   // scripts/daily-picks.tsが事前計算したdaily_picksからその日の本命marginが
@@ -286,14 +295,19 @@ export default async function Home({
           {groupsByTime.map(([jocd, groupRaces]) => {
             const first = groupRaces[0];
             const nearestRace = pickNearestRace(groupRaces, viewDate, todayStr);
+            const allFinished = groupRaces.every((r) => isRaceFinished(r.id, resultsByRaceId));
             return (
               <Link
                 key={jocd}
                 href={`/races/${nearestRace.id}/bets`}
-                className="flex items-center justify-between bg-white rounded-lg shadow-sm px-4 py-3 active:bg-gray-50"
+                className={`flex items-center justify-between rounded-lg shadow-sm px-4 py-3 ${
+                  allFinished ? "bg-gray-100 active:bg-gray-200" : "bg-white active:bg-gray-50"
+                }`}
               >
                 <div className="flex items-center gap-1.5">
-                  <span className="font-semibold text-gray-900">{first.keirinjo_name}</span>
+                  <span className={`font-semibold ${allFinished ? "text-gray-400" : "text-gray-900"}`}>
+                    {first.keirinjo_name}
+                  </span>
                   {(() => {
                     const dayLabel = eventDayLabel(groupRaces);
                     if (!dayLabel) return null;
@@ -329,12 +343,19 @@ export default async function Home({
                       </span>
                     );
                   })()}
+                  {allFinished && (
+                    <span className="text-[10px] font-semibold bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded">
+                      終了
+                    </span>
+                  )}
                 </div>
                 <div className="text-right">
-                  <div className="text-sm text-gray-500">
-                    {groupRaces.length}レース中 {nearestRace.race_no}R
+                  <div className={`text-sm ${allFinished ? "text-gray-400" : "text-gray-500"}`}>
+                    {allFinished
+                      ? `全${groupRaces.length}レース終了`
+                      : `${groupRaces.length}レース中 ${nearestRace.race_no}R`}
                   </div>
-                  {nearestRace.start_time && (
+                  {!allFinished && nearestRace.start_time && (
                     <div className="text-xs text-gray-400">発走 {nearestRace.start_time}</div>
                   )}
                 </div>
