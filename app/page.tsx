@@ -60,6 +60,27 @@ function eventDayLabel(groupRaces: RaceRow[]): string | null {
   return `${parsed.day}日目`;
 }
 
+/** 発走30分以内なら残り分数を返す（当日タブでのみ意味を持つ）。 */
+function startingSoonMinutes(
+  startTime: string | null,
+  viewDate: string,
+  todayStr: string,
+  nowHHMM: string
+): number | null {
+  if (viewDate !== todayStr || !startTime) return null;
+  const diff = minutesBetween(nowHHMM, startTime);
+  return diff >= 0 && diff <= 30 ? diff : null;
+}
+
+function StartingSoonBadge({ minutes }: { minutes: number | null }) {
+  if (minutes == null) return null;
+  return (
+    <span className="text-[10px] font-semibold bg-red-500 text-white px-1.5 py-0.5 rounded-full shrink-0 whitespace-nowrap">
+      あと{minutes}分
+    </span>
+  );
+}
+
 export default async function Home({
   searchParams,
 }: {
@@ -131,6 +152,18 @@ export default async function Home({
       return (a.groupRaces[0].start_time ?? "").localeCompare(b.groupRaces[0].start_time ?? "");
     });
 
+  // 「今日の的中」サマリー：厳選+バリカタの結果確定済み分を合算する。当日タブでのみ
+  // 意味を持つ（前日・翌日タブではpickResults/barikataResultsがその日のものになる
+  // ため、「今日」というラベルとズレる）。
+  const todaySummary =
+    viewDate === todayStr
+      ? (() => {
+          const finished = [...pickResults, ...barikataResults].filter((r) => r.finished);
+          const hits = finished.filter((r) => r.hit).length;
+          return { total: finished.length, hits };
+        })()
+      : null;
+
   const tabs: { label: string; date: string }[] = [
     { label: "前日", date: prevDate },
     { label: "当日", date: todayStr },
@@ -170,6 +203,21 @@ export default async function Home({
         })}
       </div>
 
+      {todaySummary && todaySummary.total > 0 && (
+        <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-2 mb-4">
+          <span className="text-xs font-semibold bg-[#0d5c3f] text-white px-2 py-0.5 rounded-full">
+            今日の的中
+          </span>
+          <span className="text-sm font-bold tabular-nums">
+            {todaySummary.hits}/{todaySummary.total}
+          </span>
+          <span className="text-xs text-gray-400">
+            ({((todaySummary.hits / todaySummary.total) * 100).toFixed(0)}%)
+          </span>
+          <span className="text-xs text-gray-400 ml-auto">厳選+バリカタ</span>
+        </div>
+      )}
+
       {favoriteRacers.length > 0 && (
         <section className="bg-yellow-50 border border-yellow-200 rounded-lg shadow-sm p-3 mb-4">
           <div className="flex items-center justify-between mb-2">
@@ -187,38 +235,28 @@ export default async function Home({
             <p className="text-xs text-gray-400">この日の出走はありません</p>
           ) : (
             <ul className="flex flex-col gap-2">
-              {favoriteEntries.map((f) => {
-                const minutesToStart =
-                  viewDate === todayStr && f.race.start_time
-                    ? minutesBetween(nowHHMM, f.race.start_time)
-                    : null;
-                const startingSoon =
-                  minutesToStart != null && minutesToStart >= 0 && minutesToStart <= 30;
-                return (
-                  <li key={`${f.race.id}-${f.snum}`}>
-                    <Link
-                      href={`/races/${f.race.id}/bets`}
-                      className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 active:bg-gray-50"
-                    >
-                      <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0">
-                        {f.race.start_time ?? "--:--"}
-                      </span>
-                      <span className="text-sm text-gray-900 flex-1 truncate">
-                        {f.race.keirinjo_name} {f.race.race_no}R
-                      </span>
-                      {startingSoon && (
-                        <span className="text-[10px] font-semibold bg-red-500 text-white px-1.5 py-0.5 rounded-full shrink-0">
-                          あと{minutesToStart}分
-                        </span>
-                      )}
-                      <span className="text-xs text-yellow-700 tabular-nums shrink-0">{f.carNum}番</span>
-                      <span className="text-sm font-semibold text-gray-900 truncate max-w-[8rem]">
-                        {f.racerName}
-                      </span>
-                    </Link>
-                  </li>
-                );
-              })}
+              {favoriteEntries.map((f) => (
+                <li key={`${f.race.id}-${f.snum}`}>
+                  <Link
+                    href={`/races/${f.race.id}/bets`}
+                    className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 active:bg-gray-50"
+                  >
+                    <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0">
+                      {f.race.start_time ?? "--:--"}
+                    </span>
+                    <span className="text-sm text-gray-900 flex-1 truncate">
+                      {f.race.keirinjo_name} {f.race.race_no}R
+                    </span>
+                    <StartingSoonBadge
+                      minutes={startingSoonMinutes(f.race.start_time, viewDate, todayStr, nowHHMM)}
+                    />
+                    <span className="text-xs text-yellow-700 tabular-nums shrink-0">{f.carNum}番</span>
+                    <span className="text-sm font-semibold text-gray-900 truncate max-w-[8rem]">
+                      {f.racerName}
+                    </span>
+                  </Link>
+                </li>
+              ))}
             </ul>
           )}
         </section>
@@ -253,6 +291,9 @@ export default async function Home({
                   <span className="text-xs font-semibold text-rose-700 tabular-nums whitespace-nowrap">
                     差{p.margin.toFixed(1)}点
                   </span>
+                  <StartingSoonBadge
+                    minutes={startingSoonMinutes(p.start_time, viewDate, todayStr, nowHHMM)}
+                  />
                   {finished && (
                     <span
                       className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
@@ -308,6 +349,9 @@ export default async function Home({
                   <span className="text-xs font-semibold text-amber-700 tabular-nums whitespace-nowrap">
                     差{p.margin.toFixed(1)}点
                   </span>
+                  <StartingSoonBadge
+                    minutes={startingSoonMinutes(p.start_time, viewDate, todayStr, nowHHMM)}
+                  />
                   {finished && (
                     <span
                       className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
@@ -398,7 +442,12 @@ export default async function Home({
                       : `${groupRaces.length}レース中 ${nearestRace.race_no}R`}
                   </div>
                   {!allFinished && nearestRace.start_time && (
-                    <div className="text-xs text-gray-400">発走 {nearestRace.start_time}</div>
+                    <div className="text-xs text-gray-400 flex items-center gap-1 justify-end">
+                      <span>発走 {nearestRace.start_time}</span>
+                      <StartingSoonBadge
+                        minutes={startingSoonMinutes(nearestRace.start_time, viewDate, todayStr, nowHHMM)}
+                      />
+                    </div>
                   )}
                 </div>
               </Link>
