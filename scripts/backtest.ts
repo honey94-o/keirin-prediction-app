@@ -157,7 +157,12 @@ async function main() {
   // CONCURRENCY件ずつまとめてPromise.allで並行処理し、レイテンシの影響を
   // 重ね合わせて吸収する（processRaceはDB書き込み先が独立しており、
   // 集計はここでレース順に依存しない形でまとめて行うため安全）。
-  const CONCURRENCY = 10;
+  // 日付カットオフ修正（beforeDate）以降、getPositionWinRates等のキャッシュキーが
+  // レースごとのkaisai_date込みになり、以前のようにレース間でキャッシュが効かず
+  // 実質毎レースDBに読みに行くようになった。これによりDB接続への負荷が増え、
+  // CONCURRENCY=10だとプール枯渇でbatch()の接続待ちがタイムアウトし、
+  // スクリプト全体が落ちる事象が2回発生したため5に下げた。
+  const CONCURRENCY = 5;
   let processed = 0;
   const startedAt = Date.now();
   for (let i = 0; i < raceIds.length; i += CONCURRENCY) {

@@ -129,7 +129,11 @@ export function getDb(): DbClient {
       execute: (stmtOrSql: string | DbStatement, args?: unknown[]) =>
         runExecute(getPool(), stmtOrSql, args),
       batch: async (statements: DbStatement[]) => {
-        const conn = await getPool().connect();
+        // .connect()自体がプール枯渇でタイムアウトすることがあり、これまで
+        // withRetryの外側だったため1回のタイムアウトでスクリプト全体が
+        // 落ちていた（backtest.ts等の高並列実行で複数回再現）。
+        // クエリ実行と同じ再試行対象に含める。
+        const conn = await withRetry(() => getPool().connect());
         try {
           await conn.query("BEGIN");
           const results: ExecuteResult[] = [];
