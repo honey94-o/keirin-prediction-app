@@ -78,9 +78,36 @@ class BankInfo:
 @dataclass
 class RacerHistoryEntry:
     snum: str
-    race_date: str
+    race_date: str        # "MM/DD"（選手プロフィールページの表示そのまま、年情報なし）
+    race_date_full: str   # "YYYYMMDD"。race_dateを取得時点（anchor）基準で年を解決した値。
+                           # バックテストで「そのレースより後の成績」を誤って参照しないための
+                           # 日付フィルタに使う（race_dateだけでは年が無く判定できない）。
     venue_abbr: str
     finish_positions: str  # カンマ区切り "6,5,5"
+
+
+def resolve_full_date(mm_dd: str, anchor: datetime.date) -> str | None:
+    """選手プロフィールページの「MM/DD」表記（年情報なし）を、取得時点（anchor）を
+    基準に実際の年へ解決する。「直近成績」欄は必ずanchor以前の過去レースのみを
+    表示する前提のため、素直に年月日を組んで anchor より未来になった場合だけ
+    前年と判定する（例: anchor=2026-01-05、mm_dd="12/28" → 2025-12-28）。
+    解析できない・存在しない日付（例: 閏日の非対応年）はNoneを返し、
+    呼び出し側でその1件をスキップする。
+    """
+    m = re.match(r"^(\d{1,2})/(\d{1,2})$", mm_dd.strip())
+    if not m:
+        return None
+    month, day = int(m.group(1)), int(m.group(2))
+    try:
+        candidate = datetime.date(anchor.year, month, day)
+    except ValueError:
+        return None
+    if candidate > anchor:
+        try:
+            candidate = datetime.date(anchor.year - 1, month, day)
+        except ValueError:
+            return None
+    return candidate.strftime("%Y%m%d")
 
 
 def _unique_venue_links(page: Page) -> list:
@@ -392,15 +419,20 @@ def scrape_racer_history(page: Page, snum: str) -> list[RacerHistoryEntry]:
             return { date, venue, badges };
         }).filter(r => r.date)"""
     )
-    return [
-        RacerHistoryEntry(
+    anchor = datetime.date.today()
+    results: list[RacerHistoryEntry] = []
+    for r in raw:
+        race_date_full = resolve_full_date(r["date"], anchor)
+        if race_date_full is None:
+            continue  # 想定外の日付表記は日付フィルタが効かせられないためスキップする
+        results.append(RacerHistoryEntry(
             snum=snum,
             race_date=r["date"],
+            race_date_full=race_date_full,
             venue_abbr=r["venue"],
             finish_positions=",".join(r["badges"]),
-        )
-        for r in raw
-    ]
+        ))
+    return results
 
 
 def _days_since_update(query: str, params: tuple) -> float | None:
@@ -550,11 +582,12 @@ def save_to_db(
 
         for r in race.results:
             statements.append((
-                """INSERT INTO results (race_id, snum, car_num, finish_pos, kimarite)
-                   VALUES (?,?,?,?,?)
+                """INSERT INTO results (race_id, snum, car_num, finish_pos, kimarite, agari_time)
+                   VALUES (?,?,?,?,?,?)
                    ON CONFLICT(race_id, car_num) DO UPDATE SET
-                       finish_pos=excluded.finish_pos, kimarite=excluded.kimarite""",
-                [race_id, r["snum"], r["car_num"], r["finish_pos"], r["kimarite"]],
+                       finish_pos=excluded.finish_pos, kimarite=excluded.kimarite,
+                       agari_time=excluded.agari_time""",
+                [race_id, r["snum"], r["car_num"], r["finish_pos"], r["kimarite"], r.get("agari_time")],
             ))
 
         for o in race.odds:
@@ -585,11 +618,12 @@ def save_to_db(
 
         for h in histories or []:
             statements.append((
-                """INSERT INTO racer_race_history (snum, race_date, venue_abbr, finish_positions)
-                   VALUES (?,?,?,?)
+                """INSERT INTO racer_race_history (snum, race_date, race_date_full, venue_abbr, finish_positions)
+                   VALUES (?,?,?,?,?)
                    ON CONFLICT(snum, race_date, venue_abbr) DO UPDATE SET
-                       finish_positions=excluded.finish_positions, scraped_at=datetime('now')""",
-                [h.snum, h.race_date, h.venue_abbr, h.finish_positions],
+                       finish_positions=excluded.finish_positions,
+                       race_date_full=excluded.race_date_full, scraped_at=datetime('now')""",
+                [h.snum, h.race_date, h.race_date_full, h.venue_abbr, h.finish_positions],
             ))
 
         if statements:

@@ -41,7 +41,11 @@ CREATE TABLE IF NOT EXISTS bank_info (
 CREATE TABLE IF NOT EXISTS racer_race_history (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     snum              TEXT NOT NULL REFERENCES racers(snum),
-    race_date         TEXT NOT NULL,        -- MM/DD（年をまたぐ場合の厳密な年特定はしていない簡易版）
+    race_date         TEXT NOT NULL,        -- MM/DD（選手プロフィールページの表示そのまま、年情報なし）
+    race_date_full    TEXT,                 -- YYYYMMDD。race_dateを取得時点基準で年を解決した値
+                                             -- （keirin_scraper.pyのresolve_full_date参照）。
+                                             -- バックテストで「そのレースより後の成績」を誤って
+                                             -- 参照しないための日付フィルタに使う。
     venue_abbr        TEXT,                 -- 開催場の略称（例: "豊"）＋グレード（例: "Ｆ２"）
     finish_positions  TEXT,                 -- その開催内の各レース着順をカンマ区切りで（例: "6,5,5"）
     scraped_at        TEXT NOT NULL DEFAULT (datetime('now')),
@@ -124,6 +128,9 @@ CREATE TABLE IF NOT EXISTS results (
     car_num     INTEGER NOT NULL,
     finish_pos  INTEGER,                  -- 着順
     kimarite    TEXT,                     -- 決まり手
+    agari_time  REAL,                     -- 上がりタイム（秒）。WINTICKETの結果ページ「上り」列。
+                                           -- 2日目以降のレースで前日（同一開催内）の上がりタイムを
+                                           -- 調子の指標として使えるか検証中（未採用・実装検討中）。
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (race_id, car_num)
 );

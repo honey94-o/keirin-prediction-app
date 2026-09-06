@@ -47,20 +47,24 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
   const entries = await getEntriesForRace(raceId);
   const weights = await getScoreWeights();
   const bankInfo = await getBankInfo(race.jocd);
-  const venueKimarite = await getVenueKimariteRatesWithFallback(race.jocd);
+  // このレースより後の実績が混ざらないよう、race.kaisai_dateを日付カットオフとして
+  // 渡す（過去のレースをバックテストする際に未来の情報が漏れ込む=lookahead biasを
+  // 防ぐため。ライブの当日レースではkaisai_date=今日なので、実質的に「今日時点で
+  // 存在する実績」＝これまでと同じ挙動になる）。
+  const venueKimarite = await getVenueKimariteRatesWithFallback(race.jocd, race.kaisai_date);
 
   const historyEntries = await Promise.all(
-    entries.map(async (e) => [e.snum, await getRacerHistory(e.snum)] as const)
+    entries.map(async (e) => [e.snum, await getRacerHistory(e.snum, race.kaisai_date)] as const)
   );
   const historyBySnum = Object.fromEntries(historyEntries);
 
   const positionEntries = await Promise.all(
-    entries.map(async (e) => [e.snum, await getPositionWinRates(e.snum)] as const)
+    entries.map(async (e) => [e.snum, await getPositionWinRates(e.snum, race.kaisai_date)] as const)
   );
   const positionWinRatesBySnum = Object.fromEntries(positionEntries);
 
   const soloEntries = await Promise.all(
-    entries.map(async (e) => [e.snum, await getSoloWinRate(e.snum)] as const)
+    entries.map(async (e) => [e.snum, await getSoloWinRate(e.snum, race.kaisai_date)] as const)
   );
   const soloWinRateBySnum = Object.fromEntries(soloEntries);
 

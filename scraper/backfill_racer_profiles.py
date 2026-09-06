@@ -30,11 +30,12 @@ def save_enrichment(snum: str, prev_class_rank: str | None, histories) -> None:
             ))
         for h in histories:
             statements.append((
-                """INSERT INTO racer_race_history (snum, race_date, venue_abbr, finish_positions)
-                   VALUES (?,?,?,?)
+                """INSERT INTO racer_race_history (snum, race_date, race_date_full, venue_abbr, finish_positions)
+                   VALUES (?,?,?,?,?)
                    ON CONFLICT(snum, race_date, venue_abbr) DO UPDATE SET
-                       finish_positions=excluded.finish_positions, scraped_at=datetime('now')""",
-                [h.snum, h.race_date, h.venue_abbr, h.finish_positions],
+                       finish_positions=excluded.finish_positions,
+                       race_date_full=excluded.race_date_full, scraped_at=datetime('now')""",
+                [h.snum, h.race_date, h.race_date_full, h.venue_abbr, h.finish_positions],
             ))
         if statements:
             client.batch(statements)

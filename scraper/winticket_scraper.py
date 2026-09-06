@@ -31,7 +31,7 @@ from typing import Any
 from bs4 import BeautifulSoup, Tag
 
 from db import get_client
-from keirin_scraper import RaceData, RacerHistoryEntry, save_to_db
+from keirin_scraper import RaceData, RacerHistoryEntry, save_to_db, resolve_full_date
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -173,6 +173,7 @@ def scrape_cyclist_history(cyclist_id: str) -> tuple[str | None, list[RacerHisto
                     prev_class_rank = _convert_class_text(m.group(1))
 
     snum = "wt" + cyclist_id
+    anchor = datetime.date.today()
     histories: list[RacerHistoryEntry] = []
     outer_list = soup.find("ul", class_=re.compile(r"^List___Wrapper"))
     if outer_list is not None:
@@ -189,9 +190,13 @@ def scrape_cyclist_history(cyclist_id: str) -> tuple[str | None, list[RacerHisto
             order_texts = order_texts[: len(order_texts) // 2]
             if not race_date or not order_texts:
                 continue
+            race_date_full = resolve_full_date(race_date, anchor)
+            if race_date_full is None:
+                continue  # 想定外の日付表記は日付フィルタが効かせられないためスキップする
             histories.append(RacerHistoryEntry(
                 snum=snum,
                 race_date=race_date,
+                race_date_full=race_date_full,
                 venue_abbr=venue_abbr,
                 finish_positions=",".join(order_texts),
             ))
@@ -481,11 +486,13 @@ def parse_raceresult(html: str, race: RaceData) -> None:
         entry = by_car.get(car_num)
         snum = entry["snum"] if entry else f"wt-unknown-{race.jocd}-{car_num}"
         kimarite = cell_text("決") or None
+        agari_time = _to_float(cell_text("上り"))
         race.results.append({
             "car_num": car_num,
             "snum": snum,
             "finish_pos": int(finish_text),
             "kimarite": kimarite,
+            "agari_time": agari_time,
         })
 
     if len(tables) < 2:

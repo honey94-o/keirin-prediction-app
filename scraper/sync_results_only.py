@@ -91,11 +91,12 @@ def save_results_and_odds(race_id: int, results: list[dict], odds: list[dict]) -
     statements: list[tuple[str, list]] = []
     for r in results:
         statements.append((
-            """INSERT INTO results (race_id, snum, car_num, finish_pos, kimarite)
-               VALUES (?,?,?,?,?)
+            """INSERT INTO results (race_id, snum, car_num, finish_pos, kimarite, agari_time)
+               VALUES (?,?,?,?,?,?)
                ON CONFLICT(race_id, car_num) DO UPDATE SET
-                   finish_pos=excluded.finish_pos, kimarite=excluded.kimarite""",
-            [race_id, r["snum"], r["car_num"], r["finish_pos"], r["kimarite"]],
+                   finish_pos=excluded.finish_pos, kimarite=excluded.kimarite,
+                   agari_time=excluded.agari_time""",
+            [race_id, r["snum"], r["car_num"], r["finish_pos"], r["kimarite"], r.get("agari_time")],
         ))
     for o in odds:
         statements.append((

@@ -262,15 +262,18 @@ async function fetchBankInfo(jocd: string): Promise<BankInfoRow | undefined> {
  */
 export async function getVenueKimariteRates(
   jocd: string,
-  minRaces = 40
+  minRaces = 40,
+  beforeDate?: string
 ): Promise<VenueKimariteRates | null> {
+  const dateFilter = beforeDate ? "AND ra.kaisai_date < ?" : "";
+  const args = beforeDate ? [jocd, beforeDate] : [jocd];
   const result = await getDb().execute({
     sql: `SELECT r.kimarite, COUNT(*) as c
           FROM results r
           JOIN races ra ON ra.id = r.race_id
-          WHERE ra.jocd = ? AND r.finish_pos = 1 AND r.kimarite IS NOT NULL
+          WHERE ra.jocd = ? AND r.finish_pos = 1 AND r.kimarite IS NOT NULL ${dateFilter}
           GROUP BY r.kimarite`,
-    args: [jocd],
+    args,
   });
   const rows = result.rows as unknown as { kimarite: string; c: number }[];
   const total = rows.reduce((sum, r) => sum + r.c, 0);
@@ -326,7 +329,8 @@ export async function getVenueBankLength(jocd: string): Promise<number | null> {
  */
 export async function getBankLengthKimariteRates(
   bankLength: number,
-  minRaces = 100
+  minRaces = 100,
+  beforeDate?: string
 ): Promise<VenueKimariteRates | null> {
   const venueRows = await getDb().execute(`
     SELECT jocd, AVG(kyori * 1.0 / shukai) as perLap
@@ -339,14 +343,16 @@ export async function getBankLengthKimariteRates(
     .map((r) => r.jocd);
   if (matchingJocds.length === 0) return null;
 
+  const dateFilter = beforeDate ? "AND ra.kaisai_date < ?" : "";
+  const args = beforeDate ? [...matchingJocds, beforeDate] : matchingJocds;
   const result = await getDb().execute({
     sql: `SELECT r.kimarite, COUNT(*) as c
           FROM results r
           JOIN races ra ON ra.id = r.race_id
           WHERE ra.jocd IN (${matchingJocds.map(() => "?").join(",")})
-            AND r.finish_pos = 1 AND r.kimarite IS NOT NULL
+            AND r.finish_pos = 1 AND r.kimarite IS NOT NULL ${dateFilter}
           GROUP BY r.kimarite`,
-    args: matchingJocds,
+    args,
   });
   const rows = result.rows as unknown as { kimarite: string; c: number }[];
   const total = rows.reduce((sum, r) => sum + r.c, 0);
@@ -359,20 +365,24 @@ export async function getBankLengthKimariteRates(
  * の順にフォールバックして取得する。
  */
 export async function getVenueKimariteRatesWithFallback(
-  jocd: string
+  jocd: string,
+  beforeDate?: string
 ): Promise<VenueKimariteRates | null> {
-  return memoized(venueKimariteCache, jocd, () => fetchVenueKimariteRatesWithFallback(jocd));
+  return memoized(venueKimariteCache, beforeDate ? `${jocd}|${beforeDate}` : jocd, () =>
+    fetchVenueKimariteRatesWithFallback(jocd, beforeDate)
+  );
 }
 
 async function fetchVenueKimariteRatesWithFallback(
-  jocd: string
+  jocd: string,
+  beforeDate?: string
 ): Promise<VenueKimariteRates | null> {
-  const venueSpecific = await getVenueKimariteRates(jocd);
+  const venueSpecific = await getVenueKimariteRates(jocd, undefined, beforeDate);
   if (venueSpecific) return venueSpecific;
 
   const bankLength = await getVenueBankLength(jocd);
   if (bankLength == null) return null;
-  return getBankLengthKimariteRates(bankLength);
+  return getBankLengthKimariteRates(bankLength, undefined, beforeDate);
 }
 
 /**
@@ -430,15 +440,27 @@ async function fetchVenueKimariteRank(
   };
 }
 
-export async function getRacerHistory(snum: string): Promise<RacerHistoryRow[]> {
-  return memoized(racerHistoryCache, snum, () => fetchRacerHistory(snum));
+/**
+ * beforeDate（YYYYMMDD）を渡すと、そのレースより後の成績を除外する
+ * （バックテストで未来の情報が混入しないようにするため。race_date_fullが
+ * 無い＝年を解決できなかった行はbeforeDate指定時のみ安全側で除外する）。
+ * 選手ページ（/racers/[snum]）のような「現在時点の全履歴を見せたい」用途では
+ * beforeDateを省略する。
+ */
+export async function getRacerHistory(snum: string, beforeDate?: string): Promise<RacerHistoryRow[]> {
+  return memoized(racerHistoryCache, beforeDate ? `${snum}|${beforeDate}` : snum, () =>
+    fetchRacerHistory(snum, beforeDate)
+  );
 }
 
-async function fetchRacerHistory(snum: string): Promise<RacerHistoryRow[]> {
+async function fetchRacerHistory(snum: string, beforeDate?: string): Promise<RacerHistoryRow[]> {
+  const dateFilter = beforeDate ? "AND race_date_full IS NOT NULL AND race_date_full < ?" : "";
+  const args = beforeDate ? [snum, beforeDate] : [snum];
   const result = await getDb().execute({
     sql: `SELECT race_date, venue_abbr, finish_positions FROM racer_race_history
-          WHERE snum = ? ORDER BY race_date DESC`,
-    args: [snum],
+          WHERE snum = ? ${dateFilter}
+          ORDER BY race_date_full DESC NULLS LAST, race_date DESC`,
+    args,
   });
   return result.rows as unknown as RacerHistoryRow[];
 }
@@ -449,11 +471,16 @@ async function fetchRacerHistory(snum: string): Promise<RacerHistoryRow[]> {
  * 公式サイトにこの統計は存在しないため、自前のスクレイピング履歴から集計する。
  * スクレイピング件数が少ないうちは母数が小さく参考程度にしかならない点に注意。
  */
-export async function getPositionWinRates(snum: string): Promise<PositionWinRate[]> {
-  return memoized(positionWinRatesCache, snum, () => fetchPositionWinRates(snum));
+/** beforeDate（YYYYMMDD）を渡すと、そのレースより前の結果だけを集計する（getRacerHistoryのコメント参照）。 */
+export async function getPositionWinRates(snum: string, beforeDate?: string): Promise<PositionWinRate[]> {
+  return memoized(positionWinRatesCache, beforeDate ? `${snum}|${beforeDate}` : snum, () =>
+    fetchPositionWinRates(snum, beforeDate)
+  );
 }
 
-async function fetchPositionWinRates(snum: string): Promise<PositionWinRate[]> {
+async function fetchPositionWinRates(snum: string, beforeDate?: string): Promise<PositionWinRate[]> {
+  const dateFilter = beforeDate ? "AND ra.kaisai_date < ?" : "";
+  const args = beforeDate ? [snum, beforeDate] : [snum];
   const result = await getDb().execute({
     sql: `SELECT e.line_position,
                  COUNT(*) as races,
@@ -462,9 +489,10 @@ async function fetchPositionWinRates(snum: string): Promise<PositionWinRate[]> {
                  SUM(CASE WHEN r.finish_pos = 3 THEN 1 ELSE 0 END) as thirds
           FROM entries e
           JOIN results r ON r.race_id = e.race_id AND r.snum = e.snum
-          WHERE e.snum = ? AND e.line_position IS NOT NULL
+          JOIN races ra ON ra.id = e.race_id
+          WHERE e.snum = ? AND e.line_position IS NOT NULL ${dateFilter}
           GROUP BY e.line_position`,
-    args: [snum],
+    args,
   });
   const rows = result.rows as unknown as {
     line_position: string;
@@ -495,19 +523,25 @@ async function fetchPositionWinRates(snum: string): Promise<PositionWinRate[]> {
  * この関数だけ単騎かどうか（同レース同line_groupの出走が1人だけ）を
  * 相関サブクエリで判定して分ける。
  */
-export async function getSoloWinRate(snum: string): Promise<SoloWinRate | null> {
-  return memoized(soloWinRateCache, snum, () => fetchSoloWinRate(snum));
+/** beforeDate（YYYYMMDD）を渡すと、そのレースより前の結果だけを集計する（getRacerHistoryのコメント参照）。 */
+export async function getSoloWinRate(snum: string, beforeDate?: string): Promise<SoloWinRate | null> {
+  return memoized(soloWinRateCache, beforeDate ? `${snum}|${beforeDate}` : snum, () =>
+    fetchSoloWinRate(snum, beforeDate)
+  );
 }
 
-async function fetchSoloWinRate(snum: string): Promise<SoloWinRate | null> {
+async function fetchSoloWinRate(snum: string, beforeDate?: string): Promise<SoloWinRate | null> {
+  const dateFilter = beforeDate ? "AND ra.kaisai_date < ?" : "";
+  const args = beforeDate ? [snum, beforeDate] : [snum];
   const result = await getDb().execute({
     sql: `SELECT COUNT(*) as races, SUM(CASE WHEN r.finish_pos = 1 THEN 1 ELSE 0 END) as wins
           FROM entries e
           JOIN results r ON r.race_id = e.race_id AND r.car_num = e.car_num
-          WHERE e.snum = ? AND e.line_group IS NOT NULL
+          JOIN races ra ON ra.id = e.race_id
+          WHERE e.snum = ? AND e.line_group IS NOT NULL ${dateFilter}
             AND (SELECT COUNT(*) FROM entries e2
                  WHERE e2.race_id = e.race_id AND e2.line_group = e.line_group) = 1`,
-    args: [snum],
+    args,
   });
   const row = result.rows[0] as unknown as { races: number; wins: number } | undefined;
   if (!row || row.races === 0) return null;
