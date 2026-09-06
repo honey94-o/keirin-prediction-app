@@ -1,6 +1,7 @@
 import { getDb } from "./db";
 import type {
   BankInfoRow,
+  BarikataNearMissRow,
   BarikataPickResult,
   BarikataPickRow,
   BarikataPicksPerformance,
@@ -1014,6 +1015,63 @@ export async function getBarikataPicks(kaisaiDate: string, limit = 100): Promise
     args: [kaisaiDate, limit],
   });
   return result.rows as unknown as BarikataPickRow[];
+}
+
+/**
+ * 「バリカタ候補漏れ」を保存する。scripts/barikata-picks.tsから呼ぶ。
+ * db/schema.sqlのbarikata_near_missesコメント参照。
+ */
+export async function saveBarikataNearMisses(
+  picks: {
+    raceId: number;
+    kaisaiDate: string;
+    jocd: string;
+    keirinjoName: string;
+    raceNo: number;
+    startTime: string | null;
+    margin: number;
+    combo: string;
+    honmeiCarNum: number;
+    honmeiName: string;
+  }[]
+): Promise<void> {
+  if (picks.length === 0) return;
+  const db = getDb();
+  const sql = `INSERT INTO barikata_near_misses (race_id, kaisai_date, jocd, keirinjo_name, race_no,
+                                                  start_time, margin, combo, honmei_car_num, honmei_name, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'))
+               ON CONFLICT(race_id) DO UPDATE SET
+                 margin=excluded.margin, combo=excluded.combo,
+                 honmei_car_num=excluded.honmei_car_num, honmei_name=excluded.honmei_name,
+                 start_time=excluded.start_time, updated_at=datetime('now')`;
+  await db.batch(
+    picks.map((p) => ({
+      sql,
+      args: [
+        p.raceId,
+        p.kaisaiDate,
+        p.jocd,
+        p.keirinjoName,
+        p.raceNo,
+        p.startTime,
+        p.margin,
+        p.combo,
+        p.honmeiCarNum,
+        p.honmeiName,
+      ],
+    }))
+  );
+}
+
+/** 指定日のバリカタ候補漏れ（margin降順）。 */
+export async function getBarikataNearMisses(kaisaiDate: string, limit = 100): Promise<BarikataNearMissRow[]> {
+  const result = await getDb().execute({
+    sql: `SELECT race_id, kaisai_date, jocd, keirinjo_name, race_no, start_time, margin, combo,
+                 honmei_car_num, honmei_name
+          FROM barikata_near_misses WHERE kaisai_date = ? ORDER BY margin DESC LIMIT ?`,
+    args: [kaisaiDate, limit],
+  });
+  return result.rows as unknown as BarikataNearMissRow[];
 }
 
 /**

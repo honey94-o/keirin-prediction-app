@@ -213,6 +213,30 @@ CREATE TABLE IF NOT EXISTS barikata_picks (
 );
 CREATE INDEX IF NOT EXISTS idx_barikata_picks_date ON barikata_picks(kaisai_date, margin DESC);
 
+-- 「バリカタ候補漏れ」：margin>=8だがbarikata_picksの条件のうち「予想1-2-3位が
+-- 同じラインか」だけを満たさなかったレース（9車立ては対象外＝barikata_picksと同じ）。
+-- diagnose-barikata-line.tsの検証で、同じmargin帯でも同ライン決着でないと
+-- 単一の並び的中率が大きく下がることが分かっている（例: margin10-15で
+-- 同ライン32.7%に対し別ライン混在9.5%、margin15-20で41.4%対12.8%、
+-- margin20+で22.2%対8.5%）。そのためバリカタとしては採用しないが、
+-- 「marginは強いのになぜ外れたか」を確認できるよう参考表示用に別枠で残す
+-- （barikata_picksと違い、単一の並びの的中率が低いことが分かっているため
+-- 同列の推奨扱いはしない）。
+CREATE TABLE IF NOT EXISTS barikata_near_misses (
+    race_id        INTEGER PRIMARY KEY REFERENCES races(id) ON DELETE CASCADE,
+    kaisai_date    TEXT NOT NULL,
+    jocd           TEXT NOT NULL,
+    keirinjo_name  TEXT NOT NULL,
+    race_no        INTEGER NOT NULL,
+    start_time     TEXT,
+    margin         REAL NOT NULL,
+    combo          TEXT NOT NULL,      -- 予想1-2-3位の並び（参考値。ラインが割れているため信頼度は低い）。
+    honmei_car_num INTEGER NOT NULL,
+    honmei_name    TEXT NOT NULL,
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_barikata_near_misses_date ON barikata_near_misses(kaisai_date, margin DESC);
+
 -- お気に入り選手登録。個人利用アプリのためユーザー区分なし（単一グローバルリスト）。
 CREATE TABLE IF NOT EXISTS favorite_racers (
     snum        TEXT PRIMARY KEY REFERENCES racers(snum) ON DELETE CASCADE,

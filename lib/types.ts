@@ -337,3 +337,22 @@ export interface BarikataPicksPerformance {
   payoutYen: number;
   roi: number | null;
 }
+
+/**
+ * 「バリカタ候補漏れ」：marginはbarikata_picksと同じ基準を満たすが、予想1-2-3位が
+ * 同ラインでなかったため対象外になったレース。db/schema.sqlのbarikata_near_misses
+ * コメント参照——同じmargin帯でも単一の並び的中率が大きく下がることが検証済みのため、
+ * バリカタと同列の推奨扱いはしない（参考表示専用）。
+ */
+export interface BarikataNearMissRow {
+  race_id: number;
+  kaisai_date: string;
+  jocd: string;
+  keirinjo_name: string;
+  race_no: number;
+  start_time: string | null;
+  margin: number;
+  combo: string;
+  honmei_car_num: number;
+  honmei_name: string;
+}

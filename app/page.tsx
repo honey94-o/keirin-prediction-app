@@ -3,6 +3,7 @@ import {
   getRacesByDate,
   getDailyPicksResults,
   getBarikataPicksResults,
+  getBarikataNearMisses,
   getLastSyncedAt,
   getFavoriteRacerEntriesForDate,
   getFavoriteRacers,
@@ -101,12 +102,20 @@ export default async function Home({
     (a.pick.start_time ?? "").localeCompare(b.pick.start_time ?? "")
   );
 
-  // 「本日のバリカタ」：margin>=8かつ予想1-2-3位が同ラインのレースを1日最大3件。
+  // 「本日のバリカタ」：margin>=8かつ予想1-2-3位が同ラインのレース。
   // 厳選（フォーメーション買い）とは別枠で、単一の並び（1点）を想定した高的中率
   // 狙いのピック。scripts/barikata-picks.tsのコメント参照。
   const barikataResults = showPicks ? await getBarikataPicksResults(viewDate) : [];
   const barikataByTime = [...barikataResults].sort((a, b) =>
     (a.pick.start_time ?? "").localeCompare(b.pick.start_time ?? "")
+  );
+
+  // 「バリカタ候補漏れ」：marginは同じ基準を満たすが同ラインでなかったレース
+  // （参考表示。db/schema.sqlのbarikata_near_missesコメント参照——同marginでも
+  // 単一の並び的中率はバリカタ本体よりかなり低い）。
+  const barikataNearMisses = showPicks ? await getBarikataNearMisses(viewDate) : [];
+  const nearMissesByTime = [...barikataNearMisses].sort((a, b) =>
+    (a.start_time ?? "").localeCompare(b.start_time ?? "")
   );
 
   // 「お気に入り選手のレース」：選択中の日（前日/当日/翌日タブと連動）に
@@ -306,6 +315,50 @@ export default async function Home({
           <p className="text-[10px] text-rose-700 mt-2 leading-relaxed dark:text-rose-400">
             単一の並び的中率は検証時点で32.7%・的中時平均オッズ4.13倍（1点買い回収率約140%、母数197件）。
             必ず的中するわけではありません。
+          </p>
+        </section>
+      )}
+
+      {barikataNearMisses.length > 0 && (
+        <section className="bg-gray-50 border border-gray-200 rounded-lg shadow-sm p-3 mb-4 dark:bg-gray-800/60 dark:border-gray-700">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-semibold bg-gray-400 text-white px-2 py-0.5 rounded-full">
+              バリカタ候補漏れ
+            </span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              marginは強いが同ライン決着ではない（参考値）
+            </span>
+          </div>
+          <ul className="flex flex-col gap-2">
+            {nearMissesByTime.map((n) => (
+              <li key={n.race_id}>
+                <Link
+                  href={`/races/${n.race_id}/bets`}
+                  className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 active:bg-gray-50 dark:bg-gray-800 dark:active:bg-gray-700"
+                >
+                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
+                    {n.start_time ?? "--:--"}
+                  </span>
+                  <span className="text-sm font-medium text-gray-900 flex-1 truncate dark:text-gray-100">
+                    {n.keirinjo_name} {n.race_no}R
+                  </span>
+                  <span className="text-sm font-mono text-gray-500 tabular-nums whitespace-nowrap dark:text-gray-400">
+                    {n.combo}
+                  </span>
+                  <span className="text-xs text-gray-400 tabular-nums whitespace-nowrap dark:text-gray-500">
+                    差{n.margin.toFixed(1)}点
+                  </span>
+                  <StartingSoonBadge
+                    minutes={startingSoonMinutes(n.start_time, viewDate, todayStr, nowHHMM)}
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <p className="text-[10px] text-gray-400 mt-2 leading-relaxed dark:text-gray-500">
+            予想1-2-3位のスコア差はバリカタ本体と同じ基準を満たしていますが、3着候補が他ラインのため
+            単一の並びとしての的中率は大きく下がります（実測: 同じmargin帯で比較すると同ライン決着の
+            1/3程度）。バリカタとしては採用していない参考情報です。
           </p>
         </section>
       )}

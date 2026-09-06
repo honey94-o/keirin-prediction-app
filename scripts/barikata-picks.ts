@@ -16,7 +16,12 @@ function loadDotEnvLocal() {
 loadDotEnvLocal();
 
 import { predictRace } from "../lib/predict";
-import { getRacesByDate, saveBarikataPicks, enableReadCache } from "../lib/repository";
+import {
+  getRacesByDate,
+  saveBarikataPicks,
+  saveBarikataNearMisses,
+  enableReadCache,
+} from "../lib/repository";
 import { todayJstStr, addDaysToDateStr } from "../lib/date";
 
 /**
@@ -41,7 +46,13 @@ async function processDate(kaisaiDate: string): Promise<void> {
 
   const predictions = await Promise.all(races.map((race) => predictRace(race.id)));
 
-  const candidates = races
+  // margin条件だけ満たすもの（sameLineの真偽を保持）を先にまとめ、後段でバリカタ本体と
+  // 「候補漏れ」（同ラインでなかったもの）に振り分ける。diagnose-barikata-line.tsの
+  // 検証で、候補漏れ側は同じmargin帯でも単一の並び的中率が大きく下がることが
+  // 分かっているため（例: margin10-15で同ライン32.7%対別ライン混在9.5%）、
+  // バリカタと同列には扱わず別テーブル（barikata_near_misses）に保存する
+  // ——「marginは強いのになぜバリカタに入らないか」を確認できるようにするため。
+  const marginCandidates = races
     .map((race, i) => {
       const prediction = predictions[i];
       if (!prediction || prediction.scored.length < 3) return null;
@@ -58,28 +69,40 @@ async function processDate(kaisaiDate: string): Promise<void> {
       const lg1 = scored[1].entry.line_group;
       const lg2 = scored[2].entry.line_group;
       const sameLine = lg0 != null && lg0 === lg1 && lg1 === lg2;
-      if (!sameLine) return null;
 
       const combo = `${scored[0].entry.car_num}-${scored[1].entry.car_num}-${scored[2].entry.car_num}`;
       return {
-        raceId: race.id,
-        kaisaiDate: race.kaisai_date,
-        jocd: race.jocd,
-        keirinjoName: race.keirinjo_name,
-        raceNo: race.race_no,
-        startTime: race.start_time,
-        margin,
-        combo,
-        honmeiCarNum: honmei.entry.car_num,
-        honmeiName: honmei.entry.name,
+        sameLine,
+        pick: {
+          raceId: race.id,
+          kaisaiDate: race.kaisai_date,
+          jocd: race.jocd,
+          keirinjoName: race.keirinjo_name,
+          raceNo: race.race_no,
+          startTime: race.start_time,
+          margin,
+          combo,
+          honmeiCarNum: honmei.entry.car_num,
+          honmeiName: honmei.entry.name,
+        },
       };
     })
-    .filter((p): p is NonNullable<typeof p> => p != null);
+    .filter((c): c is NonNullable<typeof c> => c != null);
 
-  const picks = [...candidates].sort((a, b) => b.margin - a.margin);
+  const picks = marginCandidates
+    .filter((c) => c.sameLine)
+    .map((c) => c.pick)
+    .sort((a, b) => b.margin - a.margin);
+  const nearMisses = marginCandidates
+    .filter((c) => !c.sameLine)
+    .map((c) => c.pick)
+    .sort((a, b) => b.margin - a.margin);
 
   await saveBarikataPicks(picks);
-  console.log(`  条件を満たすレース: ${candidates.length}件 → 保存: ${picks.length}件`);
+  await saveBarikataNearMisses(nearMisses);
+  console.log(
+    `  margin条件を満たすレース: ${marginCandidates.length}件 → バリカタ: ${picks.length}件 / 候補漏れ: ${nearMisses.length}件`
+  );
 }
 
 async function main() {
