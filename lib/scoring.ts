@@ -77,7 +77,7 @@ export function calculateLineScore(
 
 // L1〜L3はガールズケイリン（女子）の級班。男子とは別の階級体系で、
 // 男女が同じレースで走ることは無いため相対値のみ意味を持つ。
-const CLASS_RANK_SCORES: Record<string, number> = {
+export const CLASS_RANK_SCORES: Record<string, number> = {
   SS: 100,
   S1: 85,
   S2: 70,
@@ -845,11 +845,11 @@ function calculateShukaiAdjustment(entry: EntryWithRacer, shukai: number | null 
  */
 const SOLO_STRONG_BONUS = 25;
 const SOLO_WEAK_PENALTY = 25;
-const SOLO_MIN_RACES = 5;
-const SOLO_STRONG_THRESHOLD = 16; // %。診断の「高」バケット下限に合わせる
-const SOLO_WEAK_THRESHOLD = 8; // %。診断の「低」バケット上限に合わせる
+export const SOLO_MIN_RACES = 5;
+export const SOLO_STRONG_THRESHOLD = 16; // %。診断の「高」バケット下限に合わせる
+export const SOLO_WEAK_THRESHOLD = 8; // %。診断の「低」バケット上限に合わせる
 
-function isSoloInRace(entry: EntryWithRacer, allEntries: EntryWithRacer[]): boolean {
+export function isSoloInRace(entry: EntryWithRacer, allEntries: EntryWithRacer[]): boolean {
   if (entry.line_group == null) return false;
   return allEntries.filter((e) => e.line_group === entry.line_group).length === 1;
 }

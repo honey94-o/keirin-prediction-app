@@ -6,8 +6,16 @@ import {
   getRacesForEvent,
   getResultsForRaces,
   isRaceFinished,
+  getSoloWinRate,
 } from "../../../lib/repository";
 import { recordPredictionAction } from "../../../lib/actions";
+import {
+  isSoloInRace,
+  CLASS_RANK_SCORES,
+  SOLO_MIN_RACES,
+  SOLO_STRONG_THRESHOLD,
+  SOLO_WEAK_THRESHOLD,
+} from "../../../lib/scoring";
 import { CarNumberBadge } from "../../../components/CarNumberBadge";
 import { MarkBadge } from "../../../components/MarkBadge";
 import { RecentFormBadge } from "../../../components/RecentFormBadge";
@@ -38,6 +46,16 @@ export default async function RaceDetailPage({
   const eventResults = await getResultsForRaces(eventRaces.map((r) => r.id));
   const finishedRaceIds = new Set(
     eventRaces.filter((r) => isRaceFinished(eventResults.get(r.id) ?? [])).map((r) => r.id)
+  );
+
+  // 既に採用済みのスコア加点（単騎個人成績・ライン内格差）は現状totalScoreに
+  // 混ざったまま内訳が見えないため、実数値を表示用に別途計算する
+  // （lib/scoring.tsの計算ロジック自体は変更しない、表示のみの追加）。
+  const allEntries = scored.map((s) => s.entry);
+  const soloWinRates = await Promise.all(
+    scored.map((s) =>
+      isSoloInRace(s.entry, allEntries) ? getSoloWinRate(s.entry.snum, race.kaisai_date) : Promise.resolve(null)
+    )
   );
 
   return (
@@ -91,39 +109,95 @@ export default async function RaceDetailPage({
       )}
 
       <div className="flex flex-col gap-3">
-        {scored.map((s) => (
-          <div key={s.entry.entry_id} className="bg-white rounded-lg shadow-sm p-3 dark:bg-gray-800">
-            <div className="flex items-center gap-2 mb-2">
-              <MarkBadge mark={s.mark} />
-              <CarNumberBadge carNum={s.entry.car_num} />
-              <Link
-                href={`/racers/${s.entry.snum}`}
-                className="font-semibold flex-1 truncate dark:text-gray-100"
-              >
-                {s.entry.name}
-              </Link>
-              <RecentFormBadge avgFinish={s.recentFormAvg} />
-              <span className="text-xl font-bold tabular-nums dark:text-gray-100">
-                {s.totalScore.toFixed(1)}
-              </span>
-            </div>
-            <div className="flex items-center gap-3 text-xs text-gray-500 mb-2 dark:text-gray-400">
-              <span>
-                {s.entry.class_rank ?? "-"} / {s.entry.kyakushitsu ?? "-"}
-              </span>
-              {s.entry.line_group != null && (
-                <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700">
-                  ライングループ{s.entry.line_group} ・ {s.entry.line_position}
+        {scored.map((s, i) => {
+          const soloWinRate = soloWinRates[i];
+          const senko = scored.find(
+            (x) => x.entry.line_group === s.entry.line_group && x.entry.line_position === "先頭"
+          );
+          const myClassScore = s.entry.class_rank ? CLASS_RANK_SCORES[s.entry.class_rank] : undefined;
+          const senkoClassScore =
+            senko?.entry.class_rank ? CLASS_RANK_SCORES[senko.entry.class_rank] : undefined;
+          const lineRankLabel =
+            (s.entry.line_position === "番手" || s.entry.line_position === "3番手") &&
+            senko &&
+            senko.entry.snum !== s.entry.snum &&
+            myClassScore != null &&
+            senkoClassScore != null
+              ? myClassScore > senkoClassScore
+                ? "格上"
+                : myClassScore < senkoClassScore
+                  ? "格下"
+                  : "同格"
+              : null;
+          return (
+            <div key={s.entry.entry_id} className="bg-white rounded-lg shadow-sm p-3 dark:bg-gray-800">
+              <div className="flex items-center gap-2 mb-2">
+                <MarkBadge mark={s.mark} />
+                <CarNumberBadge carNum={s.entry.car_num} />
+                <Link
+                  href={`/racers/${s.entry.snum}`}
+                  className="font-semibold flex-1 truncate dark:text-gray-100"
+                >
+                  {s.entry.name}
+                </Link>
+                <RecentFormBadge avgFinish={s.recentFormAvg} />
+                <span className="text-xl font-bold tabular-nums dark:text-gray-100">
+                  {s.totalScore.toFixed(1)}
                 </span>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-gray-500 mb-1 dark:text-gray-400">
+                <span>
+                  {s.entry.class_rank ?? "-"} / {s.entry.kyakushitsu ?? "-"}
+                </span>
+                {s.entry.line_group != null && (
+                  <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700">
+                    ライングループ{s.entry.line_group} ・ {s.entry.line_position}
+                  </span>
+                )}
+              </div>
+              {(soloWinRate || lineRankLabel) && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-gray-400 mb-2 dark:text-gray-500">
+                  {soloWinRate && (
+                    <span
+                      className={
+                        soloWinRate.races < SOLO_MIN_RACES
+                          ? ""
+                          : soloWinRate.winRate >= SOLO_STRONG_THRESHOLD
+                            ? "text-green-700 font-semibold dark:text-green-400"
+                            : soloWinRate.winRate < SOLO_WEAK_THRESHOLD
+                              ? "text-red-700 font-semibold dark:text-red-400"
+                              : ""
+                      }
+                    >
+                      単騎勝率{soloWinRate.winRate.toFixed(1)}%(n={soloWinRate.races})
+                      {soloWinRate.races < SOLO_MIN_RACES ? "・参考未満" : ""}
+                    </span>
+                  )}
+                  {lineRankLabel && (
+                    <span
+                      className={
+                        lineRankLabel === "格上"
+                          ? "text-green-700 font-semibold dark:text-green-400"
+                          : lineRankLabel === "格下"
+                            ? "text-red-700 font-semibold dark:text-red-400"
+                            : ""
+                      }
+                    >
+                      先頭より{lineRankLabel}（{s.entry.class_rank}
+                      {" vs "}
+                      {senko?.entry.class_rank}）
+                    </span>
+                  )}
+                </div>
               )}
+              <div className="flex flex-col gap-1">
+                <ScoreBar label="ライン" score={s.lineScore.score} />
+                <ScoreBar label="脚質実力" score={s.kyakushitsuScore.score} />
+                <ScoreBar label="データ統計" score={s.statsScore.score} />
+              </div>
             </div>
-            <div className="flex flex-col gap-1">
-              <ScoreBar label="ライン" score={s.lineScore.score} />
-              <ScoreBar label="脚質実力" score={s.kyakushitsuScore.score} />
-              <ScoreBar label="データ統計" score={s.statsScore.score} />
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {scenarios.length === 0 && scored.length < 3 && (
