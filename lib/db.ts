@@ -104,6 +104,12 @@ function getPool(): Pool {
       statement_timeout: 30_000, // 1クエリの上限（Postgres側で強制中断）
       query_timeout: 30_000, // pgドライバ側のクライアント待受上限（保険で二重にかける）
       connectionTimeoutMillis: 10_000, // プールから接続を確保するまでの上限
+      // デフォルト(10)だと、日付カットオフ修正後のbacktest.ts等がレースごとに
+      // 数十件のクエリを一斉発行した際、プール枯渇でconnect()待ちがタイムアウトし
+      // スクリプト全体が落ちる事象が複数回発生した。接続先はNeonのpooler
+      // エンドポイント（PgBouncer）なので、ここを増やしてもNeon本体への実接続数は
+      // 別途プーリングされる。
+      max: 30,
     });
   }
   return pool;
