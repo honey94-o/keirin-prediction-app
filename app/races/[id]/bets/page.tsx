@@ -218,35 +218,47 @@ export default async function RaceBetsPage({
                     </span>
                   </div>
                   {occurrences.length > 0 && (
-                    <ul className="flex flex-col gap-0.5 pl-1 border-l-2 border-gray-100 ml-1.5 dark:border-gray-700">
-                      {occurrences.map((occ) => {
-                        const url = buildWinticketResultUrl({ jocd: occ.jocd, encp: occ.encp });
-                        // 過去レースのcar_numは今日の車番とは無関係（レースごとに振り直される）なので
-                        // 表示には使わず、選手名（snumで名寄せ）と着順だけを見せる。
-                        const memberSummary = [...occ.members]
-                          .sort((a, b) => (a.finishPos ?? 99) - (b.finishPos ?? 99))
-                          .map((m) => `${nameBySnum.get(m.snum) ?? m.snum}${m.finishPos != null ? m.finishPos + "着" : ""}`)
-                          .join(" ");
-                        return (
-                          <li key={occ.raceId} className="text-[11px] text-gray-400 dark:text-gray-500">
-                            {formatDateStr(occ.kaisaiDate)} {occ.keirinjoName}{occ.raceNo}R 同ライン: {memberSummary}
-                            {url && (
-                              <>
-                                {" "}
-                                <a
-                                  href={url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="underline text-[#0d5c3f] dark:text-emerald-400"
-                                >
-                                  WINTICKET
-                                </a>
-                              </>
-                            )}
+                    <details className="ml-1.5 group">
+                      <summary className="text-[11px] text-gray-400 cursor-pointer select-none pl-1 border-l-2 border-gray-100 dark:border-gray-700 dark:text-gray-500 marker:content-none [&::-webkit-details-marker]:hidden">
+                        <span className="inline-block w-3 text-center group-open:hidden">▶</span>
+                        <span className="hidden w-3 text-center group-open:inline-block">▼</span>
+                        {" "}過去{occurrences.length}回同ライン結成（直近{formatDateStr(occurrences[0].kaisaiDate)}）
+                      </summary>
+                      <ul className="flex flex-col gap-0.5 pl-1 border-l-2 border-gray-100 ml-1.5 mt-0.5 dark:border-gray-700">
+                        {occurrences.slice(0, 8).map((occ) => {
+                          const url = buildWinticketResultUrl({ jocd: occ.jocd, encp: occ.encp });
+                          // 過去レースのcar_numは今日の車番とは無関係（レースごとに振り直される）なので
+                          // 表示には使わず、選手名（snumで名寄せ）と着順だけを見せる。
+                          const memberSummary = [...occ.members]
+                            .sort((a, b) => (a.finishPos ?? 99) - (b.finishPos ?? 99))
+                            .map((m) => `${nameBySnum.get(m.snum) ?? m.snum}${m.finishPos != null ? m.finishPos + "着" : ""}`)
+                            .join(" ");
+                          return (
+                            <li key={occ.raceId} className="text-[11px] text-gray-400 dark:text-gray-500">
+                              {formatDateStr(occ.kaisaiDate)} {occ.keirinjoName}{occ.raceNo}R 同ライン: {memberSummary}
+                              {url && (
+                                <>
+                                  {" "}
+                                  <a
+                                    href={url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="underline text-[#0d5c3f] dark:text-emerald-400"
+                                  >
+                                    WINTICKET
+                                  </a>
+                                </>
+                              )}
+                            </li>
+                          );
+                        })}
+                        {occurrences.length > 8 && (
+                          <li className="text-[11px] text-gray-300 dark:text-gray-600">
+                            ほか{occurrences.length - 8}件（直近8件のみ表示）
                           </li>
-                        );
-                      })}
-                    </ul>
+                        )}
+                      </ul>
+                    </details>
                   )}
                 </div>
               );
