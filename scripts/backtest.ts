@@ -129,6 +129,11 @@ async function main() {
   // ガールズケイリンはラインが無く決まり方が違うため、既存の検証を汚染していないか
   // 確認する用の絞り込み（本番のdaily_picks/scenario_stats選定には使わない、比較専用）。
   const excludeGirls = process.argv.includes("--exclude-girls");
+  // 日付カットオフ修正後は全件（1万件超）を通すと数時間かかり、長時間の接続維持
+  // 自体がNeon側との接続不安定化のリスクを増やす（実際に複数回接続断で
+  // 落ちた）。直近N件だけに絞って素早く・確実に検証したい時に使う。
+  const limitArg = process.argv.find((a) => a.startsWith("--limit="));
+  const limit = limitArg ? Number(limitArg.split("=")[1]) : null;
 
   const db = getDb();
   const raceIdsResult = await db.execute(
@@ -140,8 +145,9 @@ async function main() {
      ORDER BY r.race_id`,
     jocds ?? []
   );
-  const raceIds = (raceIdsResult.rows as unknown as { race_id: number }[]).map((r) => r.race_id);
-  console.log(`結果が確定しているレース: ${raceIds.length}件\n`);
+  let raceIds = (raceIdsResult.rows as unknown as { race_id: number }[]).map((r) => r.race_id);
+  if (limit) raceIds = raceIds.slice(-limit); // 直近N件（race_id昇順の末尾）
+  console.log(`結果が確定しているレース: ${raceIds.length}件${limit ? `（直近${limit}件に絞り込み）` : ""}\n`);
 
   const scenarioStats = new Map<string, ScenarioStat>();
   const combined = { races: 0, hits: 0, stake: 0, payout: 0 };
@@ -206,7 +212,7 @@ async function main() {
     }
   }
 
-  if (!jocds && !excludeGirls) {
+  if (!jocds && !excludeGirls && !limit) {
     // 開催場・ガールズ除外などで絞り込んでいない（全レース対象の）実行結果だけを
     // キャッシュに保存する。絞り込んだ実行結果で上書きすると、買い目提案画面の
     // 実績表示が偏るため。
