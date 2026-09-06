@@ -23,6 +23,15 @@ import { VenueSwitcher, type VenueOption } from "../../../../components/VenueSwi
 import { BankKimariteCard } from "../../../../components/BankKimariteCard";
 import { buildWinticketResultUrl } from "../../../../lib/winticket";
 
+/** 配列から2要素の組み合わせを全て作る（3人ラインなら3ペア）。 */
+function pairCombinations<T>(arr: T[]): [T, T][] {
+  const out: [T, T][] = [];
+  for (let i = 0; i < arr.length; i++) {
+    for (let j = i + 1; j < arr.length; j++) out.push([arr[i], arr[j]]);
+  }
+  return out;
+}
+
 export default async function RaceBetsPage({
   params,
 }: {
@@ -217,49 +226,70 @@ export default async function RaceBetsPage({
                       {members.map((s) => s.entry.name).join("・")}
                     </span>
                   </div>
-                  {occurrences.length > 0 && (
-                    <details className="ml-1.5 group">
-                      <summary className="text-[11px] text-gray-400 cursor-pointer select-none pl-1 border-l-2 border-gray-100 dark:border-gray-700 dark:text-gray-500 marker:content-none [&::-webkit-details-marker]:hidden">
-                        <span className="inline-block w-3 text-center group-open:hidden">▶</span>
-                        <span className="hidden w-3 text-center group-open:inline-block">▼</span>
-                        {" "}過去{occurrences.length}回同ライン結成（直近{formatDateStr(occurrences[0].kaisaiDate)}）
-                      </summary>
-                      <ul className="flex flex-col gap-0.5 pl-1 border-l-2 border-gray-100 ml-1.5 mt-0.5 dark:border-gray-700">
-                        {occurrences.slice(0, 8).map((occ) => {
-                          const url = buildWinticketResultUrl({ jocd: occ.jocd, encp: occ.encp });
-                          // 過去レースのcar_numは今日の車番とは無関係（レースごとに振り直される）なので
-                          // 表示には使わず、選手名（snumで名寄せ）と着順だけを見せる。
-                          const memberSummary = [...occ.members]
-                            .sort((a, b) => (a.finishPos ?? 99) - (b.finishPos ?? 99))
-                            .map((m) => `${nameBySnum.get(m.snum) ?? m.snum}${m.finishPos != null ? m.finishPos + "着" : ""}`)
-                            .join(" ");
-                          return (
-                            <li key={occ.raceId} className="text-[11px] text-gray-400 dark:text-gray-500">
-                              {formatDateStr(occ.kaisaiDate)} {occ.keirinjoName}{occ.raceNo}R 同ライン: {memberSummary}
-                              {url && (
-                                <>
-                                  {" "}
-                                  <a
-                                    href={url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="underline text-[#0d5c3f] dark:text-emerald-400"
-                                  >
-                                    WINTICKET
-                                  </a>
-                                </>
-                              )}
+                  {pairCombinations(members.map((s) => s.entry.snum)).map(([snumA, snumB]) => {
+                    // このペアが両方揃って同ラインだった過去レースだけに絞り、
+                    // 着順を比べて「対戦成績」（お互いを負かした回数）を集計する。
+                    const relevant = occurrences.filter(
+                      (occ) =>
+                        occ.members.some((m) => m.snum === snumA) &&
+                        occ.members.some((m) => m.snum === snumB)
+                    );
+                    if (relevant.length === 0) return null;
+                    let winsA = 0;
+                    let winsB = 0;
+                    for (const occ of relevant) {
+                      const a = occ.members.find((m) => m.snum === snumA);
+                      const b = occ.members.find((m) => m.snum === snumB);
+                      if (a?.finishPos == null || b?.finishPos == null) continue;
+                      if (a.finishPos < b.finishPos) winsA++;
+                      else if (b.finishPos < a.finishPos) winsB++;
+                    }
+                    const nameA = nameBySnum.get(snumA) ?? snumA;
+                    const nameB = nameBySnum.get(snumB) ?? snumB;
+                    return (
+                      <details key={`${snumA}-${snumB}`} className="ml-1.5 group">
+                        <summary className="text-[11px] text-gray-400 cursor-pointer select-none pl-1 border-l-2 border-gray-100 dark:border-gray-700 dark:text-gray-500 marker:content-none [&::-webkit-details-marker]:hidden">
+                          <span className="inline-block w-3 text-center group-open:hidden">▶</span>
+                          <span className="hidden w-3 text-center group-open:inline-block">▼</span>
+                          {" "}対戦成績 {nameA} {winsA}-{winsB} {nameB}（同ライン{relevant.length}回）
+                        </summary>
+                        <ul className="flex flex-col gap-0.5 pl-1 border-l-2 border-gray-100 ml-1.5 mt-0.5 dark:border-gray-700">
+                          {relevant.slice(0, 8).map((occ) => {
+                            const url = buildWinticketResultUrl({ jocd: occ.jocd, encp: occ.encp });
+                            // 過去レースのcar_numは今日の車番とは無関係（レースごとに振り直される）なので
+                            // 表示には使わず、選手名（snumで名寄せ）と着順だけを見せる。
+                            const memberSummary = [...occ.members]
+                              .sort((a, b) => (a.finishPos ?? 99) - (b.finishPos ?? 99))
+                              .map((m) => `${nameBySnum.get(m.snum) ?? m.snum}${m.finishPos != null ? m.finishPos + "着" : ""}`)
+                              .join(" ");
+                            return (
+                              <li key={occ.raceId} className="text-[11px] text-gray-400 dark:text-gray-500">
+                                {formatDateStr(occ.kaisaiDate)} {occ.keirinjoName}{occ.raceNo}R 同ライン: {memberSummary}
+                                {url && (
+                                  <>
+                                    {" "}
+                                    <a
+                                      href={url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="underline text-[#0d5c3f] dark:text-emerald-400"
+                                    >
+                                      WINTICKET
+                                    </a>
+                                  </>
+                                )}
+                              </li>
+                            );
+                          })}
+                          {relevant.length > 8 && (
+                            <li className="text-[11px] text-gray-300 dark:text-gray-600">
+                              ほか{relevant.length - 8}件（直近8件のみ表示）
                             </li>
-                          );
-                        })}
-                        {occurrences.length > 8 && (
-                          <li className="text-[11px] text-gray-300 dark:text-gray-600">
-                            ほか{occurrences.length - 8}件（直近8件のみ表示）
-                          </li>
-                        )}
-                      </ul>
-                    </details>
-                  )}
+                          )}
+                        </ul>
+                      </details>
+                    );
+                  })}
                 </div>
               );
             })}
