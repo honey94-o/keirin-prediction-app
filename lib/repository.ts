@@ -10,6 +10,7 @@ import type {
   DailyPicksPerformance,
   EntryWithRacer,
   FavoriteRacerEntry,
+  LinePartnershipOccurrence,
   OddsRow,
   PositionWinRate,
   PredictionRow,
@@ -463,6 +464,70 @@ async function fetchRacerHistory(snum: string, beforeDate?: string): Promise<Rac
     args,
   });
   return result.rows as unknown as RacerHistoryRow[];
+}
+
+/**
+ * 指定した選手たち（同じレースの同じラインに今いるメンバー）が、過去に
+ * 同じline_group（隊列）を一緒に組んだことがあるレースを探す。
+ * scripts/diagnose-line-partnership-history.tsで「既存ペアを含むライン」の
+ * 統計的な効果自体はライン人数の交絡で説明できてしまい採用は見送ったが、
+ * 個別の顔合わせ履歴を見られること自体はユーザーから要望があったため
+ * 表示用データとして提供する（スコアリングには使わない）。
+ * entries/racesは自前スクレイピング開始（2026年4月〜）以降のデータのみで、
+ * それ以前の顔合わせは把握できない点に注意。
+ */
+export async function getLinePartnershipHistory(
+  snums: string[],
+  beforeDate: string
+): Promise<LinePartnershipOccurrence[]> {
+  if (snums.length < 2) return [];
+  const result = await getDb().execute({
+    sql: `SELECT e.race_id, ra.kaisai_date, ra.keirinjo_name, ra.race_no, ra.jocd, ra.encp,
+                 e.line_group, e.snum, e.car_num, r.finish_pos
+          FROM entries e
+          JOIN races ra ON ra.id = e.race_id
+          LEFT JOIN results r ON r.race_id = e.race_id AND r.car_num = e.car_num
+          WHERE e.snum IN (${snums.map(() => "?").join(",")})
+            AND ra.kaisai_date < ?
+            AND e.line_group IS NOT NULL
+          ORDER BY ra.kaisai_date DESC`,
+    args: [...snums, beforeDate],
+  });
+  const rows = result.rows as unknown as {
+    race_id: number;
+    kaisai_date: string;
+    keirinjo_name: string;
+    race_no: number;
+    jocd: string;
+    encp: string | null;
+    line_group: number;
+    snum: string;
+    car_num: number;
+    finish_pos: number | null;
+  }[];
+
+  const groups = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const key = `${r.race_id}:${r.line_group}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(r);
+  }
+
+  const occurrences: LinePartnershipOccurrence[] = [];
+  for (const groupRows of groups.values()) {
+    if (groupRows.length < 2) continue; // 対象選手がそのラインに2人以上揃っていた場合のみ
+    const first = groupRows[0];
+    occurrences.push({
+      raceId: first.race_id,
+      kaisaiDate: first.kaisai_date,
+      keirinjoName: first.keirinjo_name,
+      raceNo: first.race_no,
+      jocd: first.jocd,
+      encp: first.encp,
+      members: groupRows.map((r) => ({ snum: r.snum, carNum: r.car_num, finishPos: r.finish_pos })),
+    });
+  }
+  return occurrences.sort((a, b) => b.kaisaiDate.localeCompare(a.kaisaiDate));
 }
 
 /**

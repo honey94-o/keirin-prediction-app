@@ -72,6 +72,17 @@ export interface RacerHistoryRow {
   finish_positions: string; // カンマ区切り "6,5,5"
 }
 
+/** 過去に同じライン（隊列）を組んだことがあるレース1件ぶんの記録。 */
+export interface LinePartnershipOccurrence {
+  raceId: number;
+  kaisaiDate: string;
+  keirinjoName: string;
+  raceNo: number;
+  jocd: string;
+  encp: string | null;
+  members: { snum: string; carNum: number; finishPos: number | null }[];
+}
+
 export interface EntryWithRacer {
   entry_id: number;
   race_id: number;

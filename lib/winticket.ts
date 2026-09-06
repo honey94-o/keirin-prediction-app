@@ -56,7 +56,7 @@ export const JOCD_TO_WINTICKET_SLUG: Record<string, string> = {
  * スラッグが未判明の開催場（JOCD_TO_WINTICKET_SLUG参照）やencpが無い/形式不明な
  * レースではnullを返す。
  */
-export function buildWinticketResultUrl(race: RaceRow): string | null {
+export function buildWinticketResultUrl(race: Pick<RaceRow, "jocd" | "encp">): string | null {
   const slug = JOCD_TO_WINTICKET_SLUG[race.jocd];
   if (!slug) return null;
   const parsed = parseEncp(race.encp);

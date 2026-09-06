@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { predictRace } from "../../../../lib/predict";
 import { formatFormationNotation, pickNearestRace } from "../../../../lib/scoring";
-import { todayJstStr } from "../../../../lib/date";
+import { todayJstStr, formatDateStr } from "../../../../lib/date";
 import {
   getScenarioStats,
   getRacesForEvent,
@@ -13,6 +13,7 @@ import {
   getOddsForRace,
   resolveActualCombo,
   isRaceFinished,
+  getLinePartnershipHistory,
 } from "../../../../lib/repository";
 import { MarkBadge } from "../../../../components/MarkBadge";
 import { CarNumberBadge } from "../../../../components/CarNumberBadge";
@@ -88,6 +89,17 @@ export default async function RaceBetsPage({
       (a, b) =>
         (LINE_POSITION_ORDER[a.entry.line_position ?? ""] ?? 9) -
         (LINE_POSITION_ORDER[b.entry.line_position ?? ""] ?? 9)
+    )
+  );
+  // このラインのメンバーが過去に同じラインを組んだことがあるか（表示用、参考値。
+  // 統計的な効果自体はscripts/diagnose-line-partnership-history.tsで検証したが
+  // ライン人数の交絡で説明がつき採用見送り。個別の顔合わせ履歴を見たいという
+  // 要望に応えるための表示のみの機能）。
+  const linePartnerships = await Promise.all(
+    lines.map((members) =>
+      members.length >= 2
+        ? getLinePartnershipHistory(members.map((m) => m.entry.snum), race.kaisai_date)
+        : Promise.resolve([])
     )
   );
   const finishOrder = results
@@ -189,19 +201,56 @@ export default async function RaceBetsPage({
         <section className="bg-white rounded-lg shadow-sm p-3 mb-4 dark:bg-gray-800">
           <h2 className="text-xs font-semibold text-gray-500 mb-2 dark:text-gray-400">ライン構成</h2>
           <div className="flex flex-col gap-1.5">
-            {lines.map((members) => (
-              <div key={members[0].entry.line_group} className="flex items-center gap-1">
-                {members.map((s, i) => (
-                  <div key={s.entry.car_num} className="flex items-center gap-1">
-                    {i > 0 && <span className="text-gray-300 text-xs dark:text-gray-600">-</span>}
-                    <CarNumberBadge carNum={s.entry.car_num} size="sm" />
+            {lines.map((members, lineIdx) => {
+              const nameBySnum = new Map(members.map((s) => [s.entry.snum, s.entry.name]));
+              const occurrences = linePartnerships[lineIdx];
+              return (
+                <div key={members[0].entry.line_group} className="flex flex-col gap-0.5">
+                  <div className="flex items-center gap-1">
+                    {members.map((s, i) => (
+                      <div key={s.entry.car_num} className="flex items-center gap-1">
+                        {i > 0 && <span className="text-gray-300 text-xs dark:text-gray-600">-</span>}
+                        <CarNumberBadge carNum={s.entry.car_num} size="sm" />
+                      </div>
+                    ))}
+                    <span className="text-xs text-gray-400 ml-1 truncate dark:text-gray-500">
+                      {members.map((s) => s.entry.name).join("・")}
+                    </span>
                   </div>
-                ))}
-                <span className="text-xs text-gray-400 ml-1 truncate dark:text-gray-500">
-                  {members.map((s) => s.entry.name).join("・")}
-                </span>
-              </div>
-            ))}
+                  {occurrences.length > 0 && (
+                    <ul className="flex flex-col gap-0.5 pl-1 border-l-2 border-gray-100 ml-1.5 dark:border-gray-700">
+                      {occurrences.map((occ) => {
+                        const url = buildWinticketResultUrl({ jocd: occ.jocd, encp: occ.encp });
+                        // 過去レースのcar_numは今日の車番とは無関係（レースごとに振り直される）なので
+                        // 表示には使わず、選手名（snumで名寄せ）と着順だけを見せる。
+                        const memberSummary = [...occ.members]
+                          .sort((a, b) => (a.finishPos ?? 99) - (b.finishPos ?? 99))
+                          .map((m) => `${nameBySnum.get(m.snum) ?? m.snum}${m.finishPos != null ? m.finishPos + "着" : ""}`)
+                          .join(" ");
+                        return (
+                          <li key={occ.raceId} className="text-[11px] text-gray-400 dark:text-gray-500">
+                            {formatDateStr(occ.kaisaiDate)} {occ.keirinjoName}{occ.raceNo}R 同ライン: {memberSummary}
+                            {url && (
+                              <>
+                                {" "}
+                                <a
+                                  href={url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="underline text-[#0d5c3f] dark:text-emerald-400"
+                                >
+                                  WINTICKET
+                                </a>
+                              </>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              );
+            })}
             {soloEntries.length > 0 && (
               <div className="flex items-center gap-1.5 pt-1 border-t border-gray-100 dark:border-gray-700">
                 <span className="text-xs text-gray-400 shrink-0 dark:text-gray-500">単騎</span>
