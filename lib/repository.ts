@@ -999,8 +999,14 @@ export async function saveBarikataPicks(
   );
 }
 
-/** 指定日のバリカタピック（margin降順、既定で最大3件）。 */
-export async function getBarikataPicks(kaisaiDate: string, limit = 3): Promise<BarikataPickRow[]> {
+/**
+ * 指定日のバリカタピック（margin降順）。件数上限は元々UI都合の3件だったが、
+ * diagnose-barikata.ts/-line.tsの検証（的中率32.7%・回収率約140%）自体は
+ * 1日あたりの件数制限なしに「margin>=8かつ同ライン」を満たす全レースを対象に
+ * 計算していたため、条件を満たす日は増えても構わない（scripts/barikata-picks.ts
+ * 参照）。100は暴走防止の安全弁で、実質的には無制限に近い。
+ */
+export async function getBarikataPicks(kaisaiDate: string, limit = 100): Promise<BarikataPickRow[]> {
   const result = await getDb().execute({
     sql: `SELECT race_id, kaisai_date, jocd, keirinjo_name, race_no, start_time, margin, combo,
                  honmei_car_num, honmei_name

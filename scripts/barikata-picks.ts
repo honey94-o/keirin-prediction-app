@@ -21,17 +21,18 @@ import { todayJstStr, addDaysToDateStr } from "../lib/date";
 
 /**
  * 「バリカタ」レース（scripts/diagnose-barikata.ts・-line.tsで検証済み）を
- * 1日最大3件選び、barikata_picksに保存する。ホーム画面「本日のバリカタ」用。
+ * 全件選び、barikata_picksに保存する。ホーム画面「本日のバリカタ」用。
  *
  * 条件: margin(◎-対抗のスコア差)>=BARIKATA_MIN_MARGIN かつ
  * 予想1-2-3位（総合スコア順）が同じライングループ。この条件のレースは
  * 3連単フォーメーションではなく単一の並び（予想1-2-3位そのまま、1点=100円）の
  * 的中率が32.7%（margin単体条件の約2倍）、的中時平均オッズ4.13倍、
- * 1点買いの回収率は約140%だった（検証時点、n=197件）。
- * 条件を満たす日が無ければ0件でもよい（無理に3件揃えない）。
+ * 1点買いの回収率は約140%だった（検証時点、n=197件）。この数値自体、
+ * 診断スクリプト側で1日あたりの件数上限を設けずに集計したものなので、
+ * 条件を満たすレースは何件あっても（0件でも）そのまま採用する
+ * （以前は表示都合で1日3件に絞っていたが、検証結果とは無関係な制約だった）。
  */
 const BARIKATA_MIN_MARGIN = 8;
-const BARIKATA_MAX_PER_DAY = 3;
 
 async function processDate(kaisaiDate: string): Promise<void> {
   const races = await getRacesByDate(kaisaiDate);
@@ -75,7 +76,7 @@ async function processDate(kaisaiDate: string): Promise<void> {
     })
     .filter((p): p is NonNullable<typeof p> => p != null);
 
-  const picks = [...candidates].sort((a, b) => b.margin - a.margin).slice(0, BARIKATA_MAX_PER_DAY);
+  const picks = [...candidates].sort((a, b) => b.margin - a.margin);
 
   await saveBarikataPicks(picks);
   console.log(`  条件を満たすレース: ${candidates.length}件 → 保存: ${picks.length}件`);
