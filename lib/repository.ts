@@ -10,6 +10,7 @@ import type {
   DailyPicksPerformance,
   EntryWithRacer,
   FavoriteRacerEntry,
+  GirlsAgariAbility,
   LinePartnershipOccurrence,
   OddsRow,
   PositionWinRate,
@@ -38,6 +39,7 @@ const venueKimariteRankCache = new Map<string, Promise<VenueKimariteRank | null>
 const racerHistoryCache = new Map<string, Promise<RacerHistoryRow[]>>();
 const positionWinRatesCache = new Map<string, Promise<PositionWinRate[]>>();
 const soloWinRateCache = new Map<string, Promise<SoloWinRate | null>>();
+const girlsAgariAbilityCache = new Map<string, Promise<GirlsAgariAbility | null>>();
 const bankInfoCache = new Map<string, Promise<BankInfoRow | undefined>>();
 // getScoreWeights は引数を取らないので固定キーで1件だけ持つ。
 const scoreWeightsCache = new Map<string, Promise<ScoreWeights>>();
@@ -54,6 +56,7 @@ export function clearReadCache(): void {
   racerHistoryCache.clear();
   positionWinRatesCache.clear();
   soloWinRateCache.clear();
+  girlsAgariAbilityCache.clear();
   bankInfoCache.clear();
   scoreWeightsCache.clear();
 }
@@ -611,6 +614,48 @@ async function fetchSoloWinRate(snum: string, beforeDate?: string): Promise<Solo
   const row = result.rows[0] as unknown as { races: number; wins: number } | undefined;
   if (!row || row.races === 0) return null;
   return { races: row.races, wins: row.wins, winRate: (row.wins / row.races) * 100 };
+}
+
+/**
+ * ガールズケイリン選手の「レース内での相対的な上がりの速さ」の過去平均。
+ * scripts/diagnose-agari-personal-ability.tsで検証：地力（heikin_tokuten）上位
+ * 選手に限ると、この値が高い（速い）選手ほど実際の勝率も高い傾向が
+ * train/testホールドアウトで再現した（詳細はlib/scoring.tsのコメント参照）。
+ * 対象がL級選手（ガールズ）以外でも呼べるが、既存の会員でしか意味を持たない
+ * （男子は同じ検証で信号が確認できていない）。
+ */
+export async function getGirlsAgariAbility(
+  snum: string,
+  beforeDate?: string
+): Promise<GirlsAgariAbility | null> {
+  return memoized(girlsAgariAbilityCache, beforeDate ? `${snum}|${beforeDate}` : snum, () =>
+    fetchGirlsAgariAbility(snum, beforeDate)
+  );
+}
+
+async function fetchGirlsAgariAbility(
+  snum: string,
+  beforeDate?: string
+): Promise<GirlsAgariAbility | null> {
+  const dateFilter = beforeDate ? "AND ra.kaisai_date < ?" : "";
+  const result = await getDb().execute({
+    sql: `WITH race_agari AS (
+            SELECT r.race_id, r.snum, r.agari_time,
+                   COUNT(*) OVER (PARTITION BY r.race_id) AS field_size,
+                   RANK() OVER (PARTITION BY r.race_id ORDER BY r.agari_time ASC) AS speed_rank
+            FROM results r
+            JOIN races ra ON ra.id = r.race_id
+            WHERE r.agari_time IS NOT NULL ${dateFilter}
+          )
+          SELECT AVG((field_size - speed_rank)::float / NULLIF(field_size - 1, 0)) AS avg_rank_pct,
+                 COUNT(*) AS races
+          FROM race_agari
+          WHERE snum = ? AND field_size >= 2`,
+    args: beforeDate ? [beforeDate, snum] : [snum],
+  });
+  const row = result.rows[0] as unknown as { avg_rank_pct: number | null; races: number } | undefined;
+  if (!row || row.races === 0 || row.avg_rank_pct == null) return null;
+  return { avgRankPct: row.avg_rank_pct, races: row.races };
 }
 
 const DEFAULT_WEIGHTS: ScoreWeights = { line: 0.35, kyakushitsu: 0.35, stats: 0.3 };

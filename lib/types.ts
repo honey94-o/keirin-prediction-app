@@ -186,6 +186,15 @@ export interface SoloWinRate {
   winRate: number; // 0-100（1着率）
 }
 
+/**
+ * ガールズケイリン選手の「レース内での相対的な上がりの速さ」の過去平均。
+ * scripts/diagnose-agari-personal-ability.ts参照。avgRankPctは0〜1（1が最速）。
+ */
+export interface GirlsAgariAbility {
+  avgRankPct: number;
+  races: number;
+}
+
 export interface PositionWinRate {
   line_position: string;
   races: number;

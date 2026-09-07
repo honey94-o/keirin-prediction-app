@@ -143,6 +143,17 @@ async function main() {
 
   console.log(`過去${MIN_N}件以上のagari実績を持つ出走（判定対象）: ${samples.length}件\n`);
 
+  const dates = [...new Set(samples.map((d) => d.kaisaiDate))].sort();
+  const splitIdx = Math.floor(dates.length * (2 / 3));
+  const splitDate = dates[splitIdx];
+  function lowHighRate(data: Sample[]) {
+    const low = data.filter((d) => d.priorAvg < CUTS[0]);
+    const high = data.filter((d) => d.priorAvg >= CUTS[1]);
+    const rate = (arr: Sample[]) =>
+      arr.length > 0 ? ((arr.filter((d) => d.win).length / arr.length) * 100).toFixed(1) : "-";
+    return `低${rate(low)}%(n=${low.length}) / 高${rate(high)}%(n=${high.length})`;
+  }
+
   function printBuckets(data: Sample[], outcome: "win" | "top3", label: string, cuts: number[]) {
     const buckets = { 低: [] as Sample[], 中: [] as Sample[], 高: [] as Sample[] };
     for (const d of data) buckets[bucketLabel(d.priorAvg, cuts) as "低" | "中" | "高"].push(d);
@@ -187,6 +198,8 @@ async function main() {
   const girlsWithHeikin = girlsSamples.filter((d) => d.heikin != null) as (Sample & { heikin: number })[];
   const sortedGirlsHeikin = [...girlsWithHeikin].sort((a, b) => a.heikin - b.heikin);
   const gTertileSize = Math.floor(sortedGirlsHeikin.length / 3);
+  const girlsHighHeikinCutoff = sortedGirlsHeikin[gTertileSize * 2]?.heikin;
+  console.log(`(ガールズ地力上位1/3のheikin_tokuten境界: ${girlsHighHeikinCutoff?.toFixed(2)}以上)\n`);
   const girlsTertiles = [
     { label: "[ガールズ]地力下位1/3", data: sortedGirlsHeikin.slice(0, gTertileSize) },
     { label: "[ガールズ]地力中位1/3", data: sortedGirlsHeikin.slice(gTertileSize, gTertileSize * 2) },
@@ -197,21 +210,18 @@ async function main() {
   }
   console.log();
 
+  // 実装候補の閾値（ガールズ×地力上位のみ）が実際にtrain/testで再現するか確認
+  const girlsHighTertile = sortedGirlsHeikin.slice(gTertileSize * 2);
+  console.log("■ ホールドアウト検証（[ガールズ×地力上位1/3]内の低バケット vs 高バケット単勝的中率）:");
+  const ghTrain = girlsHighTertile.filter((d) => d.kaisaiDate < splitDate);
+  const ghTest = girlsHighTertile.filter((d) => d.kaisaiDate >= splitDate);
+  console.log(`  [train] ${lowHighRate(ghTrain)}`);
+  console.log(`  [test]  ${lowHighRate(ghTest)}`);
+
   console.log("■ ホールドアウト検証（低バケット vs 高バケットの単勝的中率、全体）:");
-  const dates = [...new Set(samples.map((d) => d.kaisaiDate))].sort();
-  const splitIdx = Math.floor(dates.length * (2 / 3));
-  const splitDate = dates[splitIdx];
   const trainData = samples.filter((d) => d.kaisaiDate < splitDate);
   const testData = samples.filter((d) => d.kaisaiDate >= splitDate);
   console.log(`  train=${dates[0]}〜${dates[splitIdx - 1]}、test=${splitDate}〜${dates[dates.length - 1]}`);
-
-  function lowHighRate(data: Sample[]) {
-    const low = data.filter((d) => d.priorAvg < CUTS[0]);
-    const high = data.filter((d) => d.priorAvg >= CUTS[1]);
-    const rate = (arr: Sample[]) =>
-      arr.length > 0 ? ((arr.filter((d) => d.win).length / arr.length) * 100).toFixed(1) : "-";
-    return `低${rate(low)}%(n=${low.length}) / 高${rate(high)}%(n=${high.length})`;
-  }
   console.log(`  [train] ${lowHighRate(trainData)}`);
   console.log(`  [test]  ${lowHighRate(testData)}`);
 

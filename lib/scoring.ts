@@ -3,6 +3,7 @@ import type {
   BankInfoRow,
   BetSuggestion,
   EntryWithRacer,
+  GirlsAgariAbility,
   PositionWinRate,
   RaceRow,
   RaceScenario,
@@ -877,6 +878,50 @@ function calculateSoloPersonalAdjustment(
   return 0;
 }
 
+/**
+ * ガールズケイリンはライン（隊列）が無く既存のライン依存シグナルが丸ごと
+ * 使えない（isGirlsRaceのコメント参照）ぶん、上がりタイムのような
+ * ライン非依存の実測個人データが「代わりに効く」可能性があるというユーザー
+ * 仮説を受けてscripts/diagnose-agari-personal-ability.tsで検証。
+ * 「レース内での相対的な上がりの速さ」の過去平均は、母集団全体・男子では
+ * 交絡（先頭が余裕を持って流すと上がりが遅く出る等）でノイズだったが、
+ * ガールズ×heikin_tokuten上位1/3（境界53.09）に絞ると単勝的中率が
+ * 低26.2%→中33.8%→高44.8%と明確な階段状になり、この上位1/3だけで
+ * train/testホールドアウトしても再現した（train 低28.4%→高43.6%、
+ * test 低21.9%→高46.6%、2026-09-07時点の全履歴で確認）。
+ * サンプルが小さめ（高バケットn=505）なため加点幅はSOLO_STRONG_BONUSより
+ * 控えめ（±20）にしてbacktest.ts --girls-onlyでA/B検証（976レース、
+ * 2026-09-07）：◎的中率はONの方が微減（67.5%→68.6%、n=976で標準誤差
+ * 約1.5pt相当のためこの程度の差は誤差の範囲）、本命回収率はONの方が
+ * 微増（127.3%→123.5%）と、指標間で方向が割れ、しかも過去にSOLO_STRONG_BONUS/
+ * LINE_RANK_BONUSが同じ「的中率横ばい・回収率微増」という見え方で採用され
+ * 結局リークだったと判明した前例があるため、この程度の差では採用の根拠として
+ * 弱いと判断。単独の診断（train/testホールドアウト）は非常に明確だったが、
+ * 実際のスコア統合後は他の要因に埋もれて効果がはっきりしない
+ * ——過去に繰り返し確認されている「強い単独信号でもブレンドすると
+ * 効果が不明瞭になる」パターンと一致。0のまま無効化し、判定用の
+ * データ収集基盤（getGirlsAgariAbility）とロジックは今後サンプルが
+ * 増えた時の再検証用に残す。
+ */
+const GIRLS_AGARI_HEIKIN_THRESHOLD = 53; // 診断の「地力上位1/3」境界(53.09)に合わせる
+const GIRLS_AGARI_MIN_RACES = 5; // 診断のMIN_Nに合わせる
+const GIRLS_AGARI_STRONG_CUT = 0.6; // 診断のCUTS[1]に合わせる（agariRankPctは1が最速）
+const GIRLS_AGARI_WEAK_CUT = 0.4; // 診断のCUTS[0]に合わせる
+const GIRLS_AGARI_BONUS = 0;
+const GIRLS_AGARI_PENALTY = 0;
+
+function calculateGirlsAgariAdjustment(
+  entry: EntryWithRacer,
+  agariAbility: GirlsAgariAbility | null | undefined
+): number {
+  if (!entry.class_rank?.startsWith("L")) return 0; // ガールズ限定
+  if (entry.heikin_tokuten == null || entry.heikin_tokuten < GIRLS_AGARI_HEIKIN_THRESHOLD) return 0;
+  if (!agariAbility || agariAbility.races < GIRLS_AGARI_MIN_RACES) return 0;
+  if (agariAbility.avgRankPct >= GIRLS_AGARI_STRONG_CUT) return GIRLS_AGARI_BONUS;
+  if (agariAbility.avgRankPct < GIRLS_AGARI_WEAK_CUT) return -GIRLS_AGARI_PENALTY;
+  return 0;
+}
+
 const LEAD_POSITION_WEIGHT = 0;
 // 直近成績（calculateRecentFormScore）は不採用：diagnose-recent-form.tsの相関は
 // heikin_tokuten三分位で層別しても消えない強い信号だったが、weight=0.15でbacktest
@@ -898,7 +943,8 @@ export function calculateStatsScore(
   venueKimarite?: VenueKimariteRates | null,
   allEntries?: EntryWithRacer[],
   shukai?: number | null,
-  soloWinRate?: SoloWinRate | null
+  soloWinRate?: SoloWinRate | null,
+  girlsAgariAbility?: GirlsAgariAbility | null
 ): ScoreBreakdown {
   const bankResult = calculateBankFitScore(entry, venueKimarite, bankInfo);
   const intervalResult = calculateIntervalScore(kaisaiDate, history);
@@ -914,6 +960,7 @@ export function calculateStatsScore(
   const bantesuBonus = calculateBantesuPersonalStrengthBonus(entry, positionWinRates);
   const shukaiAdjustment = calculateShukaiAdjustment(entry, shukai);
   const soloAdjustment = calculateSoloPersonalAdjustment(entry, allEntries ?? [entry], soloWinRate);
+  const girlsAgariAdjustment = calculateGirlsAgariAdjustment(entry, girlsAgariAbility);
 
   // 選手個人の決まり手適性(personalMoveResult)は重み0.1/0.2の両方で検証したが、
   // 重みを上げるほど◎的中率が単調に悪化した（重み0:42.3%→0.1:41.7%→0.2:40.5%、
@@ -946,7 +993,8 @@ export function calculateStatsScore(
       jimotoBonus +
       bantesuBonus +
       shukaiAdjustment +
-      soloAdjustment
+      soloAdjustment +
+      girlsAgariAdjustment
   );
 
   return {
@@ -976,6 +1024,9 @@ export function calculateStatsScore(
       単騎個人成績調整: soloAdjustment !== 0
         ? `${soloAdjustment > 0 ? "+" : ""}${soloAdjustment}（単騎時勝率${soloWinRate?.winRate.toFixed(0)}%・${soloWinRate?.races}走）`
         : "該当なし",
+      ガールズ上がり調整: girlsAgariAdjustment !== 0
+        ? `${girlsAgariAdjustment > 0 ? "+" : ""}${girlsAgariAdjustment}（相対上がり平均${(girlsAgariAbility!.avgRankPct * 100).toFixed(0)}%・${girlsAgariAbility!.races}走）`
+        : "該当なし",
       注記: "オッズは意図的に不使用。天候はレース終了後にしか取得できないため未反映",
     },
   };
@@ -994,7 +1045,8 @@ export function scoreRace(
   positionWinRatesBySnum: Record<string, PositionWinRate[]>,
   venueKimarite?: VenueKimariteRates | null,
   shukai?: number | null,
-  soloWinRateBySnum?: Record<string, SoloWinRate | null>
+  soloWinRateBySnum?: Record<string, SoloWinRate | null>,
+  girlsAgariAbilityBySnum?: Record<string, GirlsAgariAbility | null>
 ): ScoredEntry[] {
   const scored = entries.map((entry) => {
     const lineScore = calculateLineScore(entry, entries);
@@ -1010,7 +1062,8 @@ export function scoreRace(
       venueKimarite,
       entries,
       shukai,
-      soloWinRateBySnum?.[entry.snum] ?? null
+      soloWinRateBySnum?.[entry.snum] ?? null,
+      girlsAgariAbilityBySnum?.[entry.snum] ?? null
     );
     const totalScore =
       lineScore.score * weights.line +

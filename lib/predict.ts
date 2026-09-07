@@ -6,6 +6,7 @@ import {
   getRacerHistory,
   getPositionWinRates,
   getSoloWinRate,
+  getGirlsAgariAbility,
   getVenueKimariteRatesWithFallback,
 } from "./repository";
 import { scoreRace, generateBetSuggestions, generateScenarios, HIGH_CONFIDENCE_MARGIN } from "./scoring";
@@ -68,6 +69,16 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
   );
   const soloWinRateBySnum = Object.fromEntries(soloEntries);
 
+  // ガールズ（L級）以外はcalculateGirlsAgariAdjustmentが即0を返すため、
+  // クエリ自体を発行しない（日付カットオフ修正後はレースごとのクエリ数増加が
+  // DB接続プールへの負荷に直結するため、L級以外まで無条件に呼ばない）。
+  const girlsAgariEntries = await Promise.all(
+    entries
+      .filter((e) => e.class_rank?.startsWith("L"))
+      .map(async (e) => [e.snum, await getGirlsAgariAbility(e.snum, race.kaisai_date)] as const)
+  );
+  const girlsAgariAbilityBySnum = Object.fromEntries(girlsAgariEntries);
+
   const scored = scoreRace(
     entries,
     weights,
@@ -79,7 +90,8 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
     positionWinRatesBySnum,
     venueKimarite,
     race.shukai,
-    soloWinRateBySnum
+    soloWinRateBySnum,
+    girlsAgariAbilityBySnum
   );
   const scenarios = generateScenarios(scored, venueKimarite ?? bankInfo);
   const boxSuggestion = generateBetSuggestions(scored).find(

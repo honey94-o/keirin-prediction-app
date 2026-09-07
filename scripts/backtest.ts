@@ -129,6 +129,9 @@ async function main() {
   // ガールズケイリンはラインが無く決まり方が違うため、既存の検証を汚染していないか
   // 確認する用の絞り込み（本番のdaily_picks/scenario_stats選定には使わない、比較専用）。
   const excludeGirls = process.argv.includes("--exclude-girls");
+  // ガールズ限定のシグナル（GIRLS_AGARI調整等）をガールズレースだけに絞って
+  // 検証したい時用（全レース込みだと母数の大半が男子レースで薄まってしまう）。
+  const girlsOnly = process.argv.includes("--girls-only");
   // 日付カットオフ修正後は全件（1万件超）を通すと数時間かかり、長時間の接続維持
   // 自体がNeon側との接続不安定化のリスクを増やす（実際に複数回接続断で
   // 落ちた）。直近N件だけに絞って素早く・確実に検証したい時に使う。
@@ -142,6 +145,7 @@ async function main() {
      WHERE r.finish_pos IS NOT NULL
      ${jocds ? `AND ra.jocd IN (${jocds.map(() => "?").join(",")})` : ""}
      ${excludeGirls ? `AND NOT EXISTS (SELECT 1 FROM entries e JOIN racers rc ON rc.snum = e.snum WHERE e.race_id = r.race_id AND rc.class_rank LIKE 'L%')` : ""}
+     ${girlsOnly ? `AND EXISTS (SELECT 1 FROM entries e JOIN racers rc ON rc.snum = e.snum WHERE e.race_id = r.race_id AND rc.class_rank LIKE 'L%')` : ""}
      ORDER BY r.race_id`,
     jocds ?? []
   );
@@ -212,7 +216,7 @@ async function main() {
     }
   }
 
-  if (!jocds && !excludeGirls && !limit) {
+  if (!jocds && !excludeGirls && !girlsOnly && !limit) {
     // 開催場・ガールズ除外などで絞り込んでいない（全レース対象の）実行結果だけを
     // キャッシュに保存する。絞り込んだ実行結果で上書きすると、買い目提案画面の
     // 実績表示が偏るため。
