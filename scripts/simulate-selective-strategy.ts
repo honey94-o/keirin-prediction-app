@@ -44,18 +44,21 @@ interface RaceRecord {
   hit: boolean;
 }
 
-async function loadAllRaceRecords(): Promise<RaceRecord[]> {
+async function loadAllRaceRecords(limit: number | null): Promise<RaceRecord[]> {
   const db = getDb();
   const raceRows = await db.execute(`
     SELECT ra.id, ra.kaisai_date FROM races ra
     JOIN results res ON res.race_id = ra.id AND res.finish_pos = 1
     ORDER BY ra.kaisai_date, ra.id
   `);
-  const races = raceRows.rows as unknown as { id: number; kaisai_date: string }[];
-  console.log(`対象レース: ${races.length}件`);
+  let races = raceRows.rows as unknown as { id: number; kaisai_date: string }[];
+  if (limit) races = races.slice(-limit); // 直近N件（kaisai_date, id昇順の末尾）
+  console.log(`対象レース: ${races.length}件${limit ? `（直近${limit}件に絞り込み）` : ""}`);
 
   const records: RaceRecord[] = [];
-  const BATCH = 60;
+  // 日付カットオフ修正後はレースごとのクエリ数が増え、大きいBATCHだとDB接続
+  // プールが枯渇しやすい（backtest.tsで複数回再現、CONCURRENCY=5に下げて解決）。
+  const BATCH = 5;
   for (let i = 0; i < races.length; i += BATCH) {
     const batch = races.slice(i, i + BATCH);
     const results = await Promise.all(
@@ -173,11 +176,46 @@ function rollingWindowStats(
   };
 }
 
+/**
+ * 30日ローリング窓は互いに大きく重なり合う（隣接する窓はほぼ同じ日の集合）ため、
+ * 「窓の数」ほど独立した検証にはなっていない。ユーザー指摘を受けて、期間を
+ * 前半/後半にきっちり2分するtrain/testホールドアウトも別途出す
+ * （lib/scoring.ts等の他の検証で使っているのと同じ手法）。
+ */
+function twoPeriodSplit(
+  allDates: string[],
+  dailyStake: Map<string, number>,
+  dailyPayout: Map<string, number>
+): { trainRoi: number; testRoi: number; splitDate: string } {
+  const splitIdx = Math.floor(allDates.length / 2);
+  const splitDate = allDates[splitIdx];
+  const sumRoi = (dates: string[]) => {
+    let stake = 0;
+    let payout = 0;
+    for (const d of dates) {
+      stake += dailyStake.get(d) ?? 0;
+      payout += dailyPayout.get(d) ?? 0;
+    }
+    return stake > 0 ? (payout / stake) * 100 : NaN;
+  };
+  return {
+    trainRoi: sumRoi(allDates.slice(0, splitIdx)),
+    testRoi: sumRoi(allDates.slice(splitIdx)),
+    splitDate,
+  };
+}
+
 async function main() {
   // 同じ選手・開催場の集計をレースごとに引き直すのを防ぐ（Turso の読取行数削減）。
   enableReadCache();
 
-  const records = await loadAllRaceRecords();
+  // 日付カットオフ修正後は全件（1万件超）を通すと数時間かかり、長時間の接続維持
+  // 自体がNeon側との接続不安定化のリスクを増やす（実際に複数回接続断で
+  // 落ちた）。直近N件だけに絞って素早く・確実に検証したい時に使う。
+  const limitArg = process.argv.find((a) => a.startsWith("--limit="));
+  const limit = limitArg ? Number(limitArg.split("=")[1]) : null;
+
+  const records = await loadAllRaceRecords(limit);
   console.log(`\npredictRace成功: ${records.length}件`);
 
   const allDates = [...new Set(records.map((r) => r.date))].sort();
@@ -196,10 +234,12 @@ async function main() {
           ? [...dailyCount.values()].reduce((a, b) => a + b, 0) / activeDays
           : 0;
       const stats = rollingWindowStats(allDates, dailyStake, dailyPayout, 30);
+      const split = twoPeriodSplit(allDates, dailyStake, dailyPayout);
       console.log(
         `margin>=${minMargin} | top${topK} | ${avgCount.toFixed(1)}件/日(稼働${activeDays}日) | ` +
           `${stats.overallRoi.toFixed(1)}% | 窓平均${stats.avgRoi.toFixed(1)}% 最小${stats.minRoi.toFixed(1)}% 最大${stats.maxRoi.toFixed(1)}% | ` +
-          `${stats.windows > 0 ? ((stats.above100 / stats.windows) * 100).toFixed(1) : "-"}% (${stats.above100}/${stats.windows}窓)`
+          `${stats.windows > 0 ? ((stats.above100 / stats.windows) * 100).toFixed(1) : "-"}% (${stats.above100}/${stats.windows}窓) | ` +
+          `前半${split.trainRoi.toFixed(1)}%/後半${split.testRoi.toFixed(1)}%`
       );
     }
   }

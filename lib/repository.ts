@@ -20,6 +20,7 @@ import type {
   RacerHistoryRow,
   RacerRow,
   ResultRow,
+  ScenarioRankStatsRow,
   ScenarioStatsRow,
   ScoredEntry,
   ScoreWeights,
@@ -924,6 +925,55 @@ export async function saveScenarioStats(
   await db.batch(
     stats.map((s) => ({ sql, args: [s.label, s.races, s.hits, s.stakeYen, s.payoutYen] }))
   );
+}
+
+/**
+ * 本命以外のシナリオのlikelyRank別実績を保存する。scripts/backtest.tsから呼ぶ。
+ * db/schema.sqlのscenario_rank_stats参照。
+ */
+export async function saveScenarioRankStats(
+  stats: { likelyRank: number; races: number; hits: number; stakeYen: number; payoutYen: number }[]
+): Promise<void> {
+  const db = getDb();
+  const sql = `INSERT INTO scenario_rank_stats (likely_rank, races, hits, stake_yen, payout_yen, updated_at)
+               VALUES (?,?,?,?,?,datetime('now'))
+               ON CONFLICT(likely_rank) DO UPDATE SET
+                 races=excluded.races, hits=excluded.hits, stake_yen=excluded.stake_yen,
+                 payout_yen=excluded.payout_yen, updated_at=datetime('now')`;
+  await db.batch(
+    stats.map((s) => ({ sql, args: [s.likelyRank, s.races, s.hits, s.stakeYen, s.payoutYen] }))
+  );
+}
+
+/**
+ * 展開シナリオのlikelyRank別バックテスト実績（本命以外）を取得する。
+ * 買い目提案画面で「このレースでは本命に次ぐ有力な展開」等の説明文を
+ * 実際の実績値で裏付けるのに使う（scripts/diagnose-scenario-condition.ts参照）。
+ */
+export async function getScenarioRankStats(): Promise<Record<number, ScenarioRankStatsRow>> {
+  const result = await getDb().execute(
+    "SELECT likely_rank, races, hits, stake_yen, payout_yen FROM scenario_rank_stats"
+  );
+  const rows = result.rows as unknown as {
+    likely_rank: number;
+    races: number;
+    hits: number;
+    stake_yen: number;
+    payout_yen: number;
+  }[];
+  const map: Record<number, ScenarioRankStatsRow> = {};
+  for (const r of rows) {
+    map[r.likely_rank] = {
+      likelyRank: r.likely_rank,
+      races: r.races,
+      hits: r.hits,
+      stakeYen: r.stake_yen,
+      payoutYen: r.payout_yen,
+      hitRate: r.races > 0 ? (r.hits / r.races) * 100 : 0,
+      roi: r.stake_yen > 0 ? (r.payout_yen / r.stake_yen) * 100 : null,
+    };
+  }
+  return map;
 }
 
 /**

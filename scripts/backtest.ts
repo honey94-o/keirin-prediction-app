@@ -23,6 +23,7 @@ import {
   getResultsForRace,
   getOddsForRace,
   saveScenarioStats,
+  saveScenarioRankStats,
   enableReadCache,
 } from "../lib/repository";
 
@@ -37,7 +38,7 @@ interface RaceOutcome {
   skipped: boolean;
   honmeiWin: boolean;
   honmeiTop3: boolean;
-  scenarioResults: { label: string; stake: number; hit: boolean; payout: number }[];
+  scenarioResults: { label: string; likelyRank: number; stake: number; hit: boolean; payout: number }[];
   hasScenarios: boolean;
   combinedHit: boolean;
   hasBox: boolean;
@@ -95,7 +96,7 @@ async function processRace(raceId: number): Promise<RaceOutcome> {
     const stake = 100 * scenario.formation.combinations.length;
     const hit = scenario.formation.combinations.includes(actualCombo);
     const payout = hit && hitOdds != null ? 100 * hitOdds : 0;
-    return { label: scenario.label, stake, hit, payout };
+    return { label: scenario.label, likelyRank: scenario.likelyRank, stake, hit, payout };
   });
 
   const hasScenarios = scenarios.length > 0;
@@ -154,6 +155,9 @@ async function main() {
   console.log(`結果が確定しているレース: ${raceIds.length}件${limit ? `（直近${limit}件に絞り込み）` : ""}\n`);
 
   const scenarioStats = new Map<string, ScenarioStat>();
+  // 本命以外のシナリオのlikelyRank別実績（scripts/diagnose-scenario-condition.tsで
+  // 検証済みの、レースごとの状況に応じた「おすすめ」に使う集計）。
+  const rankStats = new Map<number, ScenarioStat>();
   const combined = { races: 0, hits: 0, stake: 0, payout: 0 };
   const box = { races: 0, hits: 0 };
   let honmeiWinHits = 0;
@@ -202,6 +206,15 @@ async function main() {
         stat.payout += sr.payout;
         scenarioStats.set(sr.label, stat);
 
+        if (sr.label !== "本命") {
+          const rstat = rankStats.get(sr.likelyRank) ?? { races: 0, hits: 0, stake: 0, payout: 0 };
+          rstat.races++;
+          if (sr.hit) rstat.hits++;
+          rstat.stake += sr.stake;
+          rstat.payout += sr.payout;
+          rankStats.set(sr.likelyRank, rstat);
+        }
+
         combined.stake += sr.stake;
         combined.payout += sr.payout;
       }
@@ -229,7 +242,24 @@ async function main() {
         payoutYen: stat.payout,
       }))
     );
-    console.log("シナリオ別実績を scenario_stats テーブルに保存しました。\n");
+    await saveScenarioRankStats(
+      [...rankStats.entries()].map(([likelyRank, stat]) => ({
+        likelyRank,
+        races: stat.races,
+        hits: stat.hits,
+        stakeYen: stat.stake,
+        payoutYen: stat.payout,
+      }))
+    );
+    console.log("シナリオ別実績を scenario_stats・scenario_rank_stats テーブルに保存しました。\n");
+
+    console.log("本命以外のシナリオ・likelyRank別実績:");
+    for (const [rank, stat] of [...rankStats.entries()].sort((a, b) => a[0] - b[0])) {
+      const hitRate = ((stat.hits / stat.races) * 100).toFixed(1);
+      const roi = stat.stake > 0 ? ((stat.payout / stat.stake) * 100).toFixed(1) : "-";
+      console.log(`  likelyRank=${rank}: 的中率${hitRate}% (${stat.hits}/${stat.races}) 回収率${roi}%`);
+    }
+    console.log();
   }
 
   console.log(`◎（本命軸）単勝的中率: ${honmeiTotal > 0 ? ((honmeiWinHits / honmeiTotal) * 100).toFixed(1) : "-"}% (${honmeiWinHits}/${honmeiTotal})`);

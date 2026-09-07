@@ -44,11 +44,16 @@ async function main() {
     JOIN results res ON res.race_id = ra.id AND res.finish_pos = 1
     ORDER BY ra.kaisai_date, ra.id
   `);
-  const races = raceRows.rows as unknown as { id: number }[];
-  console.log(`対象レース: ${races.length}件`);
+  let races = raceRows.rows as unknown as { id: number }[];
+  const limitArg = process.argv.find((a) => a.startsWith("--limit="));
+  const limit = limitArg ? Number(limitArg.split("=")[1]) : null;
+  if (limit) races = races.slice(-limit); // 直近N件（現行スコアリングでの再較正には直近データの方が適切）
+  console.log(`対象レース: ${races.length}件${limit ? `（直近${limit}件に絞り込み）` : ""}`);
 
   const records: Rec[] = [];
-  const BATCH = 60;
+  // 日付カットオフ修正後はレースごとのクエリ数が増え、大きいBATCHだとDB接続
+  // プールが枯渇しやすい（backtest.tsで複数回再現、CONCURRENCY=5に下げて解決）。
+  const BATCH = 5;
   for (let i = 0; i < races.length; i += BATCH) {
     const batch = races.slice(i, i + BATCH);
     const results = await Promise.all(
@@ -129,6 +134,20 @@ async function main() {
     );
     console.log(
       `  margin>=${minMargin} かつ同ライン: ${recs.length}件中、的中かつ2倍台前半: ${barikataHits.length}件 (${recs.length > 0 ? ((barikataHits.length / recs.length) * 100).toFixed(1) : "-"}%)`
+    );
+  }
+
+  // barikata-picks.tsが実際に使う指標（単一の並び1点買い＝100円）に合わせた
+  // 的中率・回収率。BARIKATA_MIN_MARGIN(=8)が現行スコアリングでもまだ妥当か判断する用。
+  console.log("\n■ 累積：単一並び1点買いの的中率・回収率（margin下限 × 同ライン限定）:");
+  for (const minMargin of [6, 8, 10, 12, 15]) {
+    const recs = records.filter((r) => r.margin >= minMargin && r.sameLine);
+    const hits = recs.filter((r) => r.hit);
+    const stake = recs.length * 100;
+    const payout = hits.reduce((sum, r) => sum + (r.oddsWhenHit ?? 0) * 100, 0);
+    const roi = stake > 0 ? (payout / stake) * 100 : null;
+    console.log(
+      `  margin>=${minMargin} かつ同ライン: ${recs.length}件 的中率${recs.length > 0 ? ((hits.length / recs.length) * 100).toFixed(1) : "-"}% (${hits.length}/${recs.length}) 回収率${roi?.toFixed(1) ?? "-"}%`
     );
   }
 }

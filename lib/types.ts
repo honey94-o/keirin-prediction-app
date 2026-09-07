@@ -262,6 +262,20 @@ export interface ScenarioStatsRow {
   roi: number | null; // 0-100。stakeYenが0ならnull
 }
 
+/**
+ * 本命以外のシナリオのlikelyRank別実績。db/schema.sqlのscenario_rank_stats参照。
+ * ラベルをまたいで合算した値（3種のシナリオで個別に見ても同じ傾向だったため）。
+ */
+export interface ScenarioRankStatsRow {
+  likelyRank: number;
+  races: number;
+  hits: number;
+  stakeYen: number;
+  payoutYen: number;
+  hitRate: number;
+  roi: number | null;
+}
+
 export interface RaceResultSummary {
   race: RaceRow;
   entries: { car_num: number; name: string }[];

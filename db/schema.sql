@@ -177,6 +177,23 @@ CREATE TABLE IF NOT EXISTS scenario_stats (
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- 本命以外のシナリオ（逃げ粘り込み/まくり差し一撃/単騎一撃）の的中率を、
+-- RaceScenario.likelyRank（そのレースでの有力度順位。軸のスコアが本命に
+-- どれだけ肉薄しているか）別に集計する。scripts/diagnose-scenario-condition.tsで
+-- 検証：likelyRank=2は的中率9.6%、3は4.7%、4は1.5%と、train/testホールドアウトで
+-- ほぼ完全に再現する明確な階段状の信号だった（scenario_statsのラベル別・
+-- 全レース累計だけでは「本命が一番当たる」という当たり前の情報しか出せず、
+-- レースごとの状況に応じた「おすすめ」にならないというユーザー指摘を受けて追加）。
+-- ラベルはまたがず合算する（3種のシナリオで個別に見ても同じ傾向だったため）。
+CREATE TABLE IF NOT EXISTS scenario_rank_stats (
+    likely_rank INTEGER PRIMARY KEY, -- 2, 3, 4（本命=1は対象外）
+    races       INTEGER NOT NULL,
+    hits        INTEGER NOT NULL,
+    stake_yen   INTEGER NOT NULL,
+    payout_yen  REAL NOT NULL,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- 結果未確定（これから走る）レースの◎-対抗スコア差を事前計算してキャッシュする。
 -- ホーム画面の「本日の厳選レース」用。predictRaceは1レースあたりDBを20回近く
 -- 読むため、当日全レース分（最大94件/日）をリクエストの都度計算すると数秒〜十数秒

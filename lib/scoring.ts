@@ -8,7 +8,6 @@ import type {
   RaceRow,
   RaceScenario,
   RacerHistoryRow,
-  ScenarioStatsRow,
   ScoreBreakdown,
   ScoredEntry,
   ScoreWeights,
@@ -1207,53 +1206,6 @@ export function formatFormationNotation(combinations: string[]): string | null {
 
   const sortedJoin = (s: Set<number>) => [...s].sort((a, b) => a - b).join("");
   return `${axis}-${sortedJoin(seconds)}-${sortedJoin(thirds)}`;
-}
-
-export interface ScenarioComboOption {
-  labels: string[];
-  hits: number;
-  stakeYen: number;
-  payoutYen: number;
-  roi: number | null;
-}
-
-/**
- * このレースで実際に生成されたシナリオ（本命/逃げ粘り込み/まくり差し一撃/単騎一撃等）
- * のうち、どの組み合わせで買うと過去実績の回収率が一番良いかをランキングする。
- * scripts/backtest.tsの「シナリオの組み合わせ別回収率ランキング」（全レース対象の
- * ターミナル出力のみで、アプリ側には出していなかった）と同じロジック——
- * scenario_statsに保存済みのラベルごとのstake/payoutをそのまま合算するだけなので、
- * 新しい集計処理は不要。
- */
-export function rankScenarioCombos(
-  labels: string[],
-  statsByLabel: Record<string, ScenarioStatsRow>
-): ScenarioComboOption[] {
-  const subsets: string[][] = [];
-  for (let mask = 1; mask < 1 << labels.length; mask++) {
-    subsets.push(labels.filter((_, i) => mask & (1 << i)));
-  }
-  return subsets
-    .map((subset) => {
-      let stakeYen = 0;
-      let payoutYen = 0;
-      let hits = 0;
-      for (const label of subset) {
-        const stat = statsByLabel[label];
-        if (!stat) continue;
-        stakeYen += stat.stakeYen;
-        payoutYen += stat.payoutYen;
-        hits += stat.hits;
-      }
-      return {
-        labels: subset,
-        hits,
-        stakeYen,
-        payoutYen,
-        roi: stakeYen > 0 ? (payoutYen / stakeYen) * 100 : null,
-      };
-    })
-    .sort((a, b) => (b.roi ?? -1) - (a.roi ?? -1));
 }
 
 /**
