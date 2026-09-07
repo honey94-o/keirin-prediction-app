@@ -203,12 +203,14 @@ export function calculateKyakushitsuScore(
   // あり、自分自身の級班で層別しても（S1: 11.5→15.0→21.0%、S2: 9.1→10.4→17.1%、
   // A1: 7.8→14.9→17.5%、A2: 7.1→7.7→13.5%）すべて同じ方向で単調に再現した。
   // 「自分が先頭より格上＝そのラインの実質的なエースは自分」という、単なる
-  // 自分の実力の言い換えではない独立した情報と判断し、加点/減点として追加する。
-  // backtest.tsで検証（n=11198）：◎的中率44.6%→44.5%（誤差範囲内）、
-  // 本命回収率112.8%→113.1%と、単騎個人成績調整と同じく的中率は変えず回収率が
-  // わずかに上向く結果だったため加点10のまま採用。
-  const LINE_RANK_BONUS = 10; // 自分の級が自分のラインの先頭より格上の時の加点
-  const LINE_RANK_PENALTY = 10; // 自分の級が自分のラインの先頭より格下の時の減点
+  // 自分の実力の言い換えではない独立した情報と判断し、加点/減点として一度は採用。
+  // ただしこの検証（backtest.tsでn=11198）はgetPositionWinRates/getSoloWinRate等に
+  // 未来情報混入（lookahead bias）があった時期のもので、日付カットオフ修正後に
+  // 直近3000件でON/OFFを比較したところ◎的中率は変化なし(41.3%→41.3%)、
+  // 本命回収率はOFFの方が上（106.3%→107.1%）と、リーク込みの検証結果が
+  // 再現しなかったため0に戻して不採用とした（2026-09-07）。
+  const LINE_RANK_BONUS = 0; // 自分の級が自分のラインの先頭より格上の時の加点
+  const LINE_RANK_PENALTY = 0; // 自分の級が自分のラインの先頭より格下の時の減点
   if ((entry.line_position === "番手" || entry.line_position === "3番手") && entry.class_rank) {
     const senko = allEntries.find(
       (e) => e.line_group === entry.line_group && e.line_position === "先頭"
@@ -842,12 +844,21 @@ function calculateShukaiAdjustment(entry: EntryWithRacer, shukai: number | null 
  * 回収率がわずかに上向く一貫した傾向が出た（直近成績・番手個人勝率・周回数は
  * いずれも実装すると明確に悪化したのに対し、これだけは害が無くむしろ微増）。
  * ±25で採用。
+ *
+ * ただしこの検証はgetSoloWinRateに未来情報混入（lookahead bias）があった
+ * 時期のもの（diagnose-solo-personal.ts自体もleave-one-outで将来レースを
+ * 含む集計だった）。日付カットオフ修正後に直近3000件でON/OFFを比較した
+ * ところ◎的中率は変化なし(41.3%→41.3%)、本命回収率はOFFの方が上
+ * （106.3%→107.1%）、対抗回収率も大差でOFFが上（58.6%→199.4%、n=231と
+ * 小さいが）と、リーク込みの検証結果が再現しなかったため0に戻して
+ * 不採用とした（2026-09-07）。soloWinRate自体（getSoloWinRate）は
+ * app/races/[id]/page.tsxで参考値として引き続き表示している。
  */
-const SOLO_STRONG_BONUS = 25;
-const SOLO_WEAK_PENALTY = 25;
+const SOLO_STRONG_BONUS = 0;
+const SOLO_WEAK_PENALTY = 0;
 export const SOLO_MIN_RACES = 5;
-export const SOLO_STRONG_THRESHOLD = 16; // %。診断の「高」バケット下限に合わせる
-export const SOLO_WEAK_THRESHOLD = 8; // %。診断の「低」バケット上限に合わせる
+const SOLO_STRONG_THRESHOLD = 16; // %。診断の「高」バケット下限に合わせる
+const SOLO_WEAK_THRESHOLD = 8; // %。診断の「低」バケット上限に合わせる
 
 export function isSoloInRace(entry: EntryWithRacer, allEntries: EntryWithRacer[]): boolean {
   if (entry.line_group == null) return false;

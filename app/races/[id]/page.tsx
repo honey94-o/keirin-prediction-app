@@ -9,13 +9,7 @@ import {
   getSoloWinRate,
 } from "../../../lib/repository";
 import { recordPredictionAction } from "../../../lib/actions";
-import {
-  isSoloInRace,
-  CLASS_RANK_SCORES,
-  SOLO_MIN_RACES,
-  SOLO_STRONG_THRESHOLD,
-  SOLO_WEAK_THRESHOLD,
-} from "../../../lib/scoring";
+import { isSoloInRace, CLASS_RANK_SCORES, SOLO_MIN_RACES } from "../../../lib/scoring";
 import { CarNumberBadge } from "../../../components/CarNumberBadge";
 import { MarkBadge } from "../../../components/MarkBadge";
 import { RecentFormBadge } from "../../../components/RecentFormBadge";
@@ -158,34 +152,16 @@ export default async function RaceDetailPage({
               {(soloWinRate || lineRankLabel) && (
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-gray-400 mb-2 dark:text-gray-500">
                   {soloWinRate && (
-                    <span
-                      className={
-                        soloWinRate.races < SOLO_MIN_RACES
-                          ? ""
-                          : soloWinRate.winRate >= SOLO_STRONG_THRESHOLD
-                            ? "text-green-700 font-semibold dark:text-green-400"
-                            : soloWinRate.winRate < SOLO_WEAK_THRESHOLD
-                              ? "text-red-700 font-semibold dark:text-red-400"
-                              : ""
-                      }
-                    >
+                    <span>
                       単騎勝率{soloWinRate.winRate.toFixed(1)}%(n={soloWinRate.races})
-                      {soloWinRate.races < SOLO_MIN_RACES ? "・参考未満" : ""}
+                      {soloWinRate.races < SOLO_MIN_RACES ? "・母数少" : ""}（参考値・スコア未反映）
                     </span>
                   )}
                   {lineRankLabel && (
-                    <span
-                      className={
-                        lineRankLabel === "格上"
-                          ? "text-green-700 font-semibold dark:text-green-400"
-                          : lineRankLabel === "格下"
-                            ? "text-red-700 font-semibold dark:text-red-400"
-                            : ""
-                      }
-                    >
+                    <span>
                       先頭より{lineRankLabel}（{s.entry.class_rank}
                       {" vs "}
-                      {senko?.entry.class_rank}）
+                      {senko?.entry.class_rank}）（参考値・スコア未反映）
                     </span>
                   )}
                 </div>
