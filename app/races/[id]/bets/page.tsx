@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { predictRace } from "../../../../lib/predict";
-import { formatFormationNotation, pickNearestRace } from "../../../../lib/scoring";
+import { formatFormationNotation, pickNearestRace, rankScenarioCombos } from "../../../../lib/scoring";
 import { todayJstStr, formatDateStr } from "../../../../lib/date";
 import {
   getScenarioStats,
@@ -45,6 +45,19 @@ export default async function RaceBetsPage({
   const { race, bankInfo, venueKimarite, scored, scenarios, boxSuggestion, winSuggestion } = prediction;
   const top4 = scored.slice(0, 4);
   const scenarioStats = await getScenarioStats();
+  // このレースで実際に生成されたシナリオの中で、どの組み合わせで買うと過去実績の
+  // 回収率が一番良いかをおすすめ表示する（lib/scoring.tsのrankScenarioCombos参照）。
+  // ヒット数が少ない組み合わせは誤差が大きいため、ある程度の実績（20件以上）が
+  // あるものの中から選ぶ（無ければ参考値として一番良いものを出す）。
+  const COMBO_CONFIDENT_MIN_HITS = 20;
+  const comboRanking = rankScenarioCombos(
+    scenarios.map((s) => s.label),
+    scenarioStats
+  );
+  const recommendedCombo =
+    comboRanking.find((c) => c.hits >= COMBO_CONFIDENT_MIN_HITS) ?? comboRanking[0] ?? null;
+  const recommendedIsLowConfidence =
+    recommendedCombo != null && recommendedCombo.hits < COMBO_CONFIDENT_MIN_HITS;
   const eventRaces = await getRacesForEvent(race.kaisai_date, race.jocd);
   const kimariteRank = await getVenueKimariteRank(race.jocd);
   const eventResults = await getResultsForRaces(eventRaces.map((r) => r.id));
@@ -373,6 +386,27 @@ export default async function RaceBetsPage({
         </section>
       )}
 
+      {recommendedCombo && recommendedCombo.labels.length < scenarios.length && (
+        <section className="bg-emerald-50 border border-emerald-200 rounded-lg shadow-sm p-3 mb-4 dark:bg-emerald-950 dark:border-emerald-900">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span className="text-xs font-semibold bg-emerald-600 text-white px-2 py-0.5 rounded-full">
+              おすすめの組み合わせ
+            </span>
+            <span className="text-sm font-semibold dark:text-gray-100">
+              {recommendedCombo.labels.join("＋")}
+            </span>
+          </div>
+          <p className="text-xs text-gray-600 dark:text-gray-300">
+            この組み合わせだけに絞ると過去実績の回収率
+            <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+              {recommendedCombo.roi?.toFixed(0) ?? "-"}%
+            </span>
+            （{recommendedCombo.hits}件的中）と、全パターンに賭けるより良い結果でした。
+            {recommendedIsLowConfidence && "（ヒット数が少なく参考値）"}
+          </p>
+        </section>
+      )}
+
       {scenarios.length === 0 ? (
         <p className="text-sm text-gray-500 dark:text-gray-400">出走数が少ないため買い目候補は生成されません。</p>
       ) : (
@@ -386,12 +420,23 @@ export default async function RaceBetsPage({
             const scenarioStakeYen = 100 * scenario.formation.combinations.length;
             const scenarioPayoutYen =
               scenarioHit && sanrentanHitOdds != null ? 100 * sanrentanHitOdds : 0;
+            const isRecommended = recommendedCombo?.labels.includes(scenario.label) ?? false;
             return (
-              <section key={scenario.label} className="bg-white rounded-lg shadow-sm p-4 dark:bg-gray-800">
+              <section
+                key={scenario.label}
+                className={`bg-white rounded-lg shadow-sm p-4 dark:bg-gray-800 ${
+                  isRecommended ? "ring-2 ring-emerald-400 dark:ring-emerald-600" : ""
+                }`}
+              >
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-xs font-semibold bg-[#0d5c3f] text-white px-2 py-0.5 rounded-full">
                     {scenario.label}
                   </span>
+                  {isRecommended && (
+                    <span className="text-xs font-semibold bg-emerald-600 text-white px-2 py-0.5 rounded-full">
+                      おすすめ
+                    </span>
+                  )}
                   <span className="text-sm font-semibold dark:text-gray-100">
                     軸 {scenario.axisCarNum}.{" "}
                     <Link href={`/racers/${snumByCarNum.get(scenario.axisCarNum)}`} className="underline">
