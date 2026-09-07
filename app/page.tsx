@@ -3,7 +3,7 @@ import {
   getRacesByDate,
   getDailyPicksResults,
   getBarikataPicksResults,
-  getBarikataNearMisses,
+  getBarikataNearMissesResults,
   getLastSyncedAt,
   getFavoriteRacerEntriesForDate,
   getFavoriteRacers,
@@ -113,9 +113,9 @@ export default async function Home({
   // 「バリカタ候補漏れ」：marginは同じ基準を満たすが同ラインでなかったレース
   // （参考表示。db/schema.sqlのbarikata_near_missesコメント参照——同marginでも
   // 単一の並び的中率はバリカタ本体よりかなり低い）。
-  const barikataNearMisses = showPicks ? await getBarikataNearMisses(viewDate) : [];
+  const barikataNearMisses = showPicks ? await getBarikataNearMissesResults(viewDate) : [];
   const nearMissesByTime = [...barikataNearMisses].sort((a, b) =>
-    (a.start_time ?? "").localeCompare(b.start_time ?? "")
+    (a.pick.start_time ?? "").localeCompare(b.pick.start_time ?? "")
   );
 
   // 「お気に入り選手のレース」：選択中の日（前日/当日/翌日タブと連動）に
@@ -330,7 +330,7 @@ export default async function Home({
             </span>
           </div>
           <ul className="flex flex-col gap-2">
-            {nearMissesByTime.map((n) => (
+            {nearMissesByTime.map(({ pick: n, finished, hit }) => (
               <li key={n.race_id}>
                 <Link
                   href={`/races/${n.race_id}/bets`}
@@ -351,6 +351,17 @@ export default async function Home({
                   <StartingSoonBadge
                     minutes={startingSoonMinutes(n.start_time, viewDate, todayStr, nowHHMM)}
                   />
+                  {finished && (
+                    <span
+                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                        hit
+                          ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+                          : "bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-400"
+                      }`}
+                    >
+                      {hit ? "的中" : "不的中"}
+                    </span>
+                  )}
                 </Link>
               </li>
             ))}

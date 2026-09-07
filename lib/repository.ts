@@ -1,6 +1,7 @@
 import { getDb } from "./db";
 import type {
   BankInfoRow,
+  BarikataNearMissResult,
   BarikataNearMissRow,
   BarikataPickResult,
   BarikataPickRow,
@@ -1224,6 +1225,36 @@ export async function getBarikataNearMisses(kaisaiDate: string, limit = 100): Pr
  */
 export async function getBarikataPicksResults(kaisaiDate: string): Promise<BarikataPickResult[]> {
   const picks = await getBarikataPicks(kaisaiDate);
+  if (picks.length === 0) return [];
+  const raceIds = picks.map((p) => p.race_id);
+  const [resultsMap, oddsMap] = await Promise.all([
+    getResultsForRaces(raceIds),
+    getOddsForRaces(raceIds),
+  ]);
+
+  return picks.map((pick) => {
+    const results = resultsMap.get(pick.race_id) ?? [];
+    const odds = oddsMap.get(pick.race_id) ?? [];
+    const actualCombo = resolveActualCombo(results, odds);
+    if (actualCombo == null) {
+      return { pick, finished: false, hit: null, stakeYen: null, payoutYen: null };
+    }
+    const stakeYen = 100;
+    const hit = pick.combo === actualCombo;
+    const hitOdds =
+      odds.find((o) => o.bet_type === "3連単" && o.combination === actualCombo)?.odds_value ?? null;
+    const payoutYen = hit && hitOdds != null ? 100 * hitOdds : 0;
+    return { pick, finished: true, hit, stakeYen, payoutYen };
+  });
+}
+
+/**
+ * 指定日のバリカタ候補漏れの的中結果（getBarikataPicksResultsの候補漏れ版）。
+ * 参考表示用（バリカタ本体としては採用していない）だが、実際に的中したか
+ * どうかは本体と同じ基準で見せる。
+ */
+export async function getBarikataNearMissesResults(kaisaiDate: string): Promise<BarikataNearMissResult[]> {
+  const picks = await getBarikataNearMisses(kaisaiDate);
   if (picks.length === 0) return [];
   const raceIds = picks.map((p) => p.race_id);
   const [resultsMap, oddsMap] = await Promise.all([

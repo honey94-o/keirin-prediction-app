@@ -349,6 +349,15 @@ export interface BarikataPickResult {
   payoutYen: number | null;
 }
 
+/** バリカタ候補漏れ（BarikataNearMissRow）版のBarikataPickResult。 */
+export interface BarikataNearMissResult {
+  pick: BarikataNearMissRow;
+  finished: boolean;
+  hit: boolean | null;
+  stakeYen: number | null;
+  payoutYen: number | null;
+}
+
 export interface BarikataPicksPerformance {
   days: number;
   races: number;
