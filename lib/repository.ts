@@ -1025,21 +1025,29 @@ export async function saveDailyPicks(
 }
 
 /**
- * 指定日の厳選ピックを、本命marginが大きい順に上位limit件だけ取得する（ホーム画面・
- * /picks画面用）。scripts/simulate-selective-strategy.tsで122日分の実データを
- * シミュレーションした結果、margin自体にしきい値を設ける（例: margin>=10のみ採用）
- * よりも、しきい値を設けず「その日の中での上位」を機械的に選ぶ方が
- * 30日ローリング回収率の安定性（100%超えの窓の割合）・1日の採用件数の両面で
- * 優れていた（しきい値ありだと対象日が減り1日あたりの件数がユーザー希望の
- * 5〜10件を満たせない日が多発した）。そのためmargin条件は付けず、日付＋
- * 上位N件だけで絞り込む。
+ * 指定日の厳選ピックを、本命marginがDAILY_PICKS_MIN_MARGIN以上のものだけ、
+ * 大きい順に上位limit件取得する（ホーム画面・/picks画面用）。
+ *
+ * 当初はscripts/simulate-selective-strategy.tsで122日分をシミュレーションした
+ * 結果、margin自体にしきい値を設けるより「その日の中での上位」を機械的に
+ * 選ぶ方が優れていたためしきい値なしで運用していた。しかしSOLO_STRONG_BONUS/
+ * LINE_RANK_BONUSの不採用化（lib/scoring.ts参照）でスコア分布が変わったため
+ * 2026-09-08に再検証したところ、しきい値なし(margin>=0|top10)は直近106日で
+ * 回収率87.4%（前半86.0%/後半88.8%、一貫して赤字）だったのに対し、
+ * margin>=10|top10は91.3%（前半90.4%/後半92.2%、安定して改善）・30日窓の
+ * 黒字割合も41.6%→57.1%へ向上した（margin>=0|top5等の他候補は前半/後半で
+ * 大きく劣化しており過学習の疑いがあったため不採用）。ユーザー方針
+ * 「本命の買い目を厳選する方向に舵を切りたい」とも合致するため、
+ * margin>=10を採用する。
  */
+const DAILY_PICKS_MIN_MARGIN = 10;
+
 export async function getDailyPicks(kaisaiDate: string, limit = 10): Promise<DailyPickRow[]> {
   const result = await getDb().execute({
     sql: `SELECT race_id, kaisai_date, jocd, keirinjo_name, race_no, start_time, margin,
                  honmei_car_num, honmei_name, formation
-          FROM daily_picks WHERE kaisai_date = ? ORDER BY margin DESC LIMIT ?`,
-    args: [kaisaiDate, limit],
+          FROM daily_picks WHERE kaisai_date = ? AND margin >= ? ORDER BY margin DESC LIMIT ?`,
+    args: [kaisaiDate, DAILY_PICKS_MIN_MARGIN, limit],
   });
   const rows = result.rows as unknown as (Omit<DailyPickRow, "formation"> & { formation: string | null })[];
   return rows.map((r) => ({
