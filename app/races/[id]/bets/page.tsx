@@ -43,7 +43,8 @@ export default async function RaceBetsPage({
   const prediction = await predictRace(raceId);
   if (!prediction) notFound();
 
-  const { race, bankInfo, venueKimarite, scored, scenarios, boxSuggestion, winSuggestion } = prediction;
+  const { race, bankInfo, venueKimarite, scored, scenarios, developmentForecast, boxSuggestion, winSuggestion } =
+    prediction;
   const top4 = scored.slice(0, 4);
   const scenarioStats = await getScenarioStats();
   // 本命以外のシナリオが実際に当たるかどうかは、シナリオ全体の累計実績（本命の
@@ -213,6 +214,16 @@ export default async function RaceBetsPage({
           </div>
         ))}
       </div>
+
+      {developmentForecast && (
+        <section className="bg-sky-50 border border-sky-200 rounded-lg shadow-sm p-3 mb-4 dark:bg-sky-950 dark:border-sky-900">
+          <h2 className="text-xs font-semibold text-sky-700 mb-1 dark:text-sky-400">展開予想</h2>
+          <p className="text-sm text-gray-700 leading-relaxed dark:text-gray-200">{developmentForecast}</p>
+          <p className="text-[10px] text-gray-400 mt-2 dark:text-gray-500">
+            ライン構成・脚質・バンクの決まり手傾向から機械的に組み立てた参考文章です。
+          </p>
+        </section>
+      )}
 
       {lines.length > 0 && (
         <section className="bg-white rounded-lg shadow-sm p-3 mb-4 dark:bg-gray-800">

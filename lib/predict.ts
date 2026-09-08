@@ -9,7 +9,13 @@ import {
   getGirlsAgariAbility,
   getVenueKimariteRatesWithFallback,
 } from "./repository";
-import { scoreRace, generateBetSuggestions, generateScenarios, HIGH_CONFIDENCE_MARGIN } from "./scoring";
+import {
+  scoreRace,
+  generateBetSuggestions,
+  generateScenarios,
+  generateRaceDevelopmentForecast,
+  HIGH_CONFIDENCE_MARGIN,
+} from "./scoring";
 import type {
   BankInfoRow,
   BetSuggestion,
@@ -28,6 +34,8 @@ export interface RacePrediction {
   scored: ScoredEntry[];
   /** 展開パターン別の予想（本命／逃げ粘り込み／まくり差し等）。2〜3パターン。 */
   scenarios: RaceScenario[];
+  /** レース全体の展開予想（どのラインが主導権を握りやすいか）。ガールズ等は null。 */
+  developmentForecast: string | null;
   /** 3連複ボックス（展開パターンに依らない上位車番の総当たり）。 */
   boxSuggestion: BetSuggestion | undefined;
   /**
@@ -94,6 +102,7 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
     girlsAgariAbilityBySnum
   );
   const scenarios = generateScenarios(scored, venueKimarite ?? bankInfo);
+  const developmentForecast = generateRaceDevelopmentForecast(scored, venueKimarite ?? bankInfo);
   const boxSuggestion = generateBetSuggestions(scored).find(
     (s) => s.betType === "3連複ボックス"
   );
@@ -106,5 +115,5 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
     }
   }
 
-  return { race, bankInfo, venueKimarite, scored, scenarios, boxSuggestion, winSuggestion };
+  return { race, bankInfo, venueKimarite, scored, scenarios, developmentForecast, boxSuggestion, winSuggestion };
 }
