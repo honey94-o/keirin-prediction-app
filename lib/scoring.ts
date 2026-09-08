@@ -1362,92 +1362,16 @@ function generateGirlsScenarios(scored: ScoredEntry[]): RaceScenario[] {
   return scenarios;
 }
 
-const LINE_POSITION_ORDER: Record<string, number> = { 先頭: 0, 番手: 1, "3番手": 2 };
-
-/**
- * レース全体の「展開予想」（どのラインが先行争いを制しやすく、他のラインが
- * どう対応しそうか）を1つの文章にまとめる。外部の競輪予想サイト調査
- * （keirin-brother.com「ライン予想を組み立てる構成要素」等）に基づき、
- * ①各ラインの先頭選手の脚質・スコアで役割（主導権を握る/後方から構える）を
- * 分類し、②バンクの決まり手傾向で文脈づける、という考え方を踏襲した
- * ルールベースの生成（新しい統計的検証は行っていない、既存データの言語化）。
- * 個別シナリオのreason文とは別に、レース全体を俯瞰する説明として使う。
- * ガールズケイリンはラインが無いため対象外。
- */
-export function generateRaceDevelopmentForecast(
-  scored: ScoredEntry[],
-  kimariteRates:
-    | { nige_pct: number | null; makuri_pct: number | null; sashi_pct: number | null }
-    | null
-    | undefined
-): string | null {
-  if (scored.length < 3 || isGirlsRace(scored)) return null;
-
-  const lineGroups = new Map<number, ScoredEntry[]>();
-  const soloEntries: ScoredEntry[] = [];
-  for (const s of scored) {
-    if (s.entry.line_group == null) {
-      soloEntries.push(s);
-      continue;
-    }
-    const arr = lineGroups.get(s.entry.line_group) ?? [];
-    arr.push(s);
-    lineGroups.set(s.entry.line_group, arr);
-  }
-  const lines = [...lineGroups.values()]
-    .filter((members) => members.length >= 2)
-    .map((members) =>
-      [...members].sort(
-        (a, b) =>
-          (LINE_POSITION_ORDER[a.entry.line_position ?? ""] ?? 9) -
-          (LINE_POSITION_ORDER[b.entry.line_position ?? ""] ?? 9)
-      )
-    );
-  if (lines.length === 0) return null; // 全員単騎などライン構成が無ければ対象外
-
-  // 先頭選手のスコア×脚質で「主導権を握りそうな順」に並べる。逃（積極的に
-  // 前を取りに行く）を軽く優遇し、追（後方志向）は相対的に下げる。
-  const AGGRESSION_BONUS: Record<string, number> = { 逃: 5, 両: 0, 追: -5 };
-  const rankedLines = [...lines].sort((a, b) => {
-    const scoreA = a[0].totalScore + (AGGRESSION_BONUS[a[0].entry.kyakushitsu ?? ""] ?? 0);
-    const scoreB = b[0].totalScore + (AGGRESSION_BONUS[b[0].entry.kyakushitsu ?? ""] ?? 0);
-    return scoreB - scoreA;
-  });
-
-  const [leadLine, ...challengerLines] = rankedLines;
-  const leadNames = leadLine.map((s) => s.entry.name).join("・");
-  const sentences: string[] = [
-    `先行争いは${leadLine[0].entry.name}（${leadLine[0].entry.kyakushitsu ?? "-"}）を先頭とする${leadNames}のラインが主導権を握りやすい。`,
-  ];
-
-  for (const line of challengerLines) {
-    const senko = line[0];
-    sentences.push(
-      senko.entry.kyakushitsu === "逃"
-        ? `${senko.entry.name}のラインも先行意欲があり、序盤の主導権争いに加わる可能性がある。`
-        : `${senko.entry.name}のラインは後方から構え、直線での${senko.entry.kyakushitsu === "追" ? "差し" : "捲り・差し"}を狙う展開か。`
-    );
-  }
-
-  if (soloEntries.length > 0) {
-    const soloNames = soloEntries.map((s) => s.entry.name).join("・");
-    sentences.push(`単騎の${soloNames}はラインの後ろ盾が無く隊列上は不利だが、展開が向けば上位に食い込む余地もある。`);
-  }
-
-  const kimariteList: { label: string; pct: number }[] = kimariteRates
-    ? [
-        { label: "逃げ", pct: kimariteRates.nige_pct },
-        { label: "捲り", pct: kimariteRates.makuri_pct },
-        { label: "差し", pct: kimariteRates.sashi_pct },
-      ].filter((k): k is { label: string; pct: number } => k.pct != null)
-    : [];
-  if (kimariteList.length > 0) {
-    const top = kimariteList.sort((a, b) => b.pct - a.pct)[0];
-    sentences.push(`このバンクは${top.label}決着が${top.pct.toFixed(0)}%と多く、展開の読みが的中率に直結しやすい。`);
-  }
-
-  return sentences.join("");
-}
+// generateRaceDevelopmentForecast（スコア+脚質の先行加点でライン順位付けする
+// 「展開予想」文章生成）は2026-09-08に実装したが、scripts/
+// diagnose-development-forecast-validity.tsで検証したところ、算出した
+// leadLineは84.4%の確率で本命自身のラインと単に一致するだけで（本命予想の
+// 言い換え）、本命のラインと異なる予想を出した696件に限っても的中率は
+// 本命ライン39.1% vs leadLine39.2%とほぼ同一、train/testでは方向が逆転する
+// （train:leadLine有利41.1%>35.9%、test:本命ライン有利41.9%>37.6%）という
+// 完全なノイズだった。実際の課金アプリに根拠のない予想文を出していたと
+// 判断し、コードごと削除した。再挑戦する場合は生成の前に必ずこの検証パターン
+// （leadLineが本命のラインと異なる場合に限定した的中率比較、train/test）を通すこと。
 
 export function generateScenarios(
   scored: ScoredEntry[],
