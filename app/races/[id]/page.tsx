@@ -9,7 +9,12 @@ import {
   getSoloWinRate,
 } from "../../../lib/repository";
 import { recordPredictionAction } from "../../../lib/actions";
-import { isSoloInRace, CLASS_RANK_SCORES, SOLO_MIN_RACES } from "../../../lib/scoring";
+import {
+  isSoloInRace,
+  CLASS_RANK_SCORES,
+  SOLO_MIN_RACES,
+  STANDING_COUNT_HIGH_THRESHOLD,
+} from "../../../lib/scoring";
 import { CarNumberBadge } from "../../../components/CarNumberBadge";
 import { MarkBadge } from "../../../components/MarkBadge";
 import { RecentFormBadge } from "../../../components/RecentFormBadge";
@@ -123,6 +128,11 @@ export default async function RaceDetailPage({
                   ? "格下"
                   : "同格"
               : null;
+          const isBantesu = s.entry.line_position === "番手" || s.entry.line_position === "3番手";
+          const highStanding =
+            isBantesu &&
+            s.entry.standing_count != null &&
+            s.entry.standing_count >= STANDING_COUNT_HIGH_THRESHOLD;
           return (
             <div key={s.entry.entry_id} className="bg-white rounded-lg shadow-sm p-3 dark:bg-gray-800">
               <div className="flex items-center gap-2 mb-2">
@@ -149,7 +159,7 @@ export default async function RaceDetailPage({
                   </span>
                 )}
               </div>
-              {(soloWinRate || lineRankLabel) && (
+              {(soloWinRate || lineRankLabel || highStanding) && (
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-gray-400 mb-2 dark:text-gray-500">
                   {soloWinRate && (
                     <span>
@@ -162,6 +172,12 @@ export default async function RaceDetailPage({
                       先頭より{lineRankLabel}（{s.entry.class_rank}
                       {" vs "}
                       {senko?.entry.class_rank}）（参考値・スコア未反映）
+                    </span>
+                  )}
+                  {highStanding && (
+                    <span>
+                      好スタート実績{s.entry.standing_count}回・自分の先頭を上回る率47%台
+                      （下位は39%台、母数16,315件で実測。参考値・スコア未反映）
                     </span>
                   )}
                 </div>

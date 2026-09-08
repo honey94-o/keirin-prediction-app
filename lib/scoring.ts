@@ -858,6 +858,22 @@ function calculateShukaiAdjustment(entry: EntryWithRacer, shukai: number | null 
 const SOLO_STRONG_BONUS = 0;
 const SOLO_WEAK_PENALTY = 0;
 export const SOLO_MIN_RACES = 5;
+
+/**
+ * 番手/3番手選手が自分のラインの先頭を上回ってゴールする率は、個人の
+ * standing_count（好スタート回数）と相関する。scripts/diagnose-shb-overtake.tsで
+ * 検証（16,315件）：standing_count下位1/3は上回り率39.6%、上位1/3は47.5%と
+ * 約8pt差があり、train/testホールドアウトでも再現した（train: 下位40.3%/
+ * 上位47.3%、test: 下位38.7%/上位47.6%、testの方が差が拡大しており過学習では
+ * ない）。ユーザー依頼「選手個々の特徴（例：飛びつきが多い）を読み取れないか」
+ * を受けて検証した3つの仮説のうち唯一再現した信号（展開予想の文章生成・
+ * 決まり手個人カウントは不採用・削除済み）。スコアには反映せず、
+ * app/races/[id]/page.tsxで参考値として表示する。
+ * 閾値はracersテーブルのstanding_count分布の上位1/3相当（累計69.2%が3以下）
+ * に合わせた。
+ */
+export const STANDING_COUNT_HIGH_THRESHOLD = 4;
+
 const SOLO_STRONG_THRESHOLD = 16; // %。診断の「高」バケット下限に合わせる
 const SOLO_WEAK_THRESHOLD = 8; // %。診断の「低」バケット上限に合わせる
 
