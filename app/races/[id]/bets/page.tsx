@@ -215,6 +215,11 @@ export default async function RaceBetsPage({
         ))}
       </div>
 
+      {/* 展開予想セクションは検証完了までいったん非表示
+          （scripts/diagnose-development-forecast-validity.ts参照。
+          未検証のロジックを実際の課金アプリに出していたのはユーザー指摘の通り
+          軽率だった。検証結果が出るまで、developmentForecast自体はpredict.tsで
+          引き続き計算するが画面には出さない）。
       {developmentForecast && (
         <section className="bg-sky-50 border border-sky-200 rounded-lg shadow-sm p-3 mb-4 dark:bg-sky-950 dark:border-sky-900">
           <h2 className="text-xs font-semibold text-sky-700 mb-1 dark:text-sky-400">展開予想</h2>
@@ -223,7 +228,7 @@ export default async function RaceBetsPage({
             ライン構成・脚質・バンクの決まり手傾向から機械的に組み立てた参考文章です。
           </p>
         </section>
-      )}
+      )} */}
 
       {lines.length > 0 && (
         <section className="bg-white rounded-lg shadow-sm p-3 mb-4 dark:bg-gray-800">
