@@ -48,10 +48,11 @@ export default async function RaceBetsPage({
   const scenarioStats = await getScenarioStats();
   // 本命以外のシナリオが実際に当たるかどうかは、シナリオ全体の累計実績（本命の
   // 母数が一番大きく常に最強に見える）ではなく、そのレースでの有力度＝likelyRank
-  // 別の実績で判断する（scripts/diagnose-scenario-condition.tsで検証：likelyRank=2は
-  // 的中率9.6%、3は4.7%、4は1.5%とtrain/testで再現する明確な差があった）。
+  // 別の実績で見せる（scripts/diagnose-scenario-condition.tsで検証：likelyRankが
+  // 低いほど的中率は上がるが回収率は逆に下がる——的中率9.2%/回収率83.1%(rank2)、
+  // 的中率1.2%/回収率101.6%(rank4)——ため、一方だけで「おすすめ」と断定せず
+  // 両方をそのまま表示する）。
   const scenarioRankStats = await getScenarioRankStats();
-  const RECOMMENDED_MAX_RANK = 2; // これ以下のlikelyRankのみ「おすすめ」に含める
   const eventRaces = await getRacesForEvent(race.kaisai_date, race.jocd);
   const kimariteRank = await getVenueKimariteRank(race.jocd);
   const eventResults = await getResultsForRaces(eventRaces.map((r) => r.id));
@@ -393,27 +394,18 @@ export default async function RaceBetsPage({
             const scenarioStakeYen = 100 * scenario.formation.combinations.length;
             const scenarioPayoutYen =
               scenarioHit && sanrentanHitOdds != null ? 100 * sanrentanHitOdds : 0;
-            // 本命以外は、そのレースでの有力度（likelyRank）別の実績で「おすすめ」を判断する
-            // （scenario_statsの全レース累計だけでは常に本命が最強に見えてしまうため）。
+            // 本命以外は、そのレースでの有力度（likelyRank）別の実績を見せる。的中率と
+            // 回収率が逆方向に動く（rank2は的中率9.2%だが回収率83.1%、rank4は的中率1.2%
+            // だが回収率101.6%）ため、どちらか一方だけで「おすすめ」と断定せず、
+            // 両方をそのまま出して判断は見る人に委ねる（scripts/diagnose-scenario-condition.ts
+            // 参照）。
             const rankStat = scenario.label !== "本命" ? scenarioRankStats[scenario.likelyRank] : undefined;
-            const isRecommended =
-              scenario.label === "本命" || scenario.likelyRank <= RECOMMENDED_MAX_RANK;
             return (
-              <section
-                key={scenario.label}
-                className={`bg-white rounded-lg shadow-sm p-4 dark:bg-gray-800 ${
-                  isRecommended ? "ring-2 ring-emerald-400 dark:ring-emerald-600" : ""
-                }`}
-              >
+              <section key={scenario.label} className="bg-white rounded-lg shadow-sm p-4 dark:bg-gray-800">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-xs font-semibold bg-[#0d5c3f] text-white px-2 py-0.5 rounded-full">
                     {scenario.label}
                   </span>
-                  {isRecommended && (
-                    <span className="text-xs font-semibold bg-emerald-600 text-white px-2 py-0.5 rounded-full">
-                      おすすめ
-                    </span>
-                  )}
                   <span className="text-sm font-semibold dark:text-gray-100">
                     軸 {scenario.axisCarNum}.{" "}
                     <Link href={`/racers/${snumByCarNum.get(scenario.axisCarNum)}`} className="underline">
@@ -452,7 +444,7 @@ export default async function RaceBetsPage({
                 )}
 
                 {scenario.likelyRank >= 2 && (
-                  <p className="mb-1">
+                  <p className="mb-1 flex items-center gap-2 flex-wrap">
                     <span
                       className={
                         scenario.likelyRank === 2
@@ -463,10 +455,13 @@ export default async function RaceBetsPage({
                       {scenario.likelyRank === 2
                         ? "このレースでは本命に次ぐ有力な展開"
                         : "このレースでは可能性低め"}
-                      {rankStat && rankStat.races > 0
-                        ? `（likelyRank=${scenario.likelyRank}実績: 的中${rankStat.hitRate.toFixed(1)}%・過去${rankStat.races}件中${rankStat.hits}回）`
-                        : ""}
                     </span>
+                    {rankStat && rankStat.races > 0 && (
+                      <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                        同じ有力度の過去実績: 的中率{rankStat.hitRate.toFixed(1)}%・回収率
+                        {rankStat.roi?.toFixed(0) ?? "-"}%（{rankStat.races}件中{rankStat.hits}回）
+                      </span>
+                    )}
                   </p>
                 )}
 
