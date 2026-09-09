@@ -445,6 +445,13 @@ def parse_racecard(html: str, cup_id: str, day: int, race_no: int) -> RaceData |
             "standing_count": _to_int(cell_text(cells, "S")),
             "home_lead_count": _to_int(cell_text(cells, "H")),
             "back_lead_count": _to_int(cell_text(cells, "B")),
+            # 選手本人の直前コメント（例:「自力。」「◯◯君。」でマーク相手を名指し）。
+            # レース終了後もページに残るため過去レース分もbackfill_comments.pyで取得できる。
+            "pre_race_comment": cell_text(cells, "コメント"),
+            # ギヤ倍率。同一選手でもレースごとに変わりうる（同日の変更は脚質転換の
+            # サインとされる）ため、racers.gear_ratio（未使用・常にNULL）とは別に
+            # entries側に保存する。
+            "gear_ratio": _to_float(cell_text(cells, "ギヤ倍率") or ""),
         }
         if car_num in line_info:
             entry["line_group"], entry["line_position"] = line_info[car_num]

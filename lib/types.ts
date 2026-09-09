@@ -89,6 +89,8 @@ export interface EntryWithRacer {
   car_num: number;
   line_group: number | null;
   line_position: string | null;
+  pre_race_comment: string | null; // このレースでのWINTICKET出走表コメント（entries.pre_race_comment）
+  race_gear_ratio: number | null; // このレースでのギヤ倍率（entries.gear_ratio）。racers.gear_ratioとは別物
   snum: string;
   name: string;
   pref: string | null;

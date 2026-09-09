@@ -572,12 +572,15 @@ def save_to_db(
                  e.get("standing_count"), e.get("home_lead_count"), e.get("back_lead_count")],
             ))
             statements.append((
-                """INSERT INTO entries (race_id, snum, car_num, line_group, line_position, pref)
-                   VALUES (?,?,?,?,?,?)
+                """INSERT INTO entries (race_id, snum, car_num, line_group, line_position, pref,
+                                        pre_race_comment, gear_ratio)
+                   VALUES (?,?,?,?,?,?,?,?)
                    ON CONFLICT(race_id, car_num) DO UPDATE SET
                        snum=excluded.snum, line_group=excluded.line_group,
-                       line_position=excluded.line_position, pref=excluded.pref""",
-                [race_id, e["snum"], e["car_num"], e.get("line_group"), e.get("line_position"), e.get("pref")],
+                       line_position=excluded.line_position, pref=excluded.pref,
+                       pre_race_comment=excluded.pre_race_comment, gear_ratio=excluded.gear_ratio""",
+                [race_id, e["snum"], e["car_num"], e.get("line_group"), e.get("line_position"), e.get("pref"),
+                 e.get("pre_race_comment"), e.get("gear_ratio")],
             ))
 
         for r in race.results:

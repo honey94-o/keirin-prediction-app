@@ -117,6 +117,15 @@ CREATE TABLE IF NOT EXISTS entries (
                                            -- racersテーブルのprefは選手単位で毎回上書き
                                            -- されレース単位の地元判定に使えないため、
                                            -- こちらはレース出走のたびに保存する）。
+    pre_race_comment TEXT,                -- WINTICKET出走表「コメント」列。選手本人の
+                                           -- 直前の一言（例:「自力。」「◯◯君。」で
+                                           -- マーク相手を名指しすることもある）。
+                                           -- レースごとに変わるためentries側で持つ。
+    gear_ratio    REAL,                   -- WINTICKET出走表「ギヤ倍率」列。racers.gear_ratio
+                                           -- は現状どのスクレイパーからも書き込まれておらず
+                                           -- 常にNULL（未使用カラム）。ギア比は同一選手でも
+                                           -- レースごとに変わりうる（同日の変更は脚質転換の
+                                           -- サインとされる）ため、race単位で持つ必要がある。
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (race_id, car_num)
 );

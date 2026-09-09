@@ -1,5 +1,8 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# Claude Codeの一時作業ディレクトリ（セッション限りのスクラッチファイル）
+/scratchpad
+
 # dependencies
 /node_modules
 /.pnp

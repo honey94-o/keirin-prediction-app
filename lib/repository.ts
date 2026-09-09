@@ -219,6 +219,7 @@ export async function getFavoriteRacerEntriesForDate(
 export async function getEntriesForRace(raceId: number): Promise<EntryWithRacer[]> {
   const result = await getDb().execute({
     sql: `SELECT e.id as entry_id, e.race_id, e.car_num, e.line_group, e.line_position,
+                 e.pre_race_comment, e.gear_ratio as race_gear_ratio,
                  r.snum, r.name, COALESCE(e.pref, r.pref) as pref, r.class_rank, r.prev_class_rank, r.kyakushitsu, r.gear_ratio,
                  r.heikin_tokuten, r.syouritu, r.rentairitu2, r.rentairitu3,
                  r.kimarite_nige_count, r.kimarite_makuri_count,
