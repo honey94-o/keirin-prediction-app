@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import datetime
+import json
 import re
 import time
 import urllib.error
@@ -460,6 +461,59 @@ def parse_racecard(html: str, cup_id: str, day: int, race_no: int) -> RaceData |
     return race
 
 
+_PRELOADED_STATE_MARKER = "window.__PRELOADED_STATE__ = "
+
+
+def parse_interviews(html: str) -> list[dict[str, Any]]:
+    """出走表ページに埋め込まれたReact Queryキャッシュ(window.__PRELOADED_STATE__)から
+    前検日インタビュー(queryKeyに"INSPECTION_DAY_INTERVIEW_LIST"を含むエントリ)の
+    質問と回答を抜き出す。entries.pre_race_commentの「自力。」のような一言とは別に、
+    記者の質問（「どう走りますか？」等）に対する文章での回答が入っており、
+    直近の調子や連係する選手の名前など、脚質・ラインからは拾えない情報を含む。
+
+    出走表HTML自体にはこのJSONは無いレースもある（前検日前など）ため、
+    見つからなければ空リストを返す。"""
+    idx = html.find(_PRELOADED_STATE_MARKER)
+    if idx == -1:
+        return []
+    start = idx + len(_PRELOADED_STATE_MARKER)
+    try:
+        state, _ = json.JSONDecoder().raw_decode(html, start)
+    except (json.JSONDecodeError, ValueError):
+        return []
+
+    interviews: list[dict[str, Any]] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            query_key = node.get("queryKey")
+            if isinstance(query_key, list) and any(
+                isinstance(k, str) and "INSPECTION_DAY_INTERVIEW_LIST" in k for k in query_key
+            ):
+                data = ((node.get("state") or {}).get("data")) or {}
+                for item in data.get("interviews") or []:
+                    player_id = item.get("playerId")
+                    if not player_id:
+                        continue
+                    for thread in item.get("threads") or []:
+                        answer = thread.get("answer")
+                        if not answer:
+                            continue
+                        interviews.append({
+                            "snum": "wt" + str(player_id),
+                            "question": thread.get("question"),
+                            "answer": answer,
+                        })
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(state)
+    return interviews
+
+
 def parse_raceresult(html: str, race: RaceData) -> None:
     soup = BeautifulSoup(html, "html.parser")
     tables = soup.find_all("table")
@@ -538,6 +592,7 @@ def scrape_one_race(venue: str, cup_id: str, day: int, race_no: int) -> Any:
     if race is None or not race.entries:
         # 解析できなかった場合も打ち止めとは限らないため None を返す
         return None
+    race.interviews = parse_interviews(html)
 
     status, html = _get(f"https://winticket.jp/keirin/{venue}/raceresult/{cup_id}/{day}/{race_no}")
     _sleep()

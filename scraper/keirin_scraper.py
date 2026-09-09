@@ -54,6 +54,7 @@ class RaceData:
     entries: list[dict[str, Any]] = field(default_factory=list)
     results: list[dict[str, Any]] = field(default_factory=list)
     odds: list[dict[str, Any]] = field(default_factory=list)
+    interviews: list[dict[str, Any]] = field(default_factory=list)
     tenki: str | None = None
     husoku: float | None = None
 
@@ -591,6 +592,15 @@ def save_to_db(
                        finish_pos=excluded.finish_pos, kimarite=excluded.kimarite,
                        agari_time=excluded.agari_time""",
                 [race_id, r["snum"], r["car_num"], r["finish_pos"], r["kimarite"], r.get("agari_time")],
+            ))
+
+        for iv in race.interviews:
+            statements.append((
+                """INSERT INTO racer_interviews (race_id, snum, question, answer)
+                   VALUES (?,?,?,?)
+                   ON CONFLICT(race_id, snum, question) DO UPDATE SET
+                       answer=excluded.answer""",
+                [race_id, iv["snum"], iv.get("question"), iv["answer"]],
             ))
 
         for o in race.odds:

@@ -130,6 +130,25 @@ CREATE TABLE IF NOT EXISTS entries (
     UNIQUE (race_id, car_num)
 );
 
+-- 前検日インタビュー（WINTICKETの出走表ページに埋め込まれたReact Queryの
+-- キャッシュデータ、queryKey "FETCH_KEIRIN_INSPECTION_DAY_INTERVIEW_LIST"から
+-- 抽出）。entries.pre_race_commentの短い一言（「自力。」等）とは別に、記者の
+-- 質問（「どう走りますか？」等）に対する文章での回答が入っており、直近の
+-- 調子・連係する選手の名前・前走の具体的な展開などentries側では拾えない
+-- 情報を含む。1選手が複数の質問に答えることもあるため行を分ける。
+CREATE TABLE IF NOT EXISTS racer_interviews (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    race_id     INTEGER NOT NULL REFERENCES races(id) ON DELETE CASCADE,
+    snum        TEXT NOT NULL REFERENCES racers(snum),
+    question    TEXT,
+    answer      TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    -- レース確定前に複数回スクレイプされても重複しないように。questionが
+    -- NULLの場合はUNIQUE制約上「別行」扱いになりうるが、その場合でも
+    -- 実害（同一内容の重複行）に留まるため許容する。
+    UNIQUE (race_id, snum, question)
+);
+
 CREATE TABLE IF NOT EXISTS results (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     race_id     INTEGER NOT NULL REFERENCES races(id) ON DELETE CASCADE,
