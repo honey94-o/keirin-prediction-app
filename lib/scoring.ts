@@ -1114,6 +1114,52 @@ export const HIGH_CONFIDENCE_MARGIN = 10;
  */
 const LOW_MARGIN_THRESHOLD = 5;
 
+/**
+ * margin >= HIGH_CONFIDENCE_MARGIN（厳選対象）の中でも、この値以上は本命が
+ * 抜けすぎていて3連単の当たり組が超低配当になり、点数を広げるほど回収率が
+ * 下がる（買っても投資割れ）。scratchpad検証（predictions由来537件、
+ * 開催日で2/3のtrain/test分割）：
+ *   margin 10-13: 2着=プール上位2 / 3着=上位8 の約10点 → 回収率119%
+ *                 （train118% / test122%、両期間で明確に黒字）
+ *   margin 13-16: 現行の対称ボックス20点だと回収率52%まで悪化。
+ *                 ◎→ライン先頭→3着2頭 の2点に絞ると回収率96%（ほぼ均衡）
+ *   margin 16+  : 同2点で回収率101%
+ * 現行の「margin>=10は一律20点」は全体では回収率105%だがtest期間は95.5%
+ * （赤字）。帯で点数を変える新ルールにすると全体117% / test120%に改善。
+ */
+const HIGH_MARGIN_TIGHT_THRESHOLD = 13;
+
+/**
+ * margin >= HIGH_CONFIDENCE_MARGIN の本命フォーメーション。
+ * 「2着はデータ上位なだけでなくライン・展開で絞る（＝プール上位=軸と同ライン
+ * を先頭に並べたbuildLineAwarePoolの上位）」というユーザー方針に沿い、
+ * 2着を絞って3着を広めに取る非対称フォーメーションにする。
+ * pool は buildLineAwarePool の戻り値（軸と同ラインが先頭、その後は隊列・
+ * マーク率込みの順）を渡す前提。
+ */
+function honmeiFormationHighMargin(axis: number, pool: number[], margin: number): string[] {
+  if (margin >= HIGH_MARGIN_TIGHT_THRESHOLD) {
+    // 本命が抜けている：◎→（同ライン先頭）→3着は次点2頭 の2点だけ
+    const second = pool[0];
+    if (second == null) return [];
+    return pool
+      .slice(1, 3)
+      .filter((third) => third !== second)
+      .map((third) => `${axis}-${second}-${third}`);
+  }
+  // margin 10-13：2着はプール上位2頭、3着はプール上位8頭（最大12点）
+  const seconds = pool.slice(0, 2);
+  const thirds = pool.slice(0, 8);
+  const combos: string[] = [];
+  for (const second of seconds) {
+    for (const third of thirds) {
+      if (second === third) continue;
+      combos.push(`${axis}-${second}-${third}`);
+    }
+  }
+  return combos.slice(0, 12);
+}
+
 /** まくり/差し一撃の軸候補選びで、番手×差し優位（決まり手回数ベース）の選手に
  * 与えるタイブレーク用の加点として検証したが、backtest.tsで効果を確認できなかった
  * ため0で無効化（詳細はgenerateScenarios内のコメント参照）。 */
@@ -1554,22 +1600,28 @@ export function generateScenarios(
   const honmeiScenario = result.find((s) => s.label === "本命");
   if (taikou && honmeiScenario) {
     if (margin >= HIGH_CONFIDENCE_MARGIN) {
-      // 本命が抜けているレース：軸の勝率は82.7%と高いが、2着・3着まで含めた
-      // 3連単の的中率・回収率は軸の信頼度とは別物。旧実装は「軸が堅いなら買い目も
-      // 絞れる」という考えで2点に絞っていたが、scripts/diagnose-hc-formation-size.ts
-      // で高信頼度レース(307件)に絞って点数別のROIを検証すると、2点(現行)は
-      // 的中率25.1%・回収率87.6%(赤字)なのに対し、20点まで広げると的中率76.9%・
-      // 回収率152.3%(黒字)と、点数を増やすほど明確に的中率・回収率とも改善した
-      // （6点90.4%/45.3%、12点84.8%/61.9%、いずれも20点に劣る）。
-      // 軸が堅いことは「軸以外の着順も読める」ことを意味しない
-      // （むしろ本命が抜けている分、2-3着争いは横並びになりやすいと考えられる）ため、
-      // 絞るのではなく他シナリオ同様の上限20点まで広げる。
+      // 厳選対象（margin>=10）。かつては「軸が堅い→2点」→検証で「20点が最良」と
+      // 二転三転したが、predictions由来537件をtrain/test分割で見直したところ、
+      // margin>=10を一律20点にすると全体の回収率は105%だがtest期間は95.5%（赤字）で、
+      // 実運用の厳選（毎日margin上位10件）に至っては平均15.8点・回収率30%・
+      // 33日で−12.6万円という状態だった（ユーザー指摘「厳選の回収率悪すぎる」）。
+      // 原因は、本命が抜けているレースほど3連単の当たり組が低配当で、
+      // 15〜20点も買うと当たっても投資割れすること。
+      // margin帯で点数と形を変える（honmeiFormationHighMarginのコメント参照）：
+      //   10-13点差: 2着=プール上位2 / 3着=上位8 の非対称 約10点 → 全体119%/test122%
+      //   13点差以上: ◎→同ライン先頭→3着2頭 の2点          → ほぼ均衡（96〜101%）
+      // これで margin>=10 全体が全体117%/test120%・平均6.8点に改善（総損益 +43k→+62k）。
+      // 2着を「データ上位なだけでなくラインで絞る」というユーザー方針も、
+      // buildLineAwarePool（軸と同ラインを先頭に並べる）の上位2頭に2着を限定する形で反映。
       const pool = buildLineAwarePool(honmei.entry.car_num, honmei.entry.line_group, scored);
       honmeiScenario.formation = {
         betType: "3連単フォーメーション",
-        combinations: formationFromPool(honmei.entry.car_num, pool, SANRENTAN_MAX_POINTS),
+        combinations: honmeiFormationHighMargin(honmei.entry.car_num, pool, margin),
       };
-      honmeiScenario.reason += ` 対抗との差が${margin.toFixed(1)}点あり単勝的中率が高い傾向です（軸の勝率82.7%実績）。ただし2・3着まで含めると絞り込みは難しいため、買い目は広めに取っています。`;
+      honmeiScenario.reason +=
+        margin >= HIGH_MARGIN_TIGHT_THRESHOLD
+          ? ` 対抗との差が${margin.toFixed(1)}点と本命が抜けており、当たっても低配当になりやすいため、◎→同ライン→3着2頭の2点に絞っています。`
+          : ` 対抗との差が${margin.toFixed(1)}点あり本命の信頼度が高い傾向です。2着は同ラインを中心に2頭、3着を広めに取った${honmeiScenario.formation.combinations.length}点にしています。`;
     } else if (margin < LOW_MARGIN_THRESHOLD) {
       // 本命・対抗が拮抗：1着・2着を入れ替え可能なボックス買いにする（例: 1=2-3）
       const thirdPool = buildLineAwarePool(honmei.entry.car_num, honmei.entry.line_group, scored).filter(
