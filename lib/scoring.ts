@@ -1650,6 +1650,15 @@ export function generateScenarios(
       // と6点がはっきり最良になった。母数が小さいうちの結論が、データが
       // 増えて安定したことで変わった例（ユーザー指摘「2点のところは
       // 増えてもいい」が的中）。6点に広げる。
+      //
+      // 2026-09、margin>=10側で「2着をbuildLineAwarePool上位2頭に絞り3着を
+      // 広める」非対称フォーメーションが効いた（honmeiFormationHighMargin
+      // 参照）ため、この中間帯にも同じ形（2着上位2×3着上位5、約8点）を
+      // 試した（n=1795、train/test分割）。しかし現行の対称box6点は
+      // train100.4%/test112.0%と安定しているのに対し、非対称8点はtrain112.9%/
+      // test88.9%と方向が逆転（典型的な過学習）。「2着を線内先頭固定×3着広め」
+      // （約6点）も試したがtrain96.6%/test100.2%とほぼ均衡止まりで現行を
+      // 上回らなかった。中間帯は対称box6点のまま据え置く。
       const pool = buildLineAwarePool(honmei.entry.car_num, honmei.entry.line_group, scored);
       honmeiScenario.formation = {
         betType: "3連単フォーメーション",
