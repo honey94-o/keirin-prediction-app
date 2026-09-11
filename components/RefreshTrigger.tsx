@@ -22,21 +22,11 @@ export function RefreshTrigger({ compact = false }: { compact?: boolean }) {
   if (compact) {
     return (
       <form action={formAction} className="inline-block">
-        <button
-          type="submit"
-          disabled={pending}
-          className="text-xs text-[#0d5c3f] underline disabled:opacity-50 dark:text-emerald-400"
-        >
+        <button type="submit" disabled={pending} className="text-xs text-mint-strong underline disabled:opacity-50">
           {pending ? "更新中…" : "今すぐ更新"}
         </button>
         {state && (
-          <p
-            className={`text-xs mt-1 ${
-              state.ok ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"
-            }`}
-          >
-            {state.message}
-          </p>
+          <p className={`text-xs mt-1 ${state.ok ? "text-mint" : "text-rose-soft"}`}>{state.message}</p>
         )}
       </form>
     );
@@ -47,20 +37,14 @@ export function RefreshTrigger({ compact = false }: { compact?: boolean }) {
       <button
         type="submit"
         disabled={pending}
-        className="bg-[#0d5c3f] text-white rounded-lg px-4 py-2 font-semibold disabled:opacity-50 active:opacity-80"
+        className="bg-mint text-mint-ink rounded-lg px-4 py-2 font-semibold disabled:opacity-50 active:opacity-80"
       >
         {pending ? "更新を開始しています…" : "今すぐ更新する"}
       </button>
       {state && (
-        <p
-          className={`text-xs mt-2 ${
-            state.ok ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"
-          }`}
-        >
-          {state.message}
-        </p>
+        <p className={`text-xs mt-2 ${state.ok ? "text-mint" : "text-rose-soft"}`}>{state.message}</p>
       )}
-      <p className="text-xs text-gray-400 mt-2 dark:text-gray-500">
+      <p className="text-xs text-mist-4 mt-2">
         全開催場のデータ取得を開始します（完了まで数分〜十数分ほどかかります）
       </p>
     </form>
