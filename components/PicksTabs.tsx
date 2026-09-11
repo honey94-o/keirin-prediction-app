@@ -14,7 +14,7 @@ interface PickItem {
 }
 
 // 「厳選レース」10件を発走時刻順のタブで切り替えて見られるようにするクライアント
-// コンポーネント。/races/[id]/betsへページ遷移せずに、その日の推奨買い目
+// コンポーネント。/races/[id]へページ遷移せずに、その日の推奨買い目
 // （本命フォーメーション）を1画面で次々確認できるようにする。
 export function PicksTabs({ items }: { items: PickItem[] }) {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -112,7 +112,7 @@ export function PicksTabs({ items }: { items: PickItem[] }) {
           </>
         )}
 
-        <Link href={`/races/${race.id}/bets`} className="text-sm text-[#0d5c3f] underline dark:text-emerald-400">
+        <Link href={`/races/${race.id}`} className="text-sm text-[#0d5c3f] underline dark:text-emerald-400">
           他のシナリオ・出走表を見る →
         </Link>
       </section>

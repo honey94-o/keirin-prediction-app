@@ -230,7 +230,7 @@ export default async function HistoryPage({
               return (
                 <li key={r.pick.race_id} className="py-1.5">
                   <Link
-                    href={`/races/${r.pick.race_id}/bets`}
+                    href={`/races/${r.pick.race_id}`}
                     className="flex items-center gap-2 active:bg-amber-100/50 -mx-1 px-1 rounded text-sm dark:active:bg-amber-900/50"
                   >
                     <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
@@ -286,7 +286,7 @@ export default async function HistoryPage({
             {barikataResults.map((r) => (
               <li key={r.pick.race_id} className="py-1.5">
                 <Link
-                  href={`/races/${r.pick.race_id}/bets`}
+                  href={`/races/${r.pick.race_id}`}
                   className="flex items-center gap-2 active:bg-rose-100/50 -mx-1 px-1 rounded text-sm dark:active:bg-rose-900/50"
                 >
                   <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">

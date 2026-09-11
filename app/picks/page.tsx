@@ -168,7 +168,7 @@ export default async function PicksPage({
             {barikataByTime.map((p) => (
               <li key={p.race_id}>
                 <Link
-                  href={`/races/${p.race_id}/bets`}
+                  href={`/races/${p.race_id}`}
                   className="flex items-center gap-2 bg-white rounded-lg px-2 py-1.5 text-sm active:bg-gray-50 dark:bg-gray-800 dark:active:bg-gray-700"
                 >
                   <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
@@ -245,7 +245,7 @@ export default async function PicksPage({
               return (
                 <li key={r.pick.race_id} className="py-2">
                   <Link
-                    href={`/races/${r.pick.race_id}/bets`}
+                    href={`/races/${r.pick.race_id}`}
                     className="flex items-center gap-2 active:bg-gray-50 -mx-1 px-1 rounded dark:active:bg-gray-700"
                   >
                     <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">

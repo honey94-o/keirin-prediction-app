@@ -7,13 +7,10 @@ import type { RaceRow } from "../lib/types";
 export function RaceSwitcher({
   races,
   currentRaceId,
-  linkSuffix = "",
   finishedRaceIds,
 }: {
   races: RaceRow[];
   currentRaceId: number;
-  /** 遷移先のパス末尾（例: "/bets"）。省略時は出走表画面（/races/[id]）に遷移する。 */
-  linkSuffix?: string;
   /** 着順確定済みのレースID集合。渡された場合、終了済みタブを淡色表示にする。 */
   finishedRaceIds?: Set<number>;
 }) {
@@ -29,7 +26,7 @@ export function RaceSwitcher({
   if (races.length <= 1) return null;
 
   return (
-    <div className="flex gap-1.5 overflow-x-auto pb-1 mb-3 -mx-4 px-4">
+    <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-4 px-4">
       {races.map((r) => {
         const active = r.id === currentRaceId;
         const finished = !active && (finishedRaceIds?.has(r.id) ?? false);
@@ -37,13 +34,13 @@ export function RaceSwitcher({
           <Link
             key={r.id}
             ref={active ? activeRef : undefined}
-            href={`/races/${r.id}${linkSuffix}`}
-            className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-semibold ${
+            href={`/races/${r.id}`}
+            className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium font-mono ${
               active
-                ? "bg-[#0d5c3f] text-white"
+                ? "bg-mint text-mint-ink"
                 : finished
-                  ? "bg-gray-200 text-gray-500 border border-gray-200 dark:bg-gray-700 dark:text-gray-400 dark:border-gray-700"
-                  : "bg-white text-gray-600 border border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700"
+                  ? "bg-white/5 text-mist-5"
+                  : "bg-white/5 text-mist-2"
             }`}
           >
             {r.race_no}R

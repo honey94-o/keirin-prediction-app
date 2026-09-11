@@ -59,8 +59,20 @@ function startingSoonMinutes(
 function StartingSoonBadge({ minutes }: { minutes: number | null }) {
   if (minutes == null) return null;
   return (
-    <span className="text-[10px] font-semibold bg-red-500 text-white px-1.5 py-0.5 rounded-full shrink-0 whitespace-nowrap">
+    <span className="text-[10px] font-bold text-[#2A0A10] bg-rose px-1.5 py-0.5 rounded-full shrink-0 whitespace-nowrap">
       あと{minutes}分
+    </span>
+  );
+}
+
+function ResultBadge({ hit }: { hit: boolean }) {
+  return hit ? (
+    <span className="text-[11px] font-bold text-mint-ink bg-mint px-2 py-0.5 rounded-lg shrink-0 whitespace-nowrap">
+      的中
+    </span>
+  ) : (
+    <span className="text-[11px] font-semibold text-mist-3 bg-white/[.07] px-2 py-0.5 rounded-lg shrink-0 whitespace-nowrap">
+      不的中
     </span>
   );
 }
@@ -87,13 +99,7 @@ export default async function Home({
 
   // 「本日の厳選レース」：結果未確定（前日以前は対象外）の日だけ、
   // scripts/daily-picks.tsが事前計算したdaily_picksからその日の本命marginが
-  // 大きい順に上位10件を表示する。scripts/simulate-selective-strategy.tsで
-  // 122日分の実データを検証した結果、margin自体にしきい値を設けるより
-  // 「その日の中での相対的な上位」を機械的に選ぶ方が、1日の採用件数を安定して
-  // 確保しつつ30日ローリング回収率も安定した（詳細はgetDailyPicksのコメント参照）。
-  // 結果が確定した分は的中/不的中バッジも出したいので、一覧取得と同時に判定
-  // 済みのgetDailyPicksResults/getBarikataPicksResultsを使う（内部でgetDailyPicks等を
-  // 呼んでいるため、showPicks=falseの日は呼ばず余計なクエリを増やさない）。
+  // 大きい順に上位10件を表示する。
   const showPicks = viewDate === todayStr || viewDate === nextDate;
   const pickResults = showPicks ? await getDailyPicksResults(viewDate) : [];
   // ホーム画面のプレビュー一覧は発走時刻順に並べ替える（時刻がバラバラなので
@@ -163,372 +169,312 @@ export default async function Home({
   ];
 
   return (
-    <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
-      <div className="flex items-baseline justify-between mb-1">
-        <h1 className="text-lg font-bold dark:text-gray-100">開催場を選択</h1>
-        <RefreshTrigger compact />
-      </div>
-      <div className="flex items-baseline justify-between mb-3">
-        <p className="text-sm text-gray-400 dark:text-gray-500">{formatDateStr(viewDate)}</p>
-        {lastSyncedAt && (
-          <p className="text-xs text-gray-400 dark:text-gray-500">最終更新 {formatUtcAsJst(lastSyncedAt)}</p>
-        )}
-      </div>
-
-      <div className="flex gap-1.5 mb-4">
-        {tabs.map((tab) => {
-          const active = tab.date === viewDate;
-          const href = tab.date === todayStr ? "/" : `/?date=${tab.date}`;
-          return (
-            <Link
-              key={tab.label}
-              href={href}
-              className={`flex-1 text-center px-3 py-2 rounded-lg text-sm font-semibold ${
-                active
-                  ? "bg-[#0d5c3f] text-white"
-                  : "bg-white text-gray-600 border border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700"
-              }`}
-            >
-              {tab.label}
-            </Link>
-          );
-        })}
-      </div>
-
-      {todaySummary && todaySummary.total > 0 && (
-        <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-2 mb-4 dark:bg-gray-800 dark:border-gray-700">
-          <span className="text-xs font-semibold bg-[#0d5c3f] text-white px-2 py-0.5 rounded-full">
-            今日の的中
-          </span>
-          <span className="text-sm font-bold tabular-nums dark:text-gray-100">
-            {todaySummary.hits}/{todaySummary.total}
-          </span>
-          <span className="text-xs text-gray-400 dark:text-gray-500">
-            ({((todaySummary.hits / todaySummary.total) * 100).toFixed(0)}%)
-          </span>
-          <span className="text-xs text-gray-400 dark:text-gray-500">厳選+バリカタ</span>
-          <Link
-            href="/history"
-            className="text-xs font-semibold text-[#0d5c3f] underline ml-auto whitespace-nowrap dark:text-emerald-400"
-          >
-            日別履歴 →
-          </Link>
-        </div>
-      )}
-
-      {favoriteRacers.length > 0 && (
-        <section className="bg-yellow-50 border border-yellow-200 rounded-lg shadow-sm p-3 mb-4 dark:bg-yellow-950 dark:border-yellow-900">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold bg-yellow-500 text-white px-2 py-0.5 rounded-full">
-                ★ お気に入り
-              </span>
-              <span className="text-xs text-yellow-800 dark:text-yellow-400">{formatDateStr(viewDate)}の出走</span>
+    <main className="bg-ink-0 flex-1">
+      <div className="max-w-lg mx-auto w-full px-4 py-4">
+        <div className="flex items-center justify-between gap-3 pb-3 mb-4 border-b border-white/[.06]">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-[9px] bg-gradient-to-br from-mint to-[#127A57] flex items-center justify-center text-[13px] font-black text-mint-ink">
+              K
             </div>
-            <Link
-              href="/favorites"
-              className="text-xs font-semibold text-yellow-800 underline whitespace-nowrap dark:text-yellow-400"
-            >
-              一覧を見る →
-            </Link>
-          </div>
-          {favoriteEntries.length === 0 ? (
-            <p className="text-xs text-gray-400 dark:text-gray-500">この日の出走はありません</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {favoriteEntries.map((f) => (
-                <li key={`${f.race.id}-${f.snum}`}>
-                  <Link
-                    href={`/races/${f.race.id}/bets`}
-                    className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 active:bg-gray-50 dark:bg-gray-800 dark:active:bg-gray-700"
-                  >
-                    <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
-                      {f.race.start_time ?? "--:--"}
-                    </span>
-                    <span className="text-sm text-gray-900 flex-1 truncate dark:text-gray-100">
-                      {f.race.keirinjo_name} {f.race.race_no}R
-                    </span>
-                    <StartingSoonBadge
-                      minutes={startingSoonMinutes(f.race.start_time, viewDate, todayStr, nowHHMM)}
-                    />
-                    <span className="text-xs text-yellow-700 tabular-nums shrink-0 dark:text-yellow-400">
-                      {f.carNum}番
-                    </span>
-                    <span className="text-sm font-semibold text-gray-900 truncate max-w-[8rem] dark:text-gray-100">
-                      {f.racerName}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-
-      {barikataResults.length > 0 && (
-        <section className="bg-rose-50 border border-rose-200 rounded-lg shadow-sm p-3 mb-4 dark:bg-rose-950 dark:border-rose-900">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-semibold bg-rose-600 text-white px-2 py-0.5 rounded-full">
-              バリカタ
-            </span>
-            <span className="text-xs text-rose-800 dark:text-rose-400">
-              margin・ライン決着から絞った単一の並び（1点買い想定）
-            </span>
-          </div>
-          <ul className="flex flex-col gap-2">
-            {barikataByTime.map(({ pick: p, finished, hit }) => (
-              <li key={p.race_id}>
-                <Link
-                  href={`/races/${p.race_id}/bets`}
-                  className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 active:bg-gray-50 dark:bg-gray-800 dark:active:bg-gray-700"
-                >
-                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
-                    {p.start_time ?? "--:--"}
-                  </span>
-                  <span className="text-sm font-medium text-gray-900 flex-1 truncate dark:text-gray-100">
-                    {p.keirinjo_name} {p.race_no}R
-                  </span>
-                  <span className="text-sm font-mono font-bold text-rose-700 tabular-nums whitespace-nowrap dark:text-rose-400">
-                    {p.combo}
-                  </span>
-                  <span className="text-xs font-semibold text-rose-700 tabular-nums whitespace-nowrap dark:text-rose-400">
-                    差{p.margin.toFixed(1)}点
-                  </span>
-                  <StartingSoonBadge
-                    minutes={startingSoonMinutes(p.start_time, viewDate, todayStr, nowHHMM)}
-                  />
-                  {finished && (
-                    <span
-                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-                        hit
-                          ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
-                          : "bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-400"
-                      }`}
-                    >
-                      {hit ? "的中" : "不的中"}
-                    </span>
-                  )}
-                </Link>
-              </li>
-            ))}
-          </ul>
-          <p className="text-[10px] text-rose-700 mt-2 leading-relaxed dark:text-rose-400">
-            単一の並び的中率は検証時点で32.7%・的中時平均オッズ4.13倍（1点買い回収率約140%、母数197件）。
-            必ず的中するわけではありません。
-          </p>
-        </section>
-      )}
-
-      {barikataNearMisses.length > 0 && (
-        <section className="bg-gray-50 border border-gray-200 rounded-lg shadow-sm p-3 mb-4 dark:bg-gray-800/60 dark:border-gray-700">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-semibold bg-gray-400 text-white px-2 py-0.5 rounded-full">
-              バリカタ候補漏れ
-            </span>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              marginは強いが同ライン決着ではない（参考値）
-            </span>
-          </div>
-          <ul className="flex flex-col gap-2">
-            {nearMissesByTime.map(({ pick: n, finished, hit }) => (
-              <li key={n.race_id}>
-                <Link
-                  href={`/races/${n.race_id}/bets`}
-                  className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 active:bg-gray-50 dark:bg-gray-800 dark:active:bg-gray-700"
-                >
-                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
-                    {n.start_time ?? "--:--"}
-                  </span>
-                  <span className="text-sm font-medium text-gray-900 flex-1 truncate dark:text-gray-100">
-                    {n.keirinjo_name} {n.race_no}R
-                  </span>
-                  <span className="text-sm font-mono text-gray-500 tabular-nums whitespace-nowrap dark:text-gray-400">
-                    {n.combo}
-                  </span>
-                  <span className="text-xs text-gray-400 tabular-nums whitespace-nowrap dark:text-gray-500">
-                    差{n.margin.toFixed(1)}点
-                  </span>
-                  <StartingSoonBadge
-                    minutes={startingSoonMinutes(n.start_time, viewDate, todayStr, nowHHMM)}
-                  />
-                  {finished && (
-                    <span
-                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-                        hit
-                          ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
-                          : "bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-400"
-                      }`}
-                    >
-                      {hit ? "的中" : "不的中"}
-                    </span>
-                  )}
-                </Link>
-              </li>
-            ))}
-          </ul>
-          <p className="text-[10px] text-gray-400 mt-2 leading-relaxed dark:text-gray-500">
-            予想1-2-3位のスコア差はバリカタ本体と同じ基準を満たしていますが、3着候補が他ラインのため
-            単一の並びとしての的中率は大きく下がります（実測: 同じmargin帯で比較すると同ライン決着の
-            1/3程度）。バリカタとしては採用していない参考情報です。
-          </p>
-        </section>
-      )}
-
-      {pickResults.length > 0 && (
-        <section className="bg-amber-50 border border-amber-200 rounded-lg shadow-sm p-3 mb-4 dark:bg-amber-950 dark:border-amber-900">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold bg-amber-500 text-white px-2 py-0.5 rounded-full">
-                厳選レース
-              </span>
-              <span className="text-xs text-amber-800 dark:text-amber-400">
-                本命の信頼度が高い上位{pickResults.length}レース
+            <div className="flex flex-col leading-tight">
+              <span className="text-base font-bold text-mist-0">競輪予想</span>
+              <span className="text-[10px] font-mono text-mist-4">
+                {formatDateStr(viewDate)}
+                {lastSyncedAt && ` ・ ${formatUtcAsJst(lastSyncedAt)} 更新`}
               </span>
             </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <RefreshTrigger compact />
             <Link
-              href={`/picks?date=${viewDate}`}
-              className="text-xs font-semibold text-amber-800 underline whitespace-nowrap dark:text-amber-400"
+              href="/history"
+              className="w-8 h-8 rounded-[11px] bg-white/5 flex items-center justify-center text-[11px] text-mist-2"
             >
-              タブでまとめて見る →
+              履歴
+            </Link>
+            <Link
+              href="/settings"
+              className="w-8 h-8 rounded-[11px] bg-white/5 flex items-center justify-center text-[11px] text-mist-2"
+            >
+              設定
             </Link>
           </div>
-          <ul className="flex flex-col gap-2">
-            {picksByTime.map(({ pick: p, finished, hit }) => (
-              <li key={p.race_id}>
-                <Link
-                  href={`/races/${p.race_id}/bets`}
-                  className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 active:bg-gray-50 dark:bg-gray-800 dark:active:bg-gray-700"
-                >
-                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
-                    {p.start_time ?? "--:--"}
-                  </span>
-                  <span className="text-sm font-medium text-gray-900 flex-1 truncate dark:text-gray-100">
-                    {p.keirinjo_name} {p.race_no}R
-                  </span>
-                  <span className="text-xs text-gray-500 whitespace-nowrap dark:text-gray-400">
-                    軸 {p.honmei_car_num}.{p.honmei_name}
-                  </span>
-                  <span className="text-xs font-semibold text-amber-700 tabular-nums whitespace-nowrap dark:text-amber-400">
-                    差{p.margin.toFixed(1)}点
-                  </span>
-                  <StartingSoonBadge
-                    minutes={startingSoonMinutes(p.start_time, viewDate, todayStr, nowHHMM)}
-                  />
-                  {finished && (
-                    <span
-                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-                        hit
-                          ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
-                          : "bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-400"
-                      }`}
-                    >
-                      {hit ? "的中" : "不的中"}
-                    </span>
-                  )}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {races.length === 0 ? (
-        <div className="text-center mt-8">
-          <p className="text-gray-500 mb-4 dark:text-gray-400">
-            {formatDateStr(viewDate)}のレースはまだ取得されていません。
-            {viewDate === todayStr &&
-              "毎日朝5時頃に自動取得されますが、今すぐ取得することもできます。"}
-          </p>
-          {viewDate <= addDaysToDateStr(todayStr, 1) && <RefreshTrigger />}
         </div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {groupsByTime.map(({ jocd, groupRaces, allFinished }) => {
-            const first = groupRaces[0];
-            const nearestRace = pickNearestRace(groupRaces, viewDate, todayStr);
+
+        <div className="grid grid-cols-3 gap-1.5 p-1 bg-white/[.04] rounded-[14px] mb-4">
+          {tabs.map((tab) => {
+            const active = tab.date === viewDate;
+            const href = tab.date === todayStr ? "/" : `/?date=${tab.date}`;
             return (
               <Link
-                key={jocd}
-                href={`/races/${nearestRace.id}/bets`}
-                className={`flex items-center justify-between rounded-lg shadow-sm px-4 py-3 ${
-                  allFinished
-                    ? "bg-gray-100 active:bg-gray-200 dark:bg-gray-800/60 dark:active:bg-gray-700"
-                    : "bg-white active:bg-gray-50 dark:bg-gray-800 dark:active:bg-gray-700"
+                key={tab.label}
+                href={href}
+                className={`text-center py-2 rounded-[11px] text-sm font-bold ${
+                  active ? "bg-mint text-mint-ink" : "text-mist-3"
                 }`}
               >
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className={`font-semibold ${
-                      allFinished ? "text-gray-400 dark:text-gray-500" : "text-gray-900 dark:text-gray-100"
-                    }`}
-                  >
-                    {first.keirinjo_name}
-                  </span>
-                  {(() => {
-                    const dayLabel = eventDayLabel(groupRaces);
-                    if (!dayLabel) return null;
-                    return (
-                      <span
-                        className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                          dayLabel === "最終日"
-                            ? "bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400"
-                            : "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-400"
-                        }`}
-                      >
-                        {dayLabel}
-                      </span>
-                    );
-                  })()}
-                  {first.grade_kbn && (
-                    <span className="text-[10px] font-semibold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded dark:bg-gray-700 dark:text-gray-300">
-                      {first.grade_kbn}
-                    </span>
-                  )}
-                  {(() => {
-                    const stage = raceStage(nearestRace.syumoku);
-                    if (stage === "不明") return null;
-                    return (
-                      <span
-                        className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                          stage === "予選"
-                            ? "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
-                            : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
-                        }`}
-                      >
-                        {stage}
-                      </span>
-                    );
-                  })()}
-                  {allFinished && (
-                    <span className="text-[10px] font-semibold bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded dark:bg-gray-700 dark:text-gray-400">
-                      終了
-                    </span>
-                  )}
-                </div>
-                <div className="text-right">
-                  <div
-                    className={`text-sm ${
-                      allFinished ? "text-gray-400 dark:text-gray-500" : "text-gray-500 dark:text-gray-400"
-                    }`}
-                  >
-                    {allFinished
-                      ? `全${groupRaces.length}レース終了`
-                      : `${groupRaces.length}レース中 ${nearestRace.race_no}R`}
-                  </div>
-                  {!allFinished && nearestRace.start_time && (
-                    <div className="text-xs text-gray-400 flex items-center gap-1 justify-end dark:text-gray-500">
-                      <span>発走 {nearestRace.start_time}</span>
-                      <StartingSoonBadge
-                        minutes={startingSoonMinutes(nearestRace.start_time, viewDate, todayStr, nowHHMM)}
-                      />
-                    </div>
-                  )}
-                </div>
+                {tab.label}
               </Link>
             );
           })}
         </div>
-      )}
+
+        {todaySummary && todaySummary.total > 0 && (
+          <div className="flex items-center gap-4 rounded-[20px] p-4 mb-4 border border-mint/[.18] bg-gradient-to-br from-mint/[.13] to-mint/[.02]">
+            <div className="flex flex-col gap-0.5 flex-1">
+              <span className="text-[11px] tracking-wide text-mint-strong">今日の的中（厳選＋バリカタ）</span>
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-[34px] font-medium text-mist-0 leading-none">
+                  {todaySummary.hits}
+                  <span className="text-lg text-mist-4">/{todaySummary.total}</span>
+                </span>
+                <span className="text-[15px] font-bold text-mint">
+                  {((todaySummary.hits / todaySummary.total) * 100).toFixed(0)}%
+                </span>
+              </div>
+              <div className="h-[5px] rounded-full bg-white/[.08] overflow-hidden mt-2">
+                <div
+                  className="h-full bg-mint"
+                  style={{ width: `${(todaySummary.hits / todaySummary.total) * 100}%` }}
+                />
+              </div>
+            </div>
+            <Link href="/history" className="text-xs text-mint-strong whitespace-nowrap shrink-0">
+              日別 →
+            </Link>
+          </div>
+        )}
+
+        {favoriteRacers.length > 0 && (
+          <section className="flex flex-col gap-2 mb-4">
+            <div className="flex items-center gap-2 px-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-gold" />
+              <span className="text-sm font-bold text-mist-0">お気に入り選手</span>
+              <span className="text-[11px] text-mist-4 flex-1">{formatDateStr(viewDate)}の出走</span>
+              <Link href="/favorites" className="text-[11px] font-semibold text-gold whitespace-nowrap">
+                一覧を見る →
+              </Link>
+            </div>
+            {favoriteEntries.length === 0 ? (
+              <p className="text-xs text-mist-4 px-1">この日の出走はありません</p>
+            ) : (
+              favoriteEntries.map((f) => (
+                <Link
+                  key={`${f.race.id}-${f.snum}`}
+                  href={`/races/${f.race.id}`}
+                  className="flex items-center gap-3 rounded-[18px] px-3.5 py-3 border border-gold/[.18] bg-ink-3"
+                >
+                  <span className="text-[13px] text-gold">★</span>
+                  <span className="font-mono text-xs text-mist-4 w-11 shrink-0">
+                    {f.race.start_time ?? "--:--"}
+                  </span>
+                  <span className="text-sm font-bold text-mist-0 flex-1 truncate">
+                    {f.race.keirinjo_name} {f.race.race_no}R
+                  </span>
+                  <span className="text-xs text-mist-2 shrink-0">{f.carNum}番</span>
+                  <span className="text-sm font-semibold text-mist-1 truncate max-w-[6.5rem]">
+                    {f.racerName}
+                  </span>
+                  <StartingSoonBadge
+                    minutes={startingSoonMinutes(f.race.start_time, viewDate, todayStr, nowHHMM)}
+                  />
+                </Link>
+              ))
+            )}
+          </section>
+        )}
+
+        {barikataResults.length > 0 && (
+          <section className="flex flex-col gap-2.5 mb-4">
+            <div className="flex items-center gap-2 px-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose" />
+              <span className="text-sm font-bold text-mist-0">バリカタ</span>
+              <span className="text-[11px] text-mist-4 flex-1">単一の並び・1点買い想定</span>
+              <span className="font-mono text-[11px] text-rose-soft">{barikataResults.length} races</span>
+            </div>
+            {barikataByTime.map(({ pick: p, finished, hit }) => (
+              <Link
+                key={p.race_id}
+                href={`/races/${p.race_id}`}
+                className="flex flex-col gap-2.5 rounded-[18px] p-3.5 border border-rose/[.16] bg-ink-3"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="font-mono text-xs text-mist-4">{p.start_time ?? "--:--"}</span>
+                  <span className="text-[15px] font-bold text-mist-0">{p.keirinjo_name}</span>
+                  <span className="font-mono text-[13px] text-mist-2">{p.race_no}R</span>
+                  <span className="flex-1" />
+                  {finished ? (
+                    <ResultBadge hit={hit ?? false} />
+                  ) : (
+                    <StartingSoonBadge minutes={startingSoonMinutes(p.start_time, viewDate, todayStr, nowHHMM)} />
+                  )}
+                </div>
+                <div className="flex items-end justify-between">
+                  <span className="font-mono text-[28px] font-medium tracking-[.02em] text-rose-soft leading-none">
+                    {p.combo}
+                  </span>
+                  <div className="flex flex-col items-end">
+                    <span className="text-[10px] text-mist-4">スコア差</span>
+                    <span className="font-mono text-[15px] text-mist-0">{p.margin.toFixed(1)}</span>
+                  </div>
+                </div>
+              </Link>
+            ))}
+            <p className="text-[11px] leading-relaxed text-mist-4 px-1">
+              検証時点の的中率32.7%・平均オッズ4.13倍（1点買い回収率約140%／母数197件）。必ず的中するものではありません。
+            </p>
+          </section>
+        )}
+
+        {barikataNearMisses.length > 0 && (
+          <details className="flex flex-col mb-4 rounded-[18px] bg-ink-2 border border-white/[.06] overflow-hidden group">
+            <summary className="px-3.5 py-3.5 flex items-center gap-2 cursor-pointer select-none marker:content-none [&::-webkit-details-marker]:hidden">
+              <span className="text-[13px] font-bold text-mist-2 flex-1">
+                参考：バリカタ候補漏れ
+                <span className="font-mono text-mist-4 font-normal"> {barikataNearMisses.length}</span>
+              </span>
+              <span className="text-[11px] text-mist-4 group-open:hidden">開く ⌄</span>
+              <span className="text-[11px] text-mist-4 hidden group-open:inline">閉じる ⌃</span>
+            </summary>
+            <div className="px-3.5 pb-3.5 flex flex-col gap-px">
+              {nearMissesByTime.map(({ pick: n, finished, hit }) => (
+                <Link
+                  key={n.race_id}
+                  href={`/races/${n.race_id}`}
+                  className="flex items-center gap-2.5 py-2.5 border-t border-white/[.05]"
+                >
+                  <span className="font-mono text-[11px] text-mist-5 w-11 shrink-0">
+                    {n.start_time ?? "--:--"}
+                  </span>
+                  <span className="text-[13px] text-mist-2 flex-1 truncate">
+                    {n.keirinjo_name} {n.race_no}R
+                  </span>
+                  <span className="font-mono text-[13px] text-mist-3">{n.combo}</span>
+                  <span className="font-mono text-[11px] text-mist-5">{n.margin.toFixed(1)}</span>
+                  {finished && <ResultBadge hit={hit ?? false} />}
+                </Link>
+              ))}
+              <p className="text-[11px] leading-relaxed text-mist-5 pt-2">
+                3着候補が他ラインのため、単一の並びとしての的中率は大きく下がります（同margin帯で同ライン決着の約1/3）。
+              </p>
+            </div>
+          </details>
+        )}
+
+        {pickResults.length > 0 && (
+          <section className="flex flex-col gap-2.5 mb-4">
+            <div className="flex items-center gap-2 px-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-gold" />
+              <span className="text-sm font-bold text-mist-0">厳選レース</span>
+              <span className="text-[11px] text-mist-4 flex-1">本命の信頼度が高い{pickResults.length}本</span>
+              <Link href={`/picks?date=${viewDate}`} className="text-[11px] font-semibold text-gold whitespace-nowrap">
+                すべて →
+              </Link>
+            </div>
+            <div className="rounded-[18px] bg-ink-3 border border-white/[.06] overflow-hidden">
+              {picksByTime.map(({ pick: p, finished, hit }) => (
+                <Link
+                  key={p.race_id}
+                  href={`/races/${p.race_id}`}
+                  className="flex items-center gap-2.5 px-3.5 py-3.5 border-t border-white/[.05] first:border-t-0"
+                >
+                  <span className="font-mono text-xs text-mist-4 w-11 shrink-0">{p.start_time ?? "--:--"}</span>
+                  <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[15px] font-bold text-mist-0">{p.keirinjo_name}</span>
+                      <span className="font-mono text-xs text-mist-2">{p.race_no}R</span>
+                    </div>
+                    <span className="text-[11px] text-mist-3 truncate">
+                      軸 {p.honmei_car_num}.{p.honmei_name}
+                    </span>
+                  </div>
+                  <span className="font-mono text-[13px] text-gold">{p.margin.toFixed(1)}</span>
+                  {finished ? (
+                    <ResultBadge hit={hit ?? false} />
+                  ) : (
+                    <StartingSoonBadge minutes={startingSoonMinutes(p.start_time, viewDate, todayStr, nowHHMM)} />
+                  )}
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {races.length === 0 ? (
+          <div className="text-center mt-8">
+            <p className="text-mist-3 mb-4">
+              {formatDateStr(viewDate)}のレースはまだ取得されていません。
+              {viewDate === todayStr &&
+                "毎日朝5時頃に自動取得されますが、今すぐ取得することもできます。"}
+            </p>
+            {viewDate <= addDaysToDateStr(todayStr, 1) && <RefreshTrigger />}
+          </div>
+        ) : (
+          <section className="flex flex-col gap-2.5">
+            <div className="flex items-center gap-2 px-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue" />
+              <span className="text-sm font-bold text-mist-0">開催場</span>
+              <span className="text-[11px] text-mist-4">{groupsByTime.length}場開催中</span>
+            </div>
+            {groupsByTime.map(({ jocd, groupRaces, allFinished }) => {
+              const first = groupRaces[0];
+              const nearestRace = pickNearestRace(groupRaces, viewDate, todayStr);
+              const dayLabel = eventDayLabel(groupRaces);
+              const stage = raceStage(nearestRace.syumoku);
+              return (
+                <Link
+                  key={jocd}
+                  href={`/races/${nearestRace.id}`}
+                  className={`flex items-center gap-3 rounded-[18px] p-3.5 border border-white/[.06] ${
+                    allFinished ? "bg-ink-2 opacity-60" : "bg-ink-3"
+                  }`}
+                >
+                  <span className="text-lg font-black text-mist-0 shrink-0">{first.keirinjo_name}</span>
+                  <div className="flex gap-1.5 flex-1 flex-wrap">
+                    {dayLabel && (
+                      <span
+                        className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
+                          dayLabel === "最終日" ? "text-rose bg-rose/[.14]" : "text-blue bg-blue/[.14]"
+                        }`}
+                      >
+                        {dayLabel}
+                      </span>
+                    )}
+                    {first.grade_kbn && (
+                      <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-gold-ink bg-gold">
+                        {first.grade_kbn}
+                      </span>
+                    )}
+                    {stage !== "不明" && (
+                      <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-mint bg-mint/[.12]">
+                        {stage}
+                      </span>
+                    )}
+                    {allFinished && (
+                      <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-mist-4 bg-white/[.07]">
+                        終了
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end shrink-0">
+                    <span className="font-mono text-[13px] text-mist-0">
+                      {allFinished ? `全${groupRaces.length}R` : `${nearestRace.race_no}R / ${groupRaces.length}`}
+                    </span>
+                    {!allFinished && nearestRace.start_time && (
+                      <span className="text-[10px] text-mist-4 flex items-center gap-1">
+                        発走 {nearestRace.start_time}
+                        <StartingSoonBadge
+                          minutes={startingSoonMinutes(nearestRace.start_time, viewDate, todayStr, nowHHMM)}
+                        />
+                      </span>
+                    )}
+                  </div>
+                </Link>
+              );
+            })}
+          </section>
+        )}
+      </div>
     </main>
   );
 }

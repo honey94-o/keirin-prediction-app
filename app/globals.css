@@ -23,12 +23,38 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-zen-kaku), "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+  --font-mono: var(--font-dm-mono), ui-monospace, monospace;
+
+  /*
+   * ホーム・レース詳細画面（2026-09、Claude Designのモックアップを移植）専用の
+   * 常時ダークな配色トークン。アクセントは3色に限定：
+   * mint=自信度（本命・的中）、gold=厳選、rose=バリカタ・締切間近。
+   * 他ページ（/history等）はOS設定追従のTailwind標準色・dark:バリアントの
+   * ままなので、これらのトークンは対象2画面の中でだけ使う。
+   */
+  --color-ink-0: #06070a; /* 画面地の黒 */
+  --color-ink-1: #0a0c10; /* フレーム背景 */
+  --color-ink-2: #0e1115; /* 控えめなカード */
+  --color-ink-3: #12151a; /* 標準カード */
+  --color-mist-0: #eceff3; /* 主要文字 */
+  --color-mist-1: #bfc7d2;
+  --color-mist-2: #a7b0bc;
+  --color-mist-3: #8a93a0;
+  --color-mist-4: #6b7481;
+  --color-mist-5: #5e6773;
+  --color-mint: #3ddc97;
+  --color-mint-strong: #7befbc;
+  --color-mint-ink: #04150e; /* mint地に乗せる濃色文字 */
+  --color-gold: #f5b544;
+  --color-gold-ink: #2a0a10;
+  --color-rose: #ff5d73;
+  --color-rose-soft: #ff8a99;
+  --color-blue: #5b9cff;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-zen-kaku), "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
 }

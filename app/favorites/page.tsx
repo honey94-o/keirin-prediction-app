@@ -73,7 +73,7 @@ export default async function FavoritesPage() {
                       {yesterdays.map((e) => (
                         <li key={e.race.id} className="flex items-center gap-2 text-sm">
                           <Link
-                            href={`/races/${e.race.id}/bets`}
+                            href={`/races/${e.race.id}`}
                             className="flex-1 truncate text-gray-700 dark:text-gray-300"
                           >
                             {e.race.keirinjo_name}
@@ -111,7 +111,7 @@ export default async function FavoritesPage() {
                       {todays.map((e) => (
                         <li key={e.race.id}>
                           <Link
-                            href={`/races/${e.race.id}/bets`}
+                            href={`/races/${e.race.id}`}
                             className="flex items-center gap-2 text-sm bg-yellow-50 rounded px-2 py-1.5 active:bg-yellow-100 dark:bg-yellow-950 dark:active:bg-yellow-900"
                           >
                             <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
