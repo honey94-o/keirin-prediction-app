@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "ライン・脚質実力・データ統計の3本柱で競輪を予想する個人用アプリ",
     start_url: "/",
     display: "standalone",
-    background_color: "#0d5c3f",
-    theme_color: "#0d5c3f",
+    background_color: "#06070A",
+    theme_color: "#06070A",
     orientation: "portrait",
     icons: [
       {
