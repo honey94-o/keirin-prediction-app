@@ -25,7 +25,8 @@ import {
 } from "../lib/date";
 import { RefreshTrigger } from "../components/RefreshTrigger";
 import { CarNumberBadge } from "../components/CarNumberBadge";
-import { raceStage, pickNearestRace } from "../lib/scoring";
+import { raceStage, pickNearestRace, formatFormationNotation } from "../lib/scoring";
+import { predictRace } from "../lib/predict";
 import type { RaceRow } from "../lib/types";
 
 // GitHub Actions（daily-sync.yml、1日2回自動実行）がNext.jsの外からTursoを
@@ -156,6 +157,27 @@ export default async function Home({
   addHits("厳選", pickResults);
   addHits("バリカタ", barikataResults);
   addHits("中穴", nakaanaPicks);
+
+  // 「厳選/バリカタ/中穴候補」いずれかの対象で結果が確定しているレースについて、
+  // 実際の着順が「本命/逃げ粘り込み/まくり差し一撃/単騎一撃」のどの展開読みに
+  // 一致していたかを調べる（厳選が外れても、他の展開読みが当たっていたことが
+  // 分かるように）。対象は的中バッジが付くレース（1日十数件程度）だけなので、
+  // predictRaceを呼んでもホーム画面の表示は重くならない。
+  const scenarioHitLabelByRaceId = new Map<number, string>();
+  const pickedFinishedRaceIds = [...pickHitsByRaceId.keys()];
+  if (pickedFinishedRaceIds.length > 0) {
+    const scenarioPredictions = await Promise.all(pickedFinishedRaceIds.map((id) => predictRace(id)));
+    pickedFinishedRaceIds.forEach((raceId, i) => {
+      const prediction = scenarioPredictions[i];
+      if (!prediction) return;
+      const results = resultsByRaceId.get(raceId) ?? [];
+      const odds = oddsByRaceId.get(raceId) ?? [];
+      const actualCombo = resolveActualCombo(results, odds);
+      if (!actualCombo) return;
+      const hitScenario = prediction.scenarios.find((s) => s.formation.combinations.includes(actualCombo));
+      if (hitScenario) scenarioHitLabelByRaceId.set(raceId, hitScenario.label);
+    });
+  }
 
   // 「お気に入り選手のレース」：選択中の日（前日/当日/翌日タブと連動）に
   // お気に入り登録済みの選手が出走するレースを発走時刻順に表示する。
@@ -444,30 +466,36 @@ export default async function Home({
               </Link>
             </div>
             <div className="rounded-[18px] bg-ink-3 border border-white/[.06] overflow-hidden">
-              {picksByTime.map(({ pick: p, finished, hit }) => (
-                <Link
-                  key={p.race_id}
-                  href={`/races/${p.race_id}`}
-                  className="flex items-center gap-2.5 px-3.5 py-3.5 border-t border-white/[.05] first:border-t-0"
-                >
-                  <span className="font-mono text-xs text-mist-4 w-11 shrink-0">{p.start_time ?? "--:--"}</span>
-                  <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[15px] font-bold text-mist-0">{p.keirinjo_name}</span>
-                      <span className="font-mono text-xs text-mist-2">{p.race_no}R</span>
+              {picksByTime.map(({ pick: p, finished, hit }) => {
+                const notation = p.formation ? formatFormationNotation(p.formation) : null;
+                return (
+                  <Link
+                    key={p.race_id}
+                    href={`/races/${p.race_id}`}
+                    className="flex items-center gap-2.5 px-3.5 py-3.5 border-t border-white/[.05] first:border-t-0"
+                  >
+                    <span className="font-mono text-xs text-mist-4 w-11 shrink-0">{p.start_time ?? "--:--"}</span>
+                    <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[15px] font-bold text-mist-0">{p.keirinjo_name}</span>
+                        <span className="font-mono text-xs text-mist-2">{p.race_no}R</span>
+                        <span className="text-[10px] text-mist-4 truncate">
+                          軸{p.honmei_car_num}.{p.honmei_name}
+                        </span>
+                      </div>
+                      {notation && (
+                        <span className="font-mono text-[15px] font-medium text-gold truncate">{notation}</span>
+                      )}
                     </div>
-                    <span className="text-[11px] text-mist-3 truncate">
-                      軸 {p.honmei_car_num}.{p.honmei_name}
-                    </span>
-                  </div>
-                  <span className="font-mono text-[13px] text-gold">{p.margin.toFixed(1)}</span>
-                  {finished ? (
-                    <ResultBadge hit={hit ?? false} />
-                  ) : (
-                    <StartingSoonBadge minutes={startingSoonMinutes(p.start_time, viewDate, todayStr, nowHHMM)} />
-                  )}
-                </Link>
-              ))}
+                    <span className="font-mono text-[11px] text-mist-4 shrink-0">{p.margin.toFixed(1)}</span>
+                    {finished ? (
+                      <ResultBadge hit={hit ?? false} />
+                    ) : (
+                      <StartingSoonBadge minutes={startingSoonMinutes(p.start_time, viewDate, todayStr, nowHHMM)} />
+                    )}
+                  </Link>
+                );
+              })}
             </div>
           </section>
         )}
@@ -507,7 +535,15 @@ export default async function Home({
                       ? (odds.find((o) => o.bet_type === "3連単" && o.combination === actualCombo) ?? null)
                       : null;
                   const hits = pickHitsByRaceId.get(race.id) ?? [];
-                  return { race, top3, payoutOdds: hitOdds?.odds_value ?? null, ninki: hitOdds?.ninki ?? null, hits };
+                  const scenarioHitLabel = scenarioHitLabelByRaceId.get(race.id) ?? null;
+                  return {
+                    race,
+                    top3,
+                    payoutOdds: hitOdds?.odds_value ?? null,
+                    ninki: hitOdds?.ninki ?? null,
+                    hits,
+                    scenarioHitLabel,
+                  };
                 });
 
               return (
@@ -571,7 +607,7 @@ export default async function Home({
                       </span>
                       <span className="text-xs">→</span>
                     </Link>
-                    {raceRows.map(({ race, top3, payoutOdds, ninki, hits }) => (
+                    {raceRows.map(({ race, top3, payoutOdds, ninki, hits, scenarioHitLabel }) => (
                       <Link
                         key={race.id}
                         href={`/races/${race.id}`}
@@ -594,18 +630,25 @@ export default async function Home({
                           </div>
                         )}
                         {hits.length > 0 && (
-                          <div className="flex gap-1 shrink-0">
-                            {hits.map((h, i) => (
-                              <span
-                                key={i}
-                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-                                  h.hit ? "text-mint-ink bg-mint" : "text-mist-4 bg-white/[.07]"
-                                }`}
-                              >
-                                {h.label}
-                                {h.hit ? "○" : "×"}
+                          <div className="flex flex-col items-end gap-0.5 shrink-0">
+                            <div className="flex gap-1">
+                              {hits.map((h, i) => (
+                                <span
+                                  key={i}
+                                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                                    h.hit ? "text-mint-ink bg-mint" : "text-mist-4 bg-white/[.07]"
+                                  }`}
+                                >
+                                  {h.label}
+                                  {h.hit ? "○" : "×"}
+                                </span>
+                              ))}
+                            </div>
+                            {scenarioHitLabel && (
+                              <span className="text-[9px] text-mist-5 whitespace-nowrap">
+                                実際は{scenarioHitLabel}が的中
                               </span>
-                            ))}
+                            )}
                           </div>
                         )}
                       </Link>
