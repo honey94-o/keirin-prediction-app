@@ -99,7 +99,7 @@ export default async function Home({
   const resultsByRaceId = await getResultsForRaces(races.map((r) => r.id));
 
   // 「本日の厳選レース」：結果未確定（前日以前は対象外）の日だけ、
-  // scripts/daily-picks.tsが事前計算したdaily_picksからその日の本命marginが
+  // scripts/compute-picks.tsが事前計算したdaily_picksからその日の本命marginが
   // 大きい順に上位10件を表示する。
   const showPicks = viewDate === todayStr || viewDate === nextDate;
   const pickResults = showPicks ? await getDailyPicksResults(viewDate) : [];
@@ -111,7 +111,7 @@ export default async function Home({
 
   // 「本日のバリカタ」：margin>=8かつ予想1-2-3位が同ラインのレース。
   // 厳選（フォーメーション買い）とは別枠で、単一の並び（1点）を想定した高的中率
-  // 狙いのピック。scripts/barikata-picks.tsのコメント参照。
+  // 狙いのピック。scripts/compute-picks.tsのコメント参照。
   const barikataResults = showPicks ? await getBarikataPicksResults(viewDate) : [];
   const barikataByTime = [...barikataResults].sort((a, b) =>
     (a.pick.start_time ?? "").localeCompare(b.pick.start_time ?? "")

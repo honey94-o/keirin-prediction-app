@@ -92,15 +92,12 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npx tsx scripts/daily-summary.ts
 
-      # 当日・翌日の厳選レース（◎-対抗スコア差）は日中のオッズ・並び予想更新も
+      # 当日・翌日の厳選・バリカタ・中穴候補は日中のオッズ・並び予想更新も
       # 反映したいので、全実行（朝・日中・夜・手動リフレッシュ）で計算し直す。
-      - name: Compute today's/tomorrow's high-confidence picks
+      # 元はdaily-picks.ts/barikata-picks.tsの2ステップだったが、どちらも同じ
+      # レース群にpredictRaceを独立に呼んでおり計算が重複していたため
+      # （データ更新の高速化調査、2026-09）、1本のscripts/compute-picks.tsに統合した。
+      - name: Compute today's/tomorrow's picks (厳選/バリカタ/中穴候補)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: npx tsx scripts/daily-picks.ts
-
-      # 厳選と同じ理由（日中の並び予想更新等を反映）で全実行のたびに計算し直す。
-      - name: Compute today's/tomorrow's barikata picks
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: npx tsx scripts/barikata-picks.ts
+        run: npx tsx scripts/compute-picks.ts

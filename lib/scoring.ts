@@ -1319,7 +1319,7 @@ export function formatFormationNotation(combinations: string[]): string | null {
  * 予選は学習期間ROI96.5%→検証期間103.5%と一貫して他より弱く、決勝(127.2%→
  * 153.6%)・選抜特選(130.8%→126.9%)・一般(127.1%→120.6%)は一貫して強かった
  * （開催場フィルタで過学習だった9th findingと違い、傾向が検証期間でも
- * 再現している）。scripts/daily-picks.tsで予選レースを厳選対象から除外する
+ * 再現している）。scripts/compute-picks.tsで予選レースを厳選対象から除外する
  * のに使う。
  */
 /**

@@ -116,7 +116,7 @@ function getPool(): Pool {
 }
 
 /**
- * 一回限りのバッチスクリプト（daily-picks.ts等）向け。pg.Poolはデフォルトで
+ * 一回限りのバッチスクリプト（compute-picks.ts等）向け。pg.Poolはデフォルトで
  * idleTimeoutMillis=10000msなので、明示的にend()しないと計算が終わった後も
  * 接続がアイドルタイムアウトするまでNodeプロセスが終了できず、GitHub Actions
  * 実行のたびに約10秒が無駄になる（実測、daily-sync.ymlのステップ間隔で確認）。

@@ -981,7 +981,7 @@ export async function getScenarioRankStats(): Promise<Record<number, ScenarioRan
 
 /**
  * 結果未確定レースの◎-対抗スコア差（margin）をまとめて保存する（daily_picksテーブル）。
- * scripts/daily-picks.tsがdaily-sync.yml実行のたびに呼び、ホーム画面「本日の厳選
+ * scripts/compute-picks.tsがdaily-sync.yml実行のたびに呼び、ホーム画面「本日の厳選
  * レース」用のキャッシュとして使う。predictRaceの都度計算は重い（1レースあたり
  * DB約20回）ため、事前計算しておきホーム画面では読むだけにする。
  */
@@ -1160,7 +1160,7 @@ export async function getDailyPicksPerformance(dates: string[]): Promise<DailyPi
 }
 
 /**
- * 「バリカタ」ピックを保存する。scripts/barikata-picks.tsから呼ぶ。
+ * 「バリカタ」ピックを保存する。scripts/compute-picks.tsから呼ぶ。
  * daily_picksと同じくスナップショット方式（あとでスコアリングを変えても
  * 過去の的中結果表示が変わらないようcomboを固定保存する）。
  */
@@ -1210,7 +1210,7 @@ export async function saveBarikataPicks(
  * 指定日のバリカタピック（margin降順）。件数上限は元々UI都合の3件だったが、
  * diagnose-barikata.ts/-line.tsの検証（的中率32.7%・回収率約140%）自体は
  * 1日あたりの件数制限なしに「margin>=8かつ同ライン」を満たす全レースを対象に
- * 計算していたため、条件を満たす日は増えても構わない（scripts/barikata-picks.ts
+ * 計算していたため、条件を満たす日は増えても構わない（scripts/compute-picks.ts
  * 参照）。100は暴走防止の安全弁で、実質的には無制限に近い。
  */
 export async function getBarikataPicks(kaisaiDate: string, limit = 100): Promise<BarikataPickRow[]> {
@@ -1224,7 +1224,7 @@ export async function getBarikataPicks(kaisaiDate: string, limit = 100): Promise
 }
 
 /**
- * 「バリカタ候補漏れ」を保存する。scripts/barikata-picks.tsから呼ぶ。
+ * 「バリカタ候補漏れ」を保存する。scripts/compute-picks.tsから呼ぶ。
  * db/schema.sqlのbarikata_near_missesコメント参照。
  */
 export async function saveBarikataNearMisses(

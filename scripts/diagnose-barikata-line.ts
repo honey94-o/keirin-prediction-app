@@ -137,7 +137,7 @@ async function main() {
     );
   }
 
-  // barikata-picks.tsが実際に使う指標（単一の並び1点買い＝100円）に合わせた
+  // compute-picks.tsが実際に使う指標（単一の並び1点買い＝100円）に合わせた
   // 的中率・回収率。BARIKATA_MIN_MARGIN(=8)が現行スコアリングでもまだ妥当か判断する用。
   console.log("\n■ 累積：単一並び1点買いの的中率・回収率（margin下限 × 同ライン限定）:");
   for (const minMargin of [6, 8, 10, 12, 15]) {
