@@ -9,6 +9,8 @@ import {
   getFavoriteRacerEntriesForDate,
   getFavoriteRacers,
   getResultsForRaces,
+  getOddsForRaces,
+  resolveActualCombo,
   isRaceFinished,
 } from "../lib/repository";
 import {
@@ -22,6 +24,7 @@ import {
   minutesBetween,
 } from "../lib/date";
 import { RefreshTrigger } from "../components/RefreshTrigger";
+import { CarNumberBadge } from "../components/CarNumberBadge";
 import { raceStage, pickNearestRace } from "../lib/scoring";
 import type { RaceRow } from "../lib/types";
 
@@ -95,8 +98,12 @@ export default async function Home({
   // レース選択後の詳細画面でだけ計算する）。
   const races = await getRacesByDate(viewDate);
   const lastSyncedAt = await getLastSyncedAt();
-  // 開催場カードを「本日終了」でグレーアウトするための判定に使う（1クエリで全レース分まとめて取得）。
-  const resultsByRaceId = await getResultsForRaces(races.map((r) => r.id));
+  // 開催場カードを「本日終了」でグレーアウトするための判定、および開催場カードを
+  // 展開した時の「本日のレース結果」表示（着順・払戻）に使う（どちらもpredictRaceを
+  // 使わない軽いクエリなので、ここで全レース分まとめて取っても表示は重くならない）。
+  const raceIds = races.map((r) => r.id);
+  const resultsByRaceId = await getResultsForRaces(raceIds);
+  const oddsByRaceId = await getOddsForRaces(raceIds);
 
   // 「本日の厳選レース」：結果未確定（前日以前は対象外）の日だけ、
   // scripts/compute-picks.tsが事前計算したdaily_picksからその日の本命marginが
@@ -133,6 +140,22 @@ export default async function Home({
   const nakaanaByTime = [...nakaanaPicks].sort((a, b) =>
     (a.pick.start_time ?? "").localeCompare(b.pick.start_time ?? "")
   );
+
+  // 開催場カードを展開した時の的中/不的中バッジ用に、レースIDごとの
+  // 「厳選/バリカタ/中穴候補」の的中結果をまとめておく（1レースが複数の
+  // 仕組みに同時に該当することもある、例: 厳選かつバリカタ）。
+  const pickHitsByRaceId = new Map<number, { label: string; hit: boolean }[]>();
+  const addHits = (label: string, results: { pick: { race_id: number }; finished: boolean; hit: boolean | null }[]) => {
+    for (const r of results) {
+      if (!r.finished) continue;
+      const arr = pickHitsByRaceId.get(r.pick.race_id) ?? [];
+      arr.push({ label, hit: r.hit ?? false });
+      pickHitsByRaceId.set(r.pick.race_id, arr);
+    }
+  };
+  addHits("厳選", pickResults);
+  addHits("バリカタ", barikataResults);
+  addHits("中穴", nakaanaPicks);
 
   // 「お気に入り選手のレース」：選択中の日（前日/当日/翌日タブと連動）に
   // お気に入り登録済みの選手が出走するレースを発走時刻順に表示する。
@@ -470,55 +493,124 @@ export default async function Home({
               const nearestRace = pickNearestRace(groupRaces, viewDate, todayStr);
               const dayLabel = eventDayLabel(groupRaces);
               const stage = raceStage(nearestRace.syumoku);
+              const raceRows = [...groupRaces]
+                .sort((a, b) => a.race_no - b.race_no)
+                .map((race) => {
+                  const results = resultsByRaceId.get(race.id) ?? [];
+                  const odds = oddsByRaceId.get(race.id) ?? [];
+                  const top3 = results
+                    .filter((r) => r.finish_pos != null && r.finish_pos <= 3)
+                    .sort((a, b) => (a.finish_pos ?? 0) - (b.finish_pos ?? 0));
+                  const actualCombo = top3.length === 3 ? resolveActualCombo(results, odds) : null;
+                  const payoutOdds =
+                    actualCombo != null
+                      ? (odds.find((o) => o.bet_type === "3連単" && o.combination === actualCombo)?.odds_value ?? null)
+                      : null;
+                  const hits = pickHitsByRaceId.get(race.id) ?? [];
+                  return { race, top3, payoutOdds, hits };
+                });
+
               return (
-                <Link
+                <details
                   key={jocd}
-                  href={`/races/${nearestRace.id}`}
-                  className={`flex items-center gap-3 rounded-[18px] p-3.5 border border-white/[.06] ${
+                  className={`rounded-[18px] border border-white/[.06] overflow-hidden group ${
                     allFinished ? "bg-ink-2 opacity-60" : "bg-ink-3"
                   }`}
                 >
-                  <span className="text-lg font-black text-mist-0 shrink-0">{first.keirinjo_name}</span>
-                  <div className="flex gap-1.5 flex-1 flex-wrap">
-                    {dayLabel && (
-                      <span
-                        className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
-                          dayLabel === "最終日" ? "text-rose bg-rose/[.14]" : "text-blue bg-blue/[.14]"
-                        }`}
+                  <summary className="flex items-center gap-3 p-3.5 cursor-pointer select-none marker:content-none [&::-webkit-details-marker]:hidden">
+                    <span className="text-lg font-black text-mist-0 shrink-0">{first.keirinjo_name}</span>
+                    <div className="flex gap-1.5 flex-1 flex-wrap">
+                      {dayLabel && (
+                        <span
+                          className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
+                            dayLabel === "最終日" ? "text-rose bg-rose/[.14]" : "text-blue bg-blue/[.14]"
+                          }`}
+                        >
+                          {dayLabel}
+                        </span>
+                      )}
+                      {first.grade_kbn && (
+                        <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-gold-ink bg-gold">
+                          {first.grade_kbn}
+                        </span>
+                      )}
+                      {stage !== "不明" && (
+                        <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-mint bg-mint/[.12]">
+                          {stage}
+                        </span>
+                      )}
+                      {allFinished && (
+                        <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-mist-4 bg-white/[.07]">
+                          終了
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-col items-end shrink-0">
+                      <span className="font-mono text-[13px] text-mist-0">
+                        {allFinished ? `全${groupRaces.length}R` : `${nearestRace.race_no}R / ${groupRaces.length}`}
+                      </span>
+                      {!allFinished && nearestRace.start_time && (
+                        <span className="text-[10px] text-mist-4 flex items-center gap-1">
+                          発走 {nearestRace.start_time}
+                          <StartingSoonBadge
+                            minutes={startingSoonMinutes(nearestRace.start_time, viewDate, todayStr, nowHHMM)}
+                          />
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-mist-4 group-open:hidden shrink-0">開く ⌄</span>
+                    <span className="text-[11px] text-mist-4 hidden group-open:inline shrink-0">閉じる ⌃</span>
+                  </summary>
+                  <div className="px-3.5 pb-3.5 flex flex-col gap-px">
+                    <Link
+                      href={`/races/${nearestRace.id}`}
+                      className="flex items-center justify-between py-2.5 border-t border-white/[.05] text-mint-strong"
+                    >
+                      <span className="text-xs font-semibold">
+                        {allFinished ? "予想・買い目を見る" : `次走 ${nearestRace.race_no}Rの予想を見る`}
+                      </span>
+                      <span className="text-xs">→</span>
+                    </Link>
+                    {raceRows.map(({ race, top3, payoutOdds, hits }) => (
+                      <Link
+                        key={race.id}
+                        href={`/races/${race.id}`}
+                        className="flex items-center gap-2.5 py-2.5 border-t border-white/[.05]"
                       >
-                        {dayLabel}
-                      </span>
-                    )}
-                    {first.grade_kbn && (
-                      <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-gold-ink bg-gold">
-                        {first.grade_kbn}
-                      </span>
-                    )}
-                    {stage !== "不明" && (
-                      <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-mint bg-mint/[.12]">
-                        {stage}
-                      </span>
-                    )}
-                    {allFinished && (
-                      <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-mist-4 bg-white/[.07]">
-                        終了
-                      </span>
-                    )}
+                        <span className="font-mono text-[11px] text-mist-4 w-9 shrink-0">{race.race_no}R</span>
+                        <div className="flex-1 flex items-center gap-1 min-w-0">
+                          {top3.length === 3 ? (
+                            top3.map((r) => <CarNumberBadge key={r.car_num} carNum={r.car_num} size="sm" />)
+                          ) : (
+                            <span className="text-[11px] text-mist-5 truncate">
+                              {race.start_time ? `発走 ${race.start_time}` : "結果未定"}
+                            </span>
+                          )}
+                        </div>
+                        {payoutOdds != null && (
+                          <span className="font-mono text-[12px] text-mist-2 shrink-0">
+                            {(100 * payoutOdds).toFixed(0)}円
+                          </span>
+                        )}
+                        {hits.length > 0 && (
+                          <div className="flex gap-1 shrink-0">
+                            {hits.map((h, i) => (
+                              <span
+                                key={i}
+                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                                  h.hit ? "text-mint-ink bg-mint" : "text-mist-4 bg-white/[.07]"
+                                }`}
+                              >
+                                {h.label}
+                                {h.hit ? "○" : "×"}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </Link>
+                    ))}
                   </div>
-                  <div className="flex flex-col items-end shrink-0">
-                    <span className="font-mono text-[13px] text-mist-0">
-                      {allFinished ? `全${groupRaces.length}R` : `${nearestRace.race_no}R / ${groupRaces.length}`}
-                    </span>
-                    {!allFinished && nearestRace.start_time && (
-                      <span className="text-[10px] text-mist-4 flex items-center gap-1">
-                        発走 {nearestRace.start_time}
-                        <StartingSoonBadge
-                          minutes={startingSoonMinutes(nearestRace.start_time, viewDate, todayStr, nowHHMM)}
-                        />
-                      </span>
-                    )}
-                  </div>
-                </Link>
+                </details>
               );
             })}
           </section>
