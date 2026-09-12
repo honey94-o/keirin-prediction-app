@@ -502,12 +502,12 @@ export default async function Home({
                     .filter((r) => r.finish_pos != null && r.finish_pos <= 3)
                     .sort((a, b) => (a.finish_pos ?? 0) - (b.finish_pos ?? 0));
                   const actualCombo = top3.length === 3 ? resolveActualCombo(results, odds) : null;
-                  const payoutOdds =
+                  const hitOdds =
                     actualCombo != null
-                      ? (odds.find((o) => o.bet_type === "3連単" && o.combination === actualCombo)?.odds_value ?? null)
+                      ? (odds.find((o) => o.bet_type === "3連単" && o.combination === actualCombo) ?? null)
                       : null;
                   const hits = pickHitsByRaceId.get(race.id) ?? [];
-                  return { race, top3, payoutOdds, hits };
+                  return { race, top3, payoutOdds: hitOdds?.odds_value ?? null, ninki: hitOdds?.ninki ?? null, hits };
                 });
 
               return (
@@ -571,7 +571,7 @@ export default async function Home({
                       </span>
                       <span className="text-xs">→</span>
                     </Link>
-                    {raceRows.map(({ race, top3, payoutOdds, hits }) => (
+                    {raceRows.map(({ race, top3, payoutOdds, ninki, hits }) => (
                       <Link
                         key={race.id}
                         href={`/races/${race.id}`}
@@ -588,9 +588,10 @@ export default async function Home({
                           )}
                         </div>
                         {payoutOdds != null && (
-                          <span className="font-mono text-[12px] text-mist-2 shrink-0">
-                            {(100 * payoutOdds).toFixed(0)}円
-                          </span>
+                          <div className="flex flex-col items-end shrink-0">
+                            <span className="font-mono text-[12px] text-mist-2">{(100 * payoutOdds).toFixed(0)}円</span>
+                            {ninki != null && <span className="text-[10px] text-mist-5">{ninki}番人気</span>}
+                          </div>
                         )}
                         {hits.length > 0 && (
                           <div className="flex gap-1 shrink-0">

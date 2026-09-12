@@ -605,9 +605,9 @@ def save_to_db(
 
         for o in race.odds:
             statements.append((
-                """INSERT INTO odds (race_id, bet_type, combination, odds_value)
-                   VALUES (?,?,?,?)""",
-                [race_id, o["bet_type"], o["combination"], o["odds_value"]],
+                """INSERT INTO odds (race_id, bet_type, combination, odds_value, ninki)
+                   VALUES (?,?,?,?,?)""",
+                [race_id, o["bet_type"], o["combination"], o["odds_value"], o.get("ninki")],
             ))
 
         if bank_info is not None:

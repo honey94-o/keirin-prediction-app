@@ -169,6 +169,12 @@ CREATE TABLE IF NOT EXISTS odds (
     bet_type      TEXT NOT NULL,          -- 単勝/2車複/3連単など
     combination   TEXT NOT NULL,          -- 車番の組み合わせ（例: "1-2-3"）
     odds_value    REAL,
+    -- WINTICKETの結果ページ「払戻金」表の「人気」列（例:"(3)"）。的中組み合わせが
+    -- 3連単の中で何番目に売れていたか（＝発走前にどれだけ本命視されていたか）。
+    -- 発走前の全組み合わせオッズボード自体は保存していない（ほぼ存在しないため
+    -- 自前では算出不可、EVフィルター検証時に判明）が、この列はWINTICKET側が
+    -- 既に計算済みの値をそのまま貰えるので、的中組み合わせぶんだけ取得できる。
+    ninki         INTEGER,
     recorded_at   TEXT NOT NULL DEFAULT (datetime('now'))  -- オッズの推移を追うための取得時刻
 );
 

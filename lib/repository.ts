@@ -240,7 +240,7 @@ export async function getEntriesForRace(raceId: number): Promise<EntryWithRacer[
 
 export async function getOddsForRace(raceId: number): Promise<OddsRow[]> {
   const result = await getDb().execute({
-    sql: "SELECT bet_type, combination, odds_value FROM odds WHERE race_id = ?",
+    sql: "SELECT bet_type, combination, odds_value, ninki FROM odds WHERE race_id = ?",
     args: [raceId],
   });
   return result.rows as unknown as OddsRow[];
@@ -848,7 +848,7 @@ export async function getOddsForRaces(raceIds: number[]): Promise<Map<number, Od
   const rows: (OddsRow & { race_id: number })[] = [];
   for (const chunk of chunkIds(raceIds)) {
     const result = await getDb().execute({
-      sql: `SELECT race_id, bet_type, combination, odds_value
+      sql: `SELECT race_id, bet_type, combination, odds_value, ninki
             FROM odds WHERE race_id IN (${chunk.map(() => "?").join(",")}) AND bet_type = '3連単'`,
       args: chunk,
     });

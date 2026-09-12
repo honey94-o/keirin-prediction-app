@@ -558,18 +558,35 @@ def parse_raceresult(html: str, race: RaceData) -> None:
 
     if len(tables) < 2:
         return
-    payout_table = tables[1]
+    race.odds.extend(parse_sanrentan_payout(tables[1]))
+
+
+def parse_sanrentan_payout(payout_table: Tag) -> list[dict[str, Any]]:
+    """結果ページの払戻金テーブルから3連単の行だけを抜き出す。
+    parse_raceresultと、着順・出走表を必要としない軽量バックフィル
+    （backfill_ninki.py、既存odds行の「人気」だけ後から埋める）の両方から使う。"""
+    odds: list[dict[str, Any]] = []
     for row in payout_table.find_all("tr"):
         cells = [c.get_text(" ", strip=True) for c in row.find_all(["th", "td"])]
         if len(cells) >= 3 and cells[0] == "3連単":
             combination = cells[1].replace("=", "-")
             payout_yen = _to_float(re.sub(r"[^\d.]", "", cells[2]))
+            # 「人気」列（例:"(3)"）。的中組み合わせが3連単の中で何番目に売れて
+            # いたか。WINTICKET側が算出済みの値をそのまま貰う（発走前の全組み合わせ
+            # オッズボードは保存しておらず自前では算出できないため）。
+            ninki = None
+            if len(cells) >= 4:
+                ninki_match = re.search(r"\((\d+)\)", cells[3])
+                if ninki_match:
+                    ninki = int(ninki_match.group(1))
             if payout_yen is not None:
-                race.odds.append({
+                odds.append({
                     "bet_type": "3連単",
                     "combination": combination,
                     "odds_value": payout_yen / 100,
+                    "ninki": ninki,
                 })
+    return odds
 
 
 def scrape_one_race(venue: str, cup_id: str, day: int, race_no: int) -> Any:

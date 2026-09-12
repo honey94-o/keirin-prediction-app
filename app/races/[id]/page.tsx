@@ -162,10 +162,10 @@ export default async function RaceDetailPage({
   const top3Results = finishOrder.filter((r) => (r.finish_pos ?? 0) <= 3);
   const raceFinished = isRaceFinished(results);
   const actualCombo = raceFinished ? resolveActualCombo(results, odds) : null;
-  const sanrentanHitOdds =
-    actualCombo != null
-      ? (odds.find((o) => o.bet_type === "3連単" && o.combination === actualCombo)?.odds_value ?? null)
-      : null;
+  const sanrentanHit =
+    actualCombo != null ? (odds.find((o) => o.bet_type === "3連単" && o.combination === actualCombo) ?? null) : null;
+  const sanrentanHitOdds = sanrentanHit?.odds_value ?? null;
+  const sanrentanNinki = sanrentanHit?.ninki ?? null;
   const winticketUrl = buildWinticketResultUrl(race);
   const actualTop3Set = new Set(top3Results.map((r) => r.car_num));
   const winnerCarNum = finishOrder.find((r) => r.finish_pos === 1)?.car_num ?? null;
@@ -469,6 +469,7 @@ export default async function RaceDetailPage({
               {sanrentanHitOdds != null && (
                 <span className="text-xs text-mist-4 ml-auto">
                   3連単 {sanrentanHitOdds.toFixed(1)}倍（{(100 * sanrentanHitOdds).toFixed(0)}円）
+                  {sanrentanNinki != null && ` ${sanrentanNinki}番人気`}
                 </span>
               )}
             </div>

@@ -123,6 +123,9 @@ export interface OddsRow {
   bet_type: string;
   combination: string;
   odds_value: number | null;
+  /** WINTICKET結果ページ「人気」列（的中組み合わせが3連単の中で何番目に売れていたか）。
+   * 発走前の全組み合わせオッズボードが無いためbet_type='3連単'の的中組み合わせのみ。 */
+  ninki: number | null;
 }
 
 export interface ScoreBreakdown {
