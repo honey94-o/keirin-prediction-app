@@ -20,13 +20,19 @@ import {
   getRacesByDate,
   saveBarikataPicks,
   saveBarikataNearMisses,
+  saveNakaanaPicks,
   enableReadCache,
 } from "../lib/repository";
+import { generateNakaanaCandidate } from "../lib/scoring";
 import { todayJstStr, addDaysToDateStr } from "../lib/date";
+import { closeDb } from "../lib/db";
 
 /**
  * 「バリカタ」レース（scripts/diagnose-barikata.ts・-line.tsで検証済み）を
  * 全件選び、barikata_picksに保存する。ホーム画面「本日のバリカタ」用。
+ * 同じpredictions配列から「バリカタ候補漏れ」と「中穴候補」
+ * （lib/scoring.tsのgenerateNakaanaCandidate参照）も計算する
+ * （predictRaceの再実行を避けるため専用スクリプトに分けていない）。
  *
  * 条件: margin(◎-対抗のスコア差)>=BARIKATA_MIN_MARGIN かつ
  * 予想1-2-3位（総合スコア順）が同じライングループ。この条件のレースは
@@ -98,10 +104,39 @@ async function processDate(kaisaiDate: string): Promise<void> {
     .map((c) => c.pick)
     .sort((a, b) => b.margin - a.margin);
 
+  // 「中穴候補」（lib/scoring.tsのgenerateNakaanaCandidate、margin8〜10・非同ライン
+  // 向けの参考買い目）も同じpredictions配列から計算する。predictRaceの再実行を
+  // 避けるため、専用スクリプトを分けずここに統合している。
+  const nakaanaPicks = races
+    .map((race, i) => {
+      const prediction = predictions[i];
+      if (!prediction || prediction.scored.length < 3 || prediction.scored.length === 9) return null;
+      const candidate = generateNakaanaCandidate(prediction.scored);
+      if (!candidate) return null;
+      const margin = prediction.scored[0].totalScore - prediction.scored[1].totalScore;
+      return {
+        raceId: race.id,
+        kaisaiDate: race.kaisai_date,
+        jocd: race.jocd,
+        keirinjoName: race.keirinjo_name,
+        raceNo: race.race_no,
+        startTime: race.start_time,
+        margin,
+        honmeiCarNum: candidate.axisCarNum,
+        honmeiName: candidate.axisName,
+        taikouCarNum: candidate.taikouCarNum,
+        taikouName: candidate.taikouName,
+        formation: candidate.combinations,
+      };
+    })
+    .filter((p): p is NonNullable<typeof p> => p != null)
+    .sort((a, b) => b.margin - a.margin);
+
   await saveBarikataPicks(picks);
   await saveBarikataNearMisses(nearMisses);
+  await saveNakaanaPicks(nakaanaPicks);
   console.log(
-    `  margin条件を満たすレース: ${marginCandidates.length}件 → バリカタ: ${picks.length}件 / 候補漏れ: ${nearMisses.length}件`
+    `  margin条件を満たすレース: ${marginCandidates.length}件 → バリカタ: ${picks.length}件 / 候補漏れ: ${nearMisses.length}件 / 中穴候補: ${nakaanaPicks.length}件`
   );
 }
 
@@ -114,6 +149,9 @@ async function main() {
   await processDate(today);
   await processDate(tomorrow);
   console.log(`完了 (${Date.now() - start}ms)`);
+  // pg.PoolはデフォルトでidleTimeoutMillis=10000msのため、明示的にend()しないと
+  // 計算後もアイドルタイムアウトまでプロセスが終了できない（lib/db.tsのcloseDb参照）。
+  await closeDb();
 }
 
 main();

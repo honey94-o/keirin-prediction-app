@@ -20,6 +20,7 @@ import { predictRace } from "../lib/predict";
 import { getRacesByDate, getResultsForRace, savePrediction, enableReadCache } from "../lib/repository";
 import { getDailySummary, yesterdayJst } from "../lib/accuracy";
 import { addDaysToDateStr } from "../lib/date";
+import { closeDb } from "../lib/db";
 
 /** 過去何日分をさかのぼって処理するか（引数で日付を1件指定しない自動実行時）。
  *  /history画面で前日〜過去1週間分をさかのぼって閲覧できるようにするため、
@@ -70,6 +71,9 @@ async function main() {
   const explicitDate = process.argv[2];
   if (explicitDate) {
     await processDate(explicitDate);
+    // pg.PoolはデフォルトでidleTimeoutMillis=10000msのため、明示的にend()しないと
+    // 計算後もアイドルタイムアウトまでプロセスが終了できない（lib/db.tsのcloseDb参照）。
+    await closeDb();
     return;
   }
 
@@ -77,6 +81,7 @@ async function main() {
   for (let i = BACKFILL_DAYS - 1; i >= 0; i--) {
     await processDate(addDaysToDateStr(latest, -i));
   }
+  await closeDb();
 }
 
 main();

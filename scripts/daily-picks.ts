@@ -19,6 +19,7 @@ import { predictRace } from "../lib/predict";
 import { raceStage } from "../lib/scoring";
 import { getRacesByDate, saveDailyPicks, enableReadCache } from "../lib/repository";
 import { todayJstStr, addDaysToDateStr } from "../lib/date";
+import { closeDb } from "../lib/db";
 
 /**
  * 結果未確定（これから走る）レースの◎-対抗スコア差を計算し、daily_picksに保存する。
@@ -84,6 +85,9 @@ async function main() {
   await processDate(today);
   await processDate(tomorrow);
   console.log(`完了 (${Date.now() - start}ms)`);
+  // pg.PoolはデフォルトでidleTimeoutMillis=10000msのため、明示的にend()しないと
+  // 計算後もアイドルタイムアウトまでプロセスが終了できない（lib/db.tsのcloseDb参照）。
+  await closeDb();
 }
 
 main();

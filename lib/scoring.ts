@@ -1160,6 +1160,49 @@ function honmeiFormationHighMargin(axis: number, pool: number[], margin: number)
   return combos.slice(0, 12);
 }
 
+/**
+ * 「中穴候補」：margin8〜10・予想1-2-3位が同ラインでない（＝厳選にもバリカタにも
+ * 入らない）レース向けの参考買い目。◎→対抗（総合2位、固定）→3〜5位のいずれか、
+ * の3点フォーメーション（ラインを考慮しない総合スコア順）。
+ * scratchpad/margin8to10-gap.js・score3-hit-detail.jsで検証（2026-04〜09、369件）：
+ * train318.7%/test192.6%、最大の的中1件(891倍)を除いても回収率196.1%、
+ * 上位3件を除いても158.1%と外れ値だけに依存した数字ではなさそうだが、母数が
+ * まだ369件・5.5ヶ月と薄い（払戻の42.9%が上位3的中に集中）ため、
+ * scripts/nakaana-picks.tsでは「厳選」「バリカタ」と同列の推奨扱いはせず、
+ * 参考表示専用のnakaana_picksに保存する（本採用は実績が積み上がってから判断）。
+ */
+export const NAKAANA_MIN_MARGIN = 8;
+export const NAKAANA_MAX_MARGIN = 10; // この値未満のみ対象（以上はhonmeiFormationHighMargin側の厳選が担当）
+
+export function generateNakaanaCandidate(
+  scored: ScoredEntry[]
+): { axisCarNum: number; axisName: string; taikouCarNum: number; taikouName: string; combinations: string[] } | null {
+  if (scored.length < 3) return null;
+  const honmei = scored[0];
+  const taikou = scored[1];
+  const margin = honmei.totalScore - taikou.totalScore;
+  if (margin < NAKAANA_MIN_MARGIN || margin >= NAKAANA_MAX_MARGIN) return null;
+
+  const top3 = scored.slice(0, 3);
+  const lg0 = top3[0].entry.line_group;
+  const sameLine = lg0 != null && top3.every((s) => s.entry.line_group === lg0);
+  if (sameLine) return null; // 同ラインならバリカタ側の対象
+
+  const scorePool = scored.slice(1).map((s) => s.entry.car_num); // 総合スコア順（軸を除く、対抗が先頭）
+  const second = scorePool[0];
+  if (second == null) return null;
+  const thirdCandidates = scorePool.slice(1, 4).filter((c) => c !== second);
+  if (thirdCandidates.length === 0) return null;
+
+  return {
+    axisCarNum: honmei.entry.car_num,
+    axisName: honmei.entry.name,
+    taikouCarNum: taikou.entry.car_num,
+    taikouName: taikou.entry.name,
+    combinations: thirdCandidates.map((third) => `${honmei.entry.car_num}-${second}-${third}`),
+  };
+}
+
 /** まくり/差し一撃の軸候補選びで、番手×差し優位（決まり手回数ベース）の選手に
  * 与えるタイブレーク用の加点として検証したが、backtest.tsで効果を確認できなかった
  * ため0で無効化（詳細はgenerateScenarios内のコメント参照）。 */

@@ -4,6 +4,7 @@ import {
   getDailyPicksResults,
   getBarikataPicksResults,
   getBarikataNearMissesResults,
+  getNakaanaPicksResults,
   getLastSyncedAt,
   getFavoriteRacerEntriesForDate,
   getFavoriteRacers,
@@ -121,6 +122,15 @@ export default async function Home({
   // 単一の並び的中率はバリカタ本体よりかなり低い）。
   const barikataNearMisses = showPicks ? await getBarikataNearMissesResults(viewDate) : [];
   const nearMissesByTime = [...barikataNearMisses].sort((a, b) =>
+    (a.pick.start_time ?? "").localeCompare(b.pick.start_time ?? "")
+  );
+
+  // 「中穴候補」：margin8〜10・非同ライン向けの参考買い目（lib/scoring.tsの
+  // generateNakaanaCandidate参照）。母数がまだ369件・5.5ヶ月分の検証しかなく、
+  // 厳選・バリカタと同列の推奨扱いはしないため、的中サマリー(todaySummary)にも
+  // 含めない参考表示専用。
+  const nakaanaPicks = showPicks ? await getNakaanaPicksResults(viewDate) : [];
+  const nakaanaByTime = [...nakaanaPicks].sort((a, b) =>
     (a.pick.start_time ?? "").localeCompare(b.pick.start_time ?? "")
   );
 
@@ -356,6 +366,45 @@ export default async function Home({
               ))}
               <p className="text-[11px] leading-relaxed text-mist-5 pt-2">
                 3着候補が他ラインのため、単一の並びとしての的中率は大きく下がります（同margin帯で同ライン決着の約1/3）。
+              </p>
+            </div>
+          </details>
+        )}
+
+        {nakaanaPicks.length > 0 && (
+          <details className="flex flex-col mb-4 rounded-[18px] bg-ink-2 border border-white/[.06] overflow-hidden group">
+            <summary className="px-3.5 py-3.5 flex items-center gap-2 cursor-pointer select-none marker:content-none [&::-webkit-details-marker]:hidden">
+              <span className="text-[13px] font-bold text-mist-2 flex-1">
+                参考：中穴候補
+                <span className="font-mono text-mist-4 font-normal"> {nakaanaPicks.length}</span>
+              </span>
+              <span className="text-[11px] text-mist-4 group-open:hidden">開く ⌄</span>
+              <span className="text-[11px] text-mist-4 hidden group-open:inline">閉じる ⌃</span>
+            </summary>
+            <div className="px-3.5 pb-3.5 flex flex-col gap-px">
+              {nakaanaByTime.map(({ pick: n, finished, hit }) => (
+                <Link
+                  key={n.race_id}
+                  href={`/races/${n.race_id}`}
+                  className="flex items-center gap-2.5 py-2.5 border-t border-white/[.05]"
+                >
+                  <span className="font-mono text-[11px] text-mist-5 w-11 shrink-0">
+                    {n.start_time ?? "--:--"}
+                  </span>
+                  <span className="text-[13px] text-mist-2 flex-1 truncate">
+                    {n.keirinjo_name} {n.race_no}R
+                  </span>
+                  <span className="text-[11px] text-mist-4 whitespace-nowrap">
+                    軸{n.honmei_car_num}-対抗{n.taikou_car_num}
+                  </span>
+                  <span className="font-mono text-[11px] text-mist-5">{n.margin.toFixed(1)}</span>
+                  {finished && <ResultBadge hit={hit ?? false} />}
+                </Link>
+              ))}
+              <p className="text-[11px] leading-relaxed text-mist-5 pt-2">
+                margin8〜10・予想1-2-3位が他ライン混在のレース向けの試験的な買い目（◎→対抗固定→3-5位のいずれか、3点）。
+                過去検証（369件・約5.5ヶ月）では回収率190%台と有望でしたが、母数がまだ薄く「厳選」「バリカタ」ほどの
+                信頼度はありません。実績を見ながら判断してください。
               </p>
             </div>
           </details>

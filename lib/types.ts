@@ -401,3 +401,34 @@ export interface BarikataNearMissRow {
   honmei_car_num: number;
   honmei_name: string;
 }
+
+/**
+ * 「中穴候補」：margin8〜10・予想1-2-3位が同ラインでないレースに対する参考買い目
+ * （◎→対抗固定→3-5位のいずれか、3点）。db/schema.sqlのnakaana_picksコメント参照。
+ * scratchpad検証（369件、5.5ヶ月）でtrain318.7%/test192.6%、最大的中1件を除いても
+ * 回収率196.1%と外れ値依存ではなさそうだが、母数がまだ薄いため「厳選」「バリカタ」
+ * とは別枠の参考表示に留める（本採用は実データが積み上がってから判断）。
+ */
+export interface NakaanaPickRow {
+  race_id: number;
+  kaisai_date: string;
+  jocd: string;
+  keirinjo_name: string;
+  race_no: number;
+  start_time: string | null;
+  margin: number;
+  honmei_car_num: number;
+  honmei_name: string;
+  taikou_car_num: number;
+  taikou_name: string;
+  formation: string[] | null;
+}
+
+/** 中穴候補1件の的中結果（フォーメーション全買い想定）。 */
+export interface NakaanaPickResult {
+  pick: NakaanaPickRow;
+  finished: boolean;
+  hit: boolean | null;
+  stakeYen: number | null;
+  payoutYen: number | null;
+}

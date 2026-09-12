@@ -289,6 +289,31 @@ CREATE TABLE IF NOT EXISTS barikata_near_misses (
 );
 CREATE INDEX IF NOT EXISTS idx_barikata_near_misses_date ON barikata_near_misses(kaisai_date, margin DESC);
 
+-- 「中穴候補」：margin8〜10・予想1-2-3位が同ラインでない（＝厳選にもバリカタにも
+-- 入らない）レースへの参考買い目。◎→対抗（総合2位、固定）→3〜5位のいずれか、
+-- の3点フォーメーション（ラインを考慮しない総合スコア順）。
+-- scratchpad/margin8to10-gap.js・score3-hit-detail.jsで検証（2026-04〜09、369件）：
+-- train318.7%/test192.6%、最大の的中1件(891倍)を除いても回収率196.1%、
+-- 上位3件を除いても158.1%と外れ値だけに依存した数字ではなさそうだが、
+-- 母数がまだ369件・5.5ヶ月と薄い（払戻の42.9%が上位3的中に集中）ため、
+-- 「厳選」「バリカタ」と同列の推奨扱いはせず、参考表示に留めて実績を積み上げる。
+CREATE TABLE IF NOT EXISTS nakaana_picks (
+    race_id        INTEGER PRIMARY KEY REFERENCES races(id) ON DELETE CASCADE,
+    kaisai_date    TEXT NOT NULL,
+    jocd           TEXT NOT NULL,
+    keirinjo_name  TEXT NOT NULL,
+    race_no        INTEGER NOT NULL,
+    start_time     TEXT,
+    margin         REAL NOT NULL,
+    honmei_car_num INTEGER NOT NULL,
+    honmei_name    TEXT NOT NULL,
+    taikou_car_num INTEGER NOT NULL,
+    taikou_name    TEXT NOT NULL,
+    formation      TEXT NOT NULL,      -- 3連単の組み合わせ配列（JSON文字列、daily_picksと同じ形式）
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_nakaana_picks_date ON nakaana_picks(kaisai_date, margin DESC);
+
 -- お気に入り選手登録。個人利用アプリのためユーザー区分なし（単一グローバルリスト）。
 CREATE TABLE IF NOT EXISTS favorite_racers (
     snum        TEXT PRIMARY KEY REFERENCES racers(snum) ON DELETE CASCADE,

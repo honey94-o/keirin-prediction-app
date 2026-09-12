@@ -115,6 +115,21 @@ function getPool(): Pool {
   return pool;
 }
 
+/**
+ * 一回限りのバッチスクリプト（daily-picks.ts等）向け。pg.Poolはデフォルトで
+ * idleTimeoutMillis=10000msなので、明示的にend()しないと計算が終わった後も
+ * 接続がアイドルタイムアウトするまでNodeプロセスが終了できず、GitHub Actions
+ * 実行のたびに約10秒が無駄になる（実測、daily-sync.ymlのステップ間隔で確認）。
+ * Next.jsサーバー側（長時間生き続けるプロセス）では呼ばない。
+ */
+export async function closeDb(): Promise<void> {
+  if (pool) {
+    await pool.end();
+    pool = null;
+  }
+  client = null;
+}
+
 async function runExecute(
   queryable: Pool | PoolClient,
   stmtOrSql: string | DbStatement,

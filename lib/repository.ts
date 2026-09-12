@@ -13,6 +13,8 @@ import type {
   FavoriteRacerEntry,
   GirlsAgariAbility,
   LinePartnershipOccurrence,
+  NakaanaPickResult,
+  NakaanaPickRow,
   OddsRow,
   PositionWinRate,
   PredictionRow,
@@ -1363,4 +1365,97 @@ export async function getBarikataPicksPerformance(dates: string[]): Promise<Bari
     payoutYen,
     roi: stakeYen > 0 ? (payoutYen / stakeYen) * 100 : null,
   };
+}
+
+/**
+ * 「中穴候補」を保存する。scripts/nakaana-picks.tsから呼ぶ。
+ * db/schema.sqlのnakaana_picksコメント・lib/scoring.tsのgenerateNakaanaCandidate参照。
+ */
+export async function saveNakaanaPicks(
+  picks: {
+    raceId: number;
+    kaisaiDate: string;
+    jocd: string;
+    keirinjoName: string;
+    raceNo: number;
+    startTime: string | null;
+    margin: number;
+    honmeiCarNum: number;
+    honmeiName: string;
+    taikouCarNum: number;
+    taikouName: string;
+    formation: string[];
+  }[]
+): Promise<void> {
+  if (picks.length === 0) return;
+  const db = getDb();
+  const sql = `INSERT INTO nakaana_picks (race_id, kaisai_date, jocd, keirinjo_name, race_no, start_time,
+                                          margin, honmei_car_num, honmei_name, taikou_car_num, taikou_name,
+                                          formation, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+               ON CONFLICT(race_id) DO UPDATE SET
+                 margin=excluded.margin, honmei_car_num=excluded.honmei_car_num,
+                 honmei_name=excluded.honmei_name, taikou_car_num=excluded.taikou_car_num,
+                 taikou_name=excluded.taikou_name, start_time=excluded.start_time,
+                 formation=excluded.formation, updated_at=datetime('now')`;
+  await db.batch(
+    picks.map((p) => ({
+      sql,
+      args: [
+        p.raceId,
+        p.kaisaiDate,
+        p.jocd,
+        p.keirinjoName,
+        p.raceNo,
+        p.startTime,
+        p.margin,
+        p.honmeiCarNum,
+        p.honmeiName,
+        p.taikouCarNum,
+        p.taikouName,
+        JSON.stringify(p.formation),
+      ],
+    }))
+  );
+}
+
+/** 指定日の中穴候補（margin降順）。 */
+export async function getNakaanaPicks(kaisaiDate: string, limit = 100): Promise<NakaanaPickRow[]> {
+  const result = await getDb().execute({
+    sql: `SELECT race_id, kaisai_date, jocd, keirinjo_name, race_no, start_time, margin,
+                 honmei_car_num, honmei_name, taikou_car_num, taikou_name, formation
+          FROM nakaana_picks WHERE kaisai_date = ? ORDER BY margin DESC LIMIT ?`,
+    args: [kaisaiDate, limit],
+  });
+  const rows = result.rows as unknown as (Omit<NakaanaPickRow, "formation"> & { formation: string | null })[];
+  return rows.map((r) => ({
+    ...r,
+    formation: r.formation ? (JSON.parse(r.formation) as string[]) : null,
+  }));
+}
+
+/** 指定日の中穴候補の的中結果（フォーメーション全買い想定、daily_picksと同じ判定方式）。 */
+export async function getNakaanaPicksResults(kaisaiDate: string): Promise<NakaanaPickResult[]> {
+  const picks = await getNakaanaPicks(kaisaiDate);
+  if (picks.length === 0) return [];
+  const raceIds = picks.map((p) => p.race_id);
+  const [resultsMap, oddsMap] = await Promise.all([
+    getResultsForRaces(raceIds),
+    getOddsForRaces(raceIds),
+  ]);
+
+  return picks.map((pick) => {
+    const results = resultsMap.get(pick.race_id) ?? [];
+    const odds = oddsMap.get(pick.race_id) ?? [];
+    const actualCombo = resolveActualCombo(results, odds);
+    if (actualCombo == null || pick.formation == null) {
+      return { pick, finished: false, hit: null, stakeYen: null, payoutYen: null };
+    }
+    const stakeYen = 100 * pick.formation.length;
+    const hit = pick.formation.includes(actualCombo);
+    const hitOdds =
+      odds.find((o) => o.bet_type === "3連単" && o.combination === actualCombo)?.odds_value ?? null;
+    const payoutYen = hit && hitOdds != null ? 100 * hitOdds : 0;
+    return { pick, finished: true, hit, stakeYen, payoutYen };
+  });
 }
