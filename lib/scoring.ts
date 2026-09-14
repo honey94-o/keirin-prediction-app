@@ -1585,6 +1585,51 @@ export function generateScenarios(
   // ④ 単騎一撃：ライン人数1（単騎）の選手は隊列上不利になりやすくライン評価が
   //   低く出るが、個人の実力（脚質実力・データ統計）が高ければ距離や間隔に関わらず
   //   単独でも上位に飛び込んでくることがある。ライン評価を除いた個人力で選ぶ
+  //
+  //   「競りのライン」加点は不採用：ユーザー発見「競りのライン」＝単騎選手が
+  //   自分より強い"他ライン"の番手を狙って攻撃する展開（先頭がライン付きだと
+  //   差す/番手を奪う明確な目標になる）をscripts/diagnose-solo-seri-line.tsで
+  //   検証（encp='wt:%'、gap=レース内最強の他選手とのheikin_tokuten差、gap>=5に
+  //   限定）。脚質=両/追の単騎選手は、その最強の他選手がライン付き（同ライン
+  //   人数>=2）の時の方が、同じ強さの他選手が単騎の時より勝率が明確に高かった
+  //   （両: 5.3% vs 1.2%、追: 1.9% vs 0.7%、train/testとも同方向、gap>=3/8でも
+  //   再現）。逃は理論通り（前に出る脚質で「差す目標」の恩恵を受けない）差が
+  //   不安定で対象外とした。ただし自分自身のclass_rankで層別すると交互作用が
+  //   あり、A1以上（CLASS_RANK_SCORES>=55）では明確（4.9% vs 0.8%、train/testとも
+  //   同方向）だが、A2以下では逆転した（2.1% vs 3.2%、train/testとも逆転側で
+  //   安定）。出走頭数の平均はrivalHasLine群7.05・rivalSolo群6.95とほぼ同じで
+  //   頭数の交絡ではない。A1以上限定・gap>=5・加点15点でsoloCandidateのタイブレーク
+  //   に実装しbacktest.ts(3000レース、同一レース集合の前後比較)で検証したところ、
+  //   単騎一撃 的中率1.7%(23/1367)→1.8%(24/1367)・回収率93.4%→96.8%（払戻+9,730円、
+  //   全1367件中たった1件のヒット差）、◎的中率・本命回収率・他シナリオは完全に
+  //   無変化（対象条件が狭くsoloCandidateの選出自体がほぼ変わらなかったため）。
+  //   相関自体はA1以上に限れば交絡でも閾値依存でもない本物だが、スコアに混ぜた
+  //   実利は測定誤差の範囲内に留まり、番手個人勝率・周回数・単騎個人成績など
+  //   このプロジェクトで繰り返し見られてきたのと同じ「単独では強い相関でも
+  //   ブレンドすると効果が消える」パターンと判断し、0のまま無効化する
+  //   （2026-09-14）。
+  const SERI_LINE_GAP_THRESHOLD = 5;
+  const SERI_LINE_MIN_CLASS_SCORE = 55; // A1以上
+  const SERI_LINE_BONUS = 0;
+  const soloSeriLineBonus = (s: ScoredEntry): number => {
+    if (s.entry.kyakushitsu !== "両" && s.entry.kyakushitsu !== "追") return 0;
+    if (s.entry.heikin_tokuten == null) return 0;
+    const classScore = s.entry.class_rank ? CLASS_RANK_SCORES[s.entry.class_rank] ?? 50 : 50;
+    if (classScore < SERI_LINE_MIN_CLASS_SCORE) return 0;
+    let strongest: ScoredEntry | null = null;
+    for (const other of scored) {
+      if (other.entry.car_num === s.entry.car_num || other.entry.heikin_tokuten == null) continue;
+      if (!strongest || other.entry.heikin_tokuten > strongest.entry.heikin_tokuten!) strongest = other;
+    }
+    if (!strongest) return 0;
+    const gap = strongest.entry.heikin_tokuten! - s.entry.heikin_tokuten;
+    if (gap < SERI_LINE_GAP_THRESHOLD) return 0;
+    const rivalLineSize =
+      strongest.entry.line_group != null
+        ? scored.filter((o) => o.entry.line_group === strongest!.entry.line_group).length
+        : 1;
+    return rivalLineSize >= 2 ? SERI_LINE_BONUS : 0;
+  };
   const soloCandidate = [...scored]
     .filter((s) => {
       if (usedAxes.has(s.entry.car_num) || s.entry.line_group == null) return false;
@@ -1593,7 +1638,8 @@ export function generateScenarios(
     })
     .sort(
       (a, b) =>
-        b.kyakushitsuScore.score + b.statsScore.score - (a.kyakushitsuScore.score + a.statsScore.score)
+        b.kyakushitsuScore.score + b.statsScore.score + soloSeriLineBonus(b) -
+        (a.kyakushitsuScore.score + a.statsScore.score + soloSeriLineBonus(a))
     )[0];
   if (soloCandidate) {
     usedAxes.add(soloCandidate.entry.car_num);
