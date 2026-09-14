@@ -228,6 +228,73 @@ export function calculateKyakushitsuScore(
     classRankScore * 0.25 + winRateScore * 0.3 + placeRateScore * 0.25 + fitScore * 0.2
   );
 
+  // 先行1車ボーナス：ケイリン格言「先行1車は黙って買え」の検証結果を反映する。
+  // レース内でline_group人数2以上（実在する複数人ライン）のグループがちょうど1つ
+  // だけで、他の全員が単騎（line_group人数1）という「先行1車」状況では、そのライン
+  // 先頭選手はライバルラインとの主導権争いが無く、自分のペースを守って最後まで
+  // 粘り込みやすい（先頭は本来「脚を使う」不利なポジションだが、競り合いによる
+  // 消耗が加わらない）。scripts/diagnose-senko-issha.tsで検証（encp='wt:%'、
+  // 12,078レース中272件・2.3%が該当）：
+  //   先行1車の先頭選手勝率: 43.8%(train44.3%/test42.5%, n=272)
+  //   競合あり（ライン2つ以上）の先頭選手勝率: 20.6%(train20.7%/test20.4%, n=27411)
+  // 2倍以上の差がありtrain/testとも安定。heikin_tokuten三分位・class_rank・脚質で
+  // 層別しても大半の帯で維持された（唯一、heikin_tokuten最高位帯はn=29と薄く
+  // train26.3%/test10.0%で不安定だったため、この帯特有の減点は入れていない）。
+  //
+  // ユーザー提供記事の注意点（先頭選手自身の決まり手が逃げより捲り優位だと、
+  // 一人旅のペース管理に不慣れで効果が薄い）も検証：先行1車のうちkimarite_
+  // nige_count > kimarite_makuri_countの選手は47.2%(train48.4/test44.4, n=176)、
+  // 逆に捲り優位の選手は38.2%(train40.6/test34.8, n=55)。脚質=逃に絞っても
+  // 逃優位49.3%(train52.0/test42.9, n=144) vs 捲り優位32.3%(train36.8/test25.0,
+  // n=31)とtrain/testとも同方向で再現し、注意点は支持された。ただし捲り優位でも
+  // 競合ありの基準値(20〜23%)は上回っているためボーナスをゼロにはせず半減させる。
+  //
+  // fitScoreは既にclampで100点頭打ち（逃×先頭は既に95点）のため、そちらに混ぜると
+  // 頭打ちで効果が消える。classChangeAdjustmentと同じく、baseScore確定後の
+  // 加点として扱うことで頭打ちを回避する。
+  //
+  // ■ backtest.ts --limit=3000（同一レース集合の前後比較、+15/捲り優位半減で試験導入）
+  //   ◎単勝的中率　　: 42.0%(1259/2999) → 41.9%(1256/2999)　（-0.1pt、誤差範囲）
+  //   ◎複勝的中率　　: 76.2%(2285)      → 76.2%(2286)　　　　（ほぼ無変化）
+  //   本命　　　　　　: 的中23.2%(695/2999)→23.2%(696/2999)・回収111.4%→111.8%
+  //   逃げ粘り込み　　: 的中6.6%(183/2762)→6.5%(180/2762)・回収83.2%→84.2%
+  //   まくり/差し一撃　: 的中7.3%(200/2741)→7.4%(204/2744)・回収102.8%→103.0%
+  //   単騎一撃　　　　: 的中1.7%(23/1367)→1.6%(22/1366)・回収93.5%→89.9%
+  //   全シナリオ合成　: 的中33.2%(997)→33.3%(1000)・回収99.4%→99.6%
+  // 単体の相関（先行1車43.8% vs 競合あり20.6%、2倍以上の差）は本物だが、全体の
+  // 2.3%（272/12,078レース）しか無く、既存スコアが既にclassRankScore・
+  // winRateScore・placeRateScore経由で先頭選手の強さを別ルートで織り込んで
+  // いるため、fitScore/baseScoreに加点してもtotalScoreの軸選定（本命・逃げ粘り
+  // 込み・単騎一撃の各候補選定）を実際に入れ替えるレースがごく僅かだった。
+  // 一部シナリオは改善、一部は悪化と方向が割れ、全シナリオ合成も+0.2ptと誤差
+  // 範囲に留まる。番手個人勝率・class_rank交互作用(逃×先頭/番手)・競りのライン
+  // 等、このプロジェクトで繰り返し確認されてきた「単独では強い相関でも、既存の
+  // 加重ブレンド済みスコアに混ぜると上乗せ効果が消える」パターンと一致すると
+  // 判断し、0に戻して不採用とした（2026-09-15）。
+  const SENKO_ISSHA_BONUS = 0;
+  const SENKO_ISSHA_MAKURI_DOMINANT_FACTOR = 0.5; // 捲り優位なら半減
+  let senkoIsshaBonus = 0;
+  if (entry.line_position === "先頭" && entry.line_group != null) {
+    const lineSizeByGroup = new Map<number, number>();
+    for (const e of allEntries) {
+      if (e.line_group == null) continue;
+      lineSizeByGroup.set(e.line_group, (lineSizeByGroup.get(e.line_group) ?? 0) + 1);
+    }
+    const multiGroups = [...lineSizeByGroup.entries()].filter(([, size]) => size >= 2);
+    const isSoleLeadOfSenkoIssha =
+      multiGroups.length === 1 && multiGroups[0][0] === entry.line_group;
+    if (isSoleLeadOfSenkoIssha) {
+      const { kimarite_nige_count, kimarite_makuri_count } = entry;
+      const makuriDominant =
+        kimarite_nige_count != null &&
+        kimarite_makuri_count != null &&
+        kimarite_makuri_count > kimarite_nige_count;
+      senkoIsshaBonus = makuriDominant
+        ? SENKO_ISSHA_BONUS * SENKO_ISSHA_MAKURI_DOMINANT_FACTOR
+        : SENKO_ISSHA_BONUS;
+    }
+  }
+
   // 昇降級のスコア調整は行わない：「降級直後は新しい級で相対的に格上、昇級直後は
   // 格上の相手と走るため苦戦」という定石で+15/-10点の調整をしていたが、選手プロフィール
   // 補完後の7174出走の実績集計では降級12.9%・昇級13.7%とほぼ同水準（定石とは逆に
@@ -239,7 +306,7 @@ export function calculateKyakushitsuScore(
   const adjustmentFactor = classChangeAdjustmentFactor(kaisaiDate);
   const classChangeAdjustment = 0; // 根拠なしと判明したため無効化（上のコメント参照）
 
-  const score = clamp(baseScore + classChangeAdjustment);
+  const score = clamp(baseScore + classChangeAdjustment + senkoIsshaBonus);
 
   return {
     score,
@@ -253,6 +320,7 @@ export function calculateKyakushitsuScore(
       "3着内率": entry.rentairitu3 ?? "不明",
       脚質: entry.kyakushitsu ?? "不明",
       "脚質×隊列位置の相性": fitScore,
+      先行1車ボーナス: senkoIsshaBonus > 0 ? `+${senkoIsshaBonus}` : "該当なし",
     },
   };
 }
