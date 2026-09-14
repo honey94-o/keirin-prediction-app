@@ -1535,6 +1535,21 @@ export function generateScenarios(
   //    lineupOrderScoreのマーク率重みが主因と判明したが、本加点だけ0にしても
   //    67.1%までしか戻らず、単独でも上振れなかった）。MAKURI_SASHI_DOMINANT_BONUS=0
   //    で無効化して残す。
+  //
+  //    ユーザー指摘「脚質が逃や両の選手が番手の時、番手捲りをすることがある。
+  //    番手捲りした時、ライン先頭はほぼ着外になる」をscratchpad/bantecha-makuri*.js
+  //    で検証：番手の脚質別に自ラインの先頭を上回ってゴールする率を見ると、
+  //    逃58.5%(train58.3%/test58.7%, n=1175)・両54.7%(train54.1%/test55.7%, n=5359)
+  //    に対し追47.9%(train47.8%/test48.2%, n=20634)と明確に高く、standing_count
+  //    （既存の参考表示、db/schema.sql参照）の3分位で統制しても差は消えず
+  //    （低位帯: 逃/両51.4%対追46.3%、高位帯: 逃/両59.3%対追49.0%）交絡ではない。
+  //    また上回った時の自ライン先頭の着順は4着以下が72-75%（統制なしの全体は
+  //    50-53%）で「番手捲りするとほぼ着外」も再現した。ただし現行のまくり/差し
+  //    一撃候補は脚質「追・両」のみが対象で、最も上回り率が高い「逃」を除外して
+  //    いたため対象に加えた。backtest.ts(3000レース、同一レース集合での前後比較)：
+  //    まくり/差し一撃 的中率7.0%→7.3%・回収率97.4%→100.1%（賭け金ほぼ同額で
+  //    払戻+28,980円）、他シナリオへの悪影響なし。効果は小さいが実在し方向も
+  //    事前検証と一致するため採用する。
   const sashiDominantBonus = (s: ScoredEntry) => {
     const { kimarite_sashi_count, kimarite_mark_count } = s.entry;
     const sashiDominant =
@@ -1548,7 +1563,7 @@ export function generateScenarios(
       (s) =>
         !usedAxes.has(s.entry.car_num) &&
         s.entry.line_position !== "先頭" &&
-        (s.entry.kyakushitsu === "追" || s.entry.kyakushitsu === "両")
+        (s.entry.kyakushitsu === "追" || s.entry.kyakushitsu === "両" || s.entry.kyakushitsu === "逃")
     )
     .sort((a, b) => b.totalScore + sashiDominantBonus(b) - (a.totalScore + sashiDominantBonus(a)))[0];
   if (makuriCandidate) {
