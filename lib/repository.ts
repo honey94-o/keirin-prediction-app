@@ -823,6 +823,30 @@ export async function getResultsForRaces(raceIds: number[]): Promise<Map<number,
 }
 
 /**
+ * ホーム画面の開催場一覧「先行1車」タグ表示用に、レースごとのline_groupだけを
+ * 軽量に取得する（scoring.tsのisSenkoIsshaRace参照）。EntryWithRacer全体
+ * （racersとのJOIN）は不要なため、entriesだけを引く専用関数にしている。
+ */
+export async function getLineGroupsForRaces(raceIds: number[]): Promise<Map<number, (number | null)[]>> {
+  if (raceIds.length === 0) return new Map();
+  const rows: { race_id: number; line_group: number | null }[] = [];
+  for (const chunk of chunkIds(raceIds)) {
+    const result = await getDb().execute({
+      sql: `SELECT race_id, line_group FROM entries WHERE race_id IN (${chunk.map(() => "?").join(",")})`,
+      args: chunk,
+    });
+    rows.push(...(result.rows as unknown as { race_id: number; line_group: number | null }[]));
+  }
+  const map = new Map<number, (number | null)[]>();
+  for (const r of rows) {
+    const arr = map.get(r.race_id) ?? [];
+    arr.push(r.line_group);
+    map.set(r.race_id, arr);
+  }
+  return map;
+}
+
+/**
  * 出走選手にL級（ガールズケイリン）が1人でもいるレースIDの集合を返す。
  * lib/scoring.tsのisGirlsRaceと同じ判定基準（syumoku文字列は信用しない。
  * 理由はisGirlsRaceのコメント参照）。ガールズはラインが無く決まり方が

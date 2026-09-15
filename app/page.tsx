@@ -10,6 +10,7 @@ import {
   getFavoriteRacers,
   getResultsForRaces,
   getOddsForRaces,
+  getLineGroupsForRaces,
   resolveActualCombo,
   isRaceFinished,
 } from "../lib/repository";
@@ -25,7 +26,7 @@ import {
 } from "../lib/date";
 import { RefreshTrigger } from "../components/RefreshTrigger";
 import { CarNumberBadge } from "../components/CarNumberBadge";
-import { raceStage, pickNearestRace, formatFormationNotation } from "../lib/scoring";
+import { raceStage, pickNearestRace, formatFormationNotation, isSenkoIsshaRace } from "../lib/scoring";
 import { predictRace } from "../lib/predict";
 import type { RaceRow } from "../lib/types";
 
@@ -105,6 +106,10 @@ export default async function Home({
   const raceIds = races.map((r) => r.id);
   const resultsByRaceId = await getResultsForRaces(raceIds);
   const oddsByRaceId = await getOddsForRaces(raceIds);
+  // 「先行1車」参考タグ（lib/scoring.tsのisSenkoIsshaRace参照）。結果未確定の
+  // レースでも並び予想（entries.line_group）さえあれば判定できるため、発走前の
+  // 開催場一覧でも表示できる。predictRaceを使わない軽量クエリ。
+  const lineGroupsByRaceId = await getLineGroupsForRaces(raceIds);
 
   // 「本日の厳選レース」：結果未確定（前日以前は対象外）の日だけ、
   // scripts/compute-picks.tsが事前計算したdaily_picksからその日の本命marginが
@@ -536,6 +541,8 @@ export default async function Home({
                       : null;
                   const hits = pickHitsByRaceId.get(race.id) ?? [];
                   const scenarioHitLabel = scenarioHitLabelByRaceId.get(race.id) ?? null;
+                  const lineGroups = lineGroupsByRaceId.get(race.id) ?? [];
+                  const senkoIssha = lineGroups.length > 0 && isSenkoIsshaRace(lineGroups);
                   return {
                     race,
                     top3,
@@ -543,6 +550,7 @@ export default async function Home({
                     ninki: hitOdds?.ninki ?? null,
                     hits,
                     scenarioHitLabel,
+                    senkoIssha,
                   };
                 });
 
@@ -607,14 +615,19 @@ export default async function Home({
                       </span>
                       <span className="text-xs">→</span>
                     </Link>
-                    {raceRows.map(({ race, top3, payoutOdds, ninki, hits, scenarioHitLabel }) => (
+                    {raceRows.map(({ race, top3, payoutOdds, ninki, hits, scenarioHitLabel, senkoIssha }) => (
                       <Link
                         key={race.id}
                         href={`/races/${race.id}`}
                         className="flex items-center gap-2.5 py-2.5 border-t border-white/[.05]"
                       >
                         <span className="font-mono text-[11px] text-mist-4 w-9 shrink-0">{race.race_no}R</span>
-                        <div className="flex-1 flex items-center gap-1 min-w-0">
+                        <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                          {senkoIssha && (
+                            <span className="text-[10px] font-bold text-blue bg-blue/[.14] px-1.5 py-0.5 rounded-full shrink-0 whitespace-nowrap">
+                              先行1車
+                            </span>
+                          )}
                           {top3.length === 3 ? (
                             top3.map((r) => <CarNumberBadge key={r.car_num} carNum={r.car_num} size="sm" />)
                           ) : (

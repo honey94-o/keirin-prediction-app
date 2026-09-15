@@ -1359,6 +1359,24 @@ function generateSanrentanFormation(
 }
 
 /**
+ * 「先行1車」（レース内でline_group人数2以上のグループがちょうど1つだけで、
+ * 他の全員が単騎）かどうかを判定する。calculateKyakushitsuScoreのSENKO_ISSHA_BONUS
+ * （scripts/diagnose-senko-issha.ts参照）と同じ定義。スコアへの合成は
+ * backtest.tsで実利が確認できず見送ったが、先頭選手の勝率が2倍以上
+ * （43.8% vs 20.6%、train/testとも安定）という相関自体は本物のため、
+ * ホーム画面の参考タグ表示にのみ使う（EntryWithRacer全体は不要な軽量版）。
+ */
+export function isSenkoIsshaRace(lineGroups: (number | null)[]): boolean {
+  const sizeByGroup = new Map<number, number>();
+  for (const g of lineGroups) {
+    if (g == null) continue;
+    sizeByGroup.set(g, (sizeByGroup.get(g) ?? 0) + 1);
+  }
+  const multiGroups = [...sizeByGroup.values()].filter((size) => size >= 2);
+  return multiGroups.length === 1;
+}
+
+/**
  * 3連単の組み合わせ一覧（例: ["1-3-6","1-3-7",...]）を、
  * 「軸-2着候補-3着候補」の桁連結表記（例: "1-37-123567"）に変換する。
  * 全組み合わせが単一の1着（軸）を共有していない場合（3連複ボックス等）はnullを返す。
