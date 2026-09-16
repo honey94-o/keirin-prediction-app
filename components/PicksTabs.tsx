@@ -55,11 +55,11 @@ export function PicksTabs({ items }: { items: PickItem[] }) {
           <h2 className="font-bold text-base dark:text-gray-100">
             {race.keirinjo_name} {race.race_no}R
           </h2>
-          <span className="text-sm text-gray-400 tabular-nums dark:text-gray-500">
+          <span className="text-sm text-gray-400 tabular-nums dark:text-gray-400">
             発走 {race.start_time ?? "--:--"}
           </span>
         </div>
-        <p className="text-xs text-gray-400 mb-3 dark:text-gray-500">
+        <p className="text-xs text-gray-400 mb-3 dark:text-gray-400">
           本命との差 {pick.margin.toFixed(1)}点
         </p>
 
@@ -82,7 +82,7 @@ export function PicksTabs({ items }: { items: PickItem[] }) {
               <span className="text-xs font-semibold bg-[#0d5c3f] text-white px-2 py-0.5 rounded-full">
                 本命
               </span>
-              <span className="text-xs text-gray-400 ml-auto dark:text-gray-500">
+              <span className="text-xs text-gray-400 ml-auto dark:text-gray-400">
                 {honmeiScenario.formation.combinations.length}点
               </span>
             </div>
@@ -93,7 +93,7 @@ export function PicksTabs({ items }: { items: PickItem[] }) {
                 <p className="text-2xl font-bold tabular-nums font-mono text-[#0d5c3f] mb-1 dark:text-emerald-400">
                   {notation}
                 </p>
-                <p className="text-xs text-gray-400 mb-3 dark:text-gray-500">
+                <p className="text-xs text-gray-400 mb-3 dark:text-gray-400">
                   軸-2着候補-3着候補（車番を連結表記。車券購入時にそのまま入力可能）
                 </p>
               </>
@@ -125,7 +125,7 @@ export function PicksTabs({ items }: { items: PickItem[] }) {
         >
           ← 前のレース
         </button>
-        <span className="text-xs text-gray-400 self-center dark:text-gray-500">
+        <span className="text-xs text-gray-400 self-center dark:text-gray-400">
           {activeIndex + 1} / {items.length}
         </span>
         <button

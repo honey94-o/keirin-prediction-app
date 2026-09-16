@@ -99,7 +99,7 @@ export default async function VenueRacesPage({
               <span className="text-sm text-gray-500 dark:text-gray-400">
                 {race.syumoku ?? ""} {race.grade_kbn ?? ""}
               </span>
-              <span className="text-sm text-gray-400 dark:text-gray-500">{race.start_time ?? ""}</span>
+              <span className="text-sm text-gray-400 dark:text-gray-400">{race.start_time ?? ""}</span>
             </Link>
           </li>
         ))}

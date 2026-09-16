@@ -72,7 +72,7 @@ export default async function RacerDetailPage({
         <section className="bg-white rounded-lg shadow-sm p-4 mb-4 dark:bg-gray-800">
           <h2 className="font-semibold mb-2 text-sm text-gray-600 dark:text-gray-300">
             記録会データ（{racer.debut_class}・デビュー前）
-            <span className="text-xs text-gray-400 font-normal ml-2 dark:text-gray-500">
+            <span className="text-xs text-gray-400 font-normal ml-2 dark:text-gray-400">
               日本競輪選手養成所調べ・参考値
             </span>
           </h2>
@@ -117,26 +117,26 @@ export default async function RacerDetailPage({
       <section className="bg-white rounded-lg shadow-sm p-4 mb-4 dark:bg-gray-800">
         <h2 className="font-semibold mb-2 text-sm text-gray-600 dark:text-gray-300">
           隊列内位置別成績
-          <span className="text-xs text-gray-400 font-normal ml-2 dark:text-gray-500">
+          <span className="text-xs text-gray-400 font-normal ml-2 dark:text-gray-400">
             自前集計・母数が少ないうちは参考程度
           </span>
         </h2>
         {positionWinRates.length === 0 ? (
-          <p className="text-sm text-gray-400 dark:text-gray-500">まだデータがありません（結果の蓄積が必要）</p>
+          <p className="text-sm text-gray-400 dark:text-gray-400">まだデータがありません（結果の蓄積が必要）</p>
         ) : (
           <div className="grid grid-cols-5 gap-y-2 text-sm dark:text-gray-200">
-            <div className="text-xs text-gray-400 dark:text-gray-500">位置</div>
-            <div className="text-right text-xs text-gray-400 dark:text-gray-500">1着</div>
-            <div className="text-right text-xs text-gray-400 dark:text-gray-500">2着</div>
-            <div className="text-right text-xs text-gray-400 dark:text-gray-500">3着</div>
-            <div className="text-right text-xs text-gray-400 dark:text-gray-500">走数</div>
+            <div className="text-xs text-gray-400 dark:text-gray-400">位置</div>
+            <div className="text-right text-xs text-gray-400 dark:text-gray-400">1着</div>
+            <div className="text-right text-xs text-gray-400 dark:text-gray-400">2着</div>
+            <div className="text-right text-xs text-gray-400 dark:text-gray-400">3着</div>
+            <div className="text-right text-xs text-gray-400 dark:text-gray-400">走数</div>
             {positionWinRates.map((p) => (
               <div key={p.line_position} className="contents">
                 <div>{p.line_position}</div>
                 <div className="text-right tabular-nums">{p.winRate.toFixed(0)}%</div>
                 <div className="text-right tabular-nums">{p.secondRate.toFixed(0)}%</div>
                 <div className="text-right tabular-nums">{p.thirdRate.toFixed(0)}%</div>
-                <div className="text-right text-gray-400 dark:text-gray-500">{p.races}走</div>
+                <div className="text-right text-gray-400 dark:text-gray-400">{p.races}走</div>
               </div>
             ))}
           </div>
@@ -146,7 +146,7 @@ export default async function RacerDetailPage({
       <section className="bg-white rounded-lg shadow-sm p-4 dark:bg-gray-800">
         <h2 className="font-semibold mb-2 text-sm text-gray-600 dark:text-gray-300">最近の成績</h2>
         {history.length === 0 ? (
-          <p className="text-sm text-gray-400 dark:text-gray-500">まだデータがありません</p>
+          <p className="text-sm text-gray-400 dark:text-gray-400">まだデータがありません</p>
         ) : (
           <ul className="divide-y divide-gray-100 text-sm dark:divide-gray-700">
             {history.map((h) => (

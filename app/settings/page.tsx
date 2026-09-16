@@ -24,7 +24,7 @@ export default async function SettingsPage() {
           お気に入り選手{favorites.length > 0 ? `（${favorites.length}名）` : ""}
         </h2>
         {favorites.length === 0 ? (
-          <p className="text-sm text-gray-400 dark:text-gray-500">
+          <p className="text-sm text-gray-400 dark:text-gray-400">
             まだ登録がありません。選手ページの「☆ お気に入り登録」から登録できます。
           </p>
         ) : (
@@ -38,14 +38,14 @@ export default async function SettingsPage() {
                     className="flex-1 text-sm text-gray-900 truncate dark:text-gray-100"
                   >
                     {racer.name}
-                    <span className="text-xs text-gray-400 ml-1 dark:text-gray-500">
+                    <span className="text-xs text-gray-400 ml-1 dark:text-gray-400">
                       {racer.pref ?? "-"} / {racer.class_rank ?? "-"}
                     </span>
                   </Link>
                   <form action={removeFavorite}>
                     <button
                       type="submit"
-                      className="text-xs text-gray-400 px-2 py-1 rounded active:bg-gray-100 dark:text-gray-500 dark:active:bg-gray-700"
+                      className="text-xs text-gray-400 px-2 py-1 rounded active:bg-gray-100 dark:text-gray-400 dark:active:bg-gray-700"
                     >
                       解除
                     </button>

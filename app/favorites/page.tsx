@@ -35,12 +35,12 @@ export default async function FavoritesPage() {
         ← ホームに戻る
       </Link>
       <h1 className="text-lg font-bold mb-1 dark:text-gray-100">お気に入り選手</h1>
-      <p className="text-sm text-gray-400 mb-4 dark:text-gray-500">
+      <p className="text-sm text-gray-400 mb-4 dark:text-gray-400">
         {favorites.length}名登録中。選手ページの「☆ お気に入り登録」で追加・解除できます。
       </p>
 
       {favorites.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center mt-8 dark:text-gray-500">
+        <p className="text-sm text-gray-400 text-center mt-8 dark:text-gray-400">
           まだ登録がありません。選手ページから登録してください。
         </p>
       ) : (
@@ -57,7 +57,7 @@ export default async function FavoritesPage() {
                   >
                     {racer.name}
                   </Link>
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
+                  <span className="text-xs text-gray-400 dark:text-gray-400">
                     {racer.pref ?? "-"} / {racer.class_rank ?? "-"}
                   </span>
                 </div>
@@ -67,7 +67,7 @@ export default async function FavoritesPage() {
                     昨日（{formatDateStr(yesterdayStr)}）の結果
                   </div>
                   {yesterdays.length === 0 ? (
-                    <p className="text-xs text-gray-400 dark:text-gray-500">出走なし</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-400">出走なし</p>
                   ) : (
                     <ul className="flex flex-col gap-1">
                       {yesterdays.map((e) => (
@@ -86,13 +86,13 @@ export default async function FavoritesPage() {
                                   ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
                                   : e.finishPos <= 3
                                     ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
-                                    : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+                                    : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300"
                               }`}
                             >
                               {e.finishPos}着{e.finishPos === 1 && e.kimarite ? `（${e.kimarite}）` : ""}
                             </span>
                           ) : (
-                            <span className="text-xs text-gray-400 dark:text-gray-500">結果未確定</span>
+                            <span className="text-xs text-gray-400 dark:text-gray-400">結果未確定</span>
                           )}
                         </li>
                       ))}
@@ -105,7 +105,7 @@ export default async function FavoritesPage() {
                     本日（{formatDateStr(todayStr)}）の出走
                   </div>
                   {todays.length === 0 ? (
-                    <p className="text-xs text-gray-400 dark:text-gray-500">出走なし</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-400">出走なし</p>
                   ) : (
                     <ul className="flex flex-col gap-1">
                       {todays.map((e) => (
@@ -114,7 +114,7 @@ export default async function FavoritesPage() {
                             href={`/races/${e.race.id}`}
                             className="flex items-center gap-2 text-sm bg-yellow-50 rounded px-2 py-1.5 active:bg-yellow-100 dark:bg-yellow-950 dark:active:bg-yellow-900"
                           >
-                            <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
+                            <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-400">
                               {e.race.start_time ?? "--:--"}
                             </span>
                             <span className="flex-1 truncate text-gray-900 dark:text-gray-100">

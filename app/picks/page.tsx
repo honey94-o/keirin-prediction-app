@@ -81,7 +81,7 @@ export default async function PicksPage({
         ← ホームに戻る
       </Link>
       <h1 className="text-lg font-bold mb-1 dark:text-gray-100">厳選レース（{formatDateStr(viewDate)}）</h1>
-      <p className="text-xs text-gray-400 mb-4 dark:text-gray-500">
+      <p className="text-xs text-gray-400 mb-4 dark:text-gray-400">
         本命の信頼度が高い上位{items.length}レースを発走時刻順に表示。買い目は「本命」フォーメーション（1レース20点以内）が対象です。
       </p>
 
@@ -144,13 +144,13 @@ export default async function PicksPage({
                       className={`ml-auto px-1.5 py-0.5 rounded-full font-semibold ${
                         r.hit
                           ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
-                          : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+                          : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300"
                       }`}
                     >
                       {r.hit ? `的中 ${(r.payoutYen ?? 0).toFixed(0)}円` : "不的中"}
                     </span>
                   ) : (
-                    <span className="ml-auto text-gray-400 dark:text-gray-500">結果未確定</span>
+                    <span className="ml-auto text-gray-400 dark:text-gray-400">結果未確定</span>
                   )}
                 </li>
               ))}
@@ -162,7 +162,7 @@ export default async function PicksPage({
           本日のバリカタ{barikataPicks.length > 0 ? `（${barikataPicks.length}件）` : ""}
         </div>
         {barikataPicks.length === 0 ? (
-          <p className="text-sm text-gray-400 dark:text-gray-500">条件を満たすレースはありません。</p>
+          <p className="text-sm text-gray-400 dark:text-gray-400">条件を満たすレースはありません。</p>
         ) : (
           <ul className="flex flex-col gap-1">
             {barikataByTime.map((p) => (
@@ -171,7 +171,7 @@ export default async function PicksPage({
                   href={`/races/${p.race_id}`}
                   className="flex items-center gap-2 bg-white rounded-lg px-2 py-1.5 text-sm active:bg-gray-50 dark:bg-gray-800 dark:active:bg-gray-700"
                 >
-                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
+                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-400">
                     {p.start_time ?? "--:--"}
                   </span>
                   <span className="text-gray-900 flex-1 truncate dark:text-gray-100">
@@ -196,7 +196,7 @@ export default async function PicksPage({
           {formatDateStr(last30Dates[last30Dates.length - 1])} 〜 {formatDateStr(last30Dates[0])}）
         </h2>
         {performance30d.races === 0 ? (
-          <p className="text-sm text-gray-400 dark:text-gray-500">結果確定済みのデータがまだありません。</p>
+          <p className="text-sm text-gray-400 dark:text-gray-400">結果確定済みのデータがまだありません。</p>
         ) : (
           <div className="grid grid-cols-3 gap-y-1 text-sm">
             <div className="text-gray-500 dark:text-gray-400">対象レース</div>
@@ -236,7 +236,7 @@ export default async function PicksPage({
           )}
         </div>
         {prevResults.length === 0 ? (
-          <p className="text-sm text-gray-400 dark:text-gray-500">前日の厳選レースはありませんでした。</p>
+          <p className="text-sm text-gray-400 dark:text-gray-400">前日の厳選レースはありませんでした。</p>
         ) : (
           <ul className="flex flex-col divide-y divide-gray-100 dark:divide-gray-700">
             {prevResultsByTime.map((r) => {
@@ -248,7 +248,7 @@ export default async function PicksPage({
                     href={`/races/${r.pick.race_id}`}
                     className="flex items-center gap-2 active:bg-gray-50 -mx-1 px-1 rounded dark:active:bg-gray-700"
                   >
-                    <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
+                    <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-400">
                       {r.pick.start_time ?? "--:--"}
                     </span>
                     <span className="text-sm text-gray-900 w-20 shrink-0 truncate dark:text-gray-100">
@@ -259,13 +259,13 @@ export default async function PicksPage({
                       {notation ?? "-"}
                     </span>
                     {!r.finished ? (
-                      <span className="text-xs text-gray-400 shrink-0 dark:text-gray-500">結果未確定</span>
+                      <span className="text-xs text-gray-400 shrink-0 dark:text-gray-400">結果未確定</span>
                     ) : (
                       <span
                         className={`text-xs px-2 py-0.5 rounded-full font-semibold shrink-0 ${
                           r.hit
                             ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
-                            : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+                            : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300"
                         }`}
                       >
                         {r.hit ? "的中" : "不的中"}
@@ -293,7 +293,7 @@ export default async function PicksPage({
       </section>
 
       {items.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center mt-8 dark:text-gray-500">
+        <p className="text-sm text-gray-400 text-center mt-8 dark:text-gray-400">
           {formatDateStr(viewDate)}の厳選レースはまだありません。
         </p>
       ) : (
@@ -311,7 +311,7 @@ export default async function PicksPage({
                   : null;
                 return (
                   <li key={pick.race_id} className="py-2 flex items-center gap-2">
-                    <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
+                    <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-400">
                       {pick.start_time ?? "--:--"}
                     </span>
                     <span className="text-sm text-gray-900 w-24 shrink-0 truncate dark:text-gray-100">
@@ -321,7 +321,7 @@ export default async function PicksPage({
                     <span className="flex-1 font-mono font-bold tabular-nums text-[#0d5c3f] text-sm truncate dark:text-emerald-400">
                       {notation ?? "-"}
                     </span>
-                    <span className="text-xs text-gray-400 shrink-0 dark:text-gray-500">
+                    <span className="text-xs text-gray-400 shrink-0 dark:text-gray-400">
                       {honmeiScenario?.formation.combinations.length ?? 0}点
                     </span>
                   </li>
@@ -335,7 +335,7 @@ export default async function PicksPage({
         </>
       )}
 
-      <p className="text-xs text-gray-400 mt-6 leading-relaxed dark:text-gray-500">
+      <p className="text-xs text-gray-400 mt-6 leading-relaxed dark:text-gray-400">
         選定方法：その日の本命（◎と対抗のスコア差）が大きい順に上位10件を機械的に選出。
         「直近{PERFORMANCE_WINDOW_DAYS}日の実績」は各日実際に表示した買い目のスナップショットで判定しており、
         後からスコアリングを調整しても過去の結果表示は変わりません。ギャンブルのため回収率100%超えを毎回保証するものではありません。

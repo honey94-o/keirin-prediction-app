@@ -41,7 +41,7 @@ export function WeightSettingsForm({ initialWeights }: { initialWeights: ScoreWe
         name="stats"
       />
 
-      <p className="text-xs text-gray-400 dark:text-gray-500">
+      <p className="text-xs text-gray-400 dark:text-gray-400">
         3つの比率で正規化されるため、合計が100でなくても構いません。
       </p>
 

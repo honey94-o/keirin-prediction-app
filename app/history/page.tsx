@@ -95,12 +95,12 @@ export default async function HistoryPage({
                     <span className="text-gray-700 dark:text-gray-300">
                       {formatDateStr(d.date)}
                       {d.date === todayJstStr() && (
-                        <span className="text-xs text-gray-400 ml-1 dark:text-gray-500">(本日・進行中)</span>
+                        <span className="text-xs text-gray-400 ml-1 dark:text-gray-400">(本日・進行中)</span>
                       )}
                     </span>
                     <span className="font-semibold tabular-nums dark:text-gray-100">
                       {d.hits}/{d.total}
-                      <span className="text-xs text-gray-400 ml-1 dark:text-gray-500">
+                      <span className="text-xs text-gray-400 ml-1 dark:text-gray-400">
                         ({((d.hits / d.total) * 100).toFixed(0)}%)
                       </span>
                     </span>
@@ -121,7 +121,7 @@ export default async function HistoryPage({
           </Link>
           <h2 className="font-semibold text-sm text-gray-600 dark:text-gray-300">
             {formatDateStr(viewDate)}のサマリー
-            <span className="text-gray-400 font-normal dark:text-gray-500">（ガールズ除く）</span>
+            <span className="text-gray-400 font-normal dark:text-gray-400">（ガールズ除く）</span>
           </h2>
           {nextDate <= latestDate ? (
             <Link
@@ -131,12 +131,12 @@ export default async function HistoryPage({
               翌日 →
             </Link>
           ) : (
-            <span className="text-sm text-gray-300 px-2 py-1 -mr-2 dark:text-gray-600">翌日 →</span>
+            <span className="text-sm text-gray-300 px-2 py-1 -mr-2 dark:text-gray-400">翌日 →</span>
           )}
         </div>
 
         {daily.totalRaces === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-4 dark:text-gray-500">
+          <p className="text-sm text-gray-400 text-center py-4 dark:text-gray-400">
             この日はまだレース結果・予想がありません。
           </p>
         ) : (
@@ -233,7 +233,7 @@ export default async function HistoryPage({
                     href={`/races/${r.pick.race_id}`}
                     className="flex items-center gap-2 active:bg-amber-100/50 -mx-1 px-1 rounded text-sm dark:active:bg-amber-900/50"
                   >
-                    <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
+                    <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-400">
                       {r.pick.start_time ?? "--:--"}
                     </span>
                     <span className="text-gray-900 w-20 shrink-0 truncate dark:text-gray-100">
@@ -244,13 +244,13 @@ export default async function HistoryPage({
                       {notation ?? "-"}
                     </span>
                     {!r.finished ? (
-                      <span className="text-xs text-gray-400 shrink-0 dark:text-gray-500">結果未確定</span>
+                      <span className="text-xs text-gray-400 shrink-0 dark:text-gray-400">結果未確定</span>
                     ) : (
                       <span
                         className={`text-xs px-2 py-0.5 rounded-full font-semibold shrink-0 ${
                           r.hit
                             ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
-                            : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+                            : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300"
                         }`}
                       >
                         {r.hit ? "的中" : "不的中"}
@@ -289,7 +289,7 @@ export default async function HistoryPage({
                   href={`/races/${r.pick.race_id}`}
                   className="flex items-center gap-2 active:bg-rose-100/50 -mx-1 px-1 rounded text-sm dark:active:bg-rose-900/50"
                 >
-                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-500">
+                  <span className="text-xs text-gray-400 tabular-nums w-11 shrink-0 dark:text-gray-400">
                     {r.pick.start_time ?? "--:--"}
                   </span>
                   <span className="text-gray-900 w-20 shrink-0 truncate dark:text-gray-100">
@@ -300,13 +300,13 @@ export default async function HistoryPage({
                     {r.pick.combo}
                   </span>
                   {!r.finished ? (
-                    <span className="text-xs text-gray-400 shrink-0 dark:text-gray-500">結果未確定</span>
+                    <span className="text-xs text-gray-400 shrink-0 dark:text-gray-400">結果未確定</span>
                   ) : (
                     <span
                       className={`text-xs px-2 py-0.5 rounded-full font-semibold shrink-0 ${
                         r.hit
                           ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
-                          : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+                          : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300"
                       }`}
                     >
                       {r.hit ? "的中" : "不的中"}
@@ -333,13 +333,13 @@ export default async function HistoryPage({
           <div>回収率（参考値）</div>
           <div className="text-right tabular-nums">{fmtPct(stats.overallRoi)}</div>
         </div>
-        <p className="text-xs text-gray-400 mt-2 dark:text-gray-500">
+        <p className="text-xs text-gray-400 mt-2 dark:text-gray-400">
           回収率はフォーメーション各点に100円均等買いした場合の参考値。オッズは予想記録時点のスナップショットで、公式の確定払戻金とは異なる場合がある。
         </p>
       </section>
 
       {summaries.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center mt-8 dark:text-gray-500">
+        <p className="text-sm text-gray-400 text-center mt-8 dark:text-gray-400">
           まだ記録された予想がありません。レース詳細画面で「この予想を記録する」を押すと、ここに表示されます。
         </p>
       ) : (
@@ -362,7 +362,7 @@ export default async function HistoryPage({
                     )}
                   </div>
                   {!resolved ? (
-                    <div className="text-xs text-gray-400 dark:text-gray-500">結果未確定</div>
+                    <div className="text-xs text-gray-400 dark:text-gray-400">結果未確定</div>
                   ) : (
                     <div className="text-xs text-gray-500 dark:text-gray-400">
                       ◎{s.honmeiHit ? "単勝的中" : s.honmeiTop3 ? "複勝止まり" : "不的中"} /
@@ -378,7 +378,7 @@ export default async function HistoryPage({
                         ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
                         : s.honmeiTop3
                           ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
-                          : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+                          : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300"
                     }`}
                   >
                     {s.honmeiHit ? "的中" : s.honmeiTop3 ? "惜しい" : "不的中"}
