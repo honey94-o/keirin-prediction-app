@@ -224,16 +224,6 @@ export default async function RaceDetailPage({
               </button>
             </form>
           )}
-          {winticketUrl && (
-            <a
-              href={winticketUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs font-semibold text-mint whitespace-nowrap shrink-0 rounded-lg px-3 py-1.5 bg-mint/[.12]"
-            >
-              WINTICKETで{raceFinished ? "結果・映像" : "確認"} →
-            </a>
-          )}
         </div>
 
         {kimariteRates && (
@@ -631,6 +621,17 @@ export default async function RaceDetailPage({
           </div>
         )}
       </div>
+      {winticketUrl && (
+        <a
+          href={winticketUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="fixed right-4 z-20 flex items-center gap-1.5 rounded-full bg-mint px-4 py-3 text-[13px] font-bold text-mint-ink shadow-lg shadow-black/30"
+          style={{ bottom: "4.75rem" }}
+        >
+          WINTICKETで{raceFinished ? "結果" : "確認"} →
+        </a>
+      )}
     </main>
   );
 }
