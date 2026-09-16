@@ -41,8 +41,8 @@
   --color-mist-1: #bfc7d2;
   --color-mist-2: #a7b0bc;
   --color-mist-3: #8a93a0;
-  --color-mist-4: #6b7481;
-  --color-mist-5: #5e6773;
+  --color-mist-4: #838c98; /* 元#6b7481はダーク背景でコントラスト比3.9〜4.3とWCAG AA(4.5)未達だったため明るく調整 */
+  --color-mist-5: #79818c; /* 元#5e6773はコントラスト比3.2〜3.5でさらに未達だったため明るく調整（4.6〜5.1に改善） */
   --color-mint: #3ddc97;
   --color-mint-strong: #7befbc;
   --color-mint-ink: #04150e; /* mint地に乗せる濃色文字 */
