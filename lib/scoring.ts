@@ -1166,6 +1166,30 @@ export function scoreRace(
   }));
 }
 
+const LINE_POSITION_RANK: Record<string, number> = { 先頭: 1, 番手: 2, "3番手": 3, "4番手": 4 };
+
+/**
+ * バリカタ（同ライン限定・単一3連単1点買い、scripts/compute-picks.tsのmarginCandidates
+ * 参照）の2着・3着車番を決める。総合スコア順（2位=2着・3位=3着）をそのまま使うと、
+ * 同ライン内でスコア順が隊列順（先頭<番手<3番手<4番手）と逆転しているケース
+ * （全体の16.5%、n=61/369）で的中率が8.2%まで落ち込む（scripts/diagnose-barikata-order.ts
+ * 参照）。隊列順に補正すると21.3%まで回復し（train4.9%→14.6%・test15.0%→35.0%、
+ * train/testとも改善、全体では26.0%→28.2%）、買い目の点数・形式（単一の並び、
+ * 1点100円）は変えずに的中率だけ上げられる。同ラインでない場合はこの前提
+ * （番手は差す役・3番手はさらに後ろという隊列上の役割が実際の着順を決めやすい）
+ * が成立しないため補正しない。
+ */
+export function orderBarikataSecondThird(
+  second: ScoredEntry,
+  third: ScoredEntry,
+  sameLine: boolean
+): [ScoredEntry, ScoredEntry] {
+  if (!sameLine) return [second, third];
+  const rank2 = LINE_POSITION_RANK[second.entry.line_position ?? ""] ?? 99;
+  const rank3 = LINE_POSITION_RANK[third.entry.line_position ?? ""] ?? 99;
+  return rank3 < rank2 ? [third, second] : [second, third];
+}
+
 const SANRENTAN_MAX_POINTS = 20;
 
 /**

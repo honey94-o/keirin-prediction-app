@@ -16,7 +16,7 @@ function loadDotEnvLocal() {
 loadDotEnvLocal();
 
 import { predictRace } from "../lib/predict";
-import { raceStage, generateNakaanaCandidate } from "../lib/scoring";
+import { raceStage, generateNakaanaCandidate, orderBarikataSecondThird } from "../lib/scoring";
 import {
   getRacesByDate,
   saveDailyPicks,
@@ -118,7 +118,9 @@ async function processDate(kaisaiDate: string): Promise<void> {
       const lg2 = scored[2].entry.line_group;
       const sameLine = lg0 != null && lg0 === lg1 && lg1 === lg2;
 
-      const combo = `${scored[0].entry.car_num}-${scored[1].entry.car_num}-${scored[2].entry.car_num}`;
+      // 2-3着はスコア順ではなく隊列順で決める（orderBarikataSecondThirdのコメント参照）。
+      const [second, third] = orderBarikataSecondThird(scored[1], scored[2], sameLine);
+      const combo = `${scored[0].entry.car_num}-${second.entry.car_num}-${third.entry.car_num}`;
       return {
         sameLine,
         pick: {
