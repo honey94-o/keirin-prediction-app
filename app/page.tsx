@@ -638,8 +638,8 @@ export default async function Home({
                         </div>
                         {payoutOdds != null && (
                           <div className="flex flex-col items-end shrink-0">
-                            <span className="font-mono text-[12px] text-mist-2">{(100 * payoutOdds).toFixed(0)}円</span>
-                            {ninki != null && <span className="text-[10px] text-mist-5">{ninki}番人気</span>}
+                            <span className="font-mono text-[13px] font-bold text-gold">{(100 * payoutOdds).toFixed(0)}円</span>
+                            {ninki != null && <span className="text-[11px] font-semibold text-mist-2">{ninki}番人気</span>}
                           </div>
                         )}
                         {hits.length > 0 && (

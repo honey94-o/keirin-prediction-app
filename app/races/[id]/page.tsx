@@ -456,13 +456,20 @@ export default async function RaceDetailPage({
               {actualCombo && (
                 <span className="font-mono text-sm font-bold text-mist-0">{actualCombo}</span>
               )}
-              {sanrentanHitOdds != null && (
-                <span className="text-xs text-mist-4 ml-auto">
-                  3連単 {sanrentanHitOdds.toFixed(1)}倍（{(100 * sanrentanHitOdds).toFixed(0)}円）
-                  {sanrentanNinki != null && ` ${sanrentanNinki}番人気`}
-                </span>
-              )}
             </div>
+            {sanrentanHitOdds != null && (
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-lg font-bold text-gold">
+                  {(100 * sanrentanHitOdds).toFixed(0)}円
+                </span>
+                <span className="text-xs text-mist-3">（3連単 {sanrentanHitOdds.toFixed(1)}倍）</span>
+                {sanrentanNinki != null && (
+                  <span className="text-[11px] font-bold text-mist-2 bg-white/[.08] px-2 py-0.5 rounded-full ml-auto shrink-0">
+                    {sanrentanNinki}番人気
+                  </span>
+                )}
+              </div>
+            )}
             <ul className="flex flex-col gap-1">
               {top3Results.map((r) => (
                 <li key={r.car_num} className="flex items-center gap-2 text-sm">
