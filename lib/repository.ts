@@ -1067,7 +1067,7 @@ export async function saveDailyPicks(
  * 「本命の買い目を厳選する方向に舵を切りたい」とも合致するため、
  * margin>=10を採用する。
  */
-const DAILY_PICKS_MIN_MARGIN = 10;
+export const DAILY_PICKS_MIN_MARGIN = 10;
 
 export async function getDailyPicks(kaisaiDate: string, limit = 10): Promise<DailyPickRow[]> {
   const result = await getDb().execute({
