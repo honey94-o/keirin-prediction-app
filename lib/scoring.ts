@@ -1547,8 +1547,26 @@ function isGirlsRace(scored: ScoredEntry[]): boolean {
  * （本命/逃げ粘り込み/まくり・差し一撃/単騎一撃）はライン前提の絞り込みロジック
  * （buildLineAwarePool、まくり/差し一撃の`line_position !== "先頭"`条件等）と
  * かみ合わず、まくり/差し一撃の候補が常に0件になるなど不自然な結果になる。
- * そのためガールズレースはラインを考慮せず、総合スコア順に軸を選ぶ
- * シンプルな2パターン（本命＝1位、対抗＝2位）だけを出す。
+ * そのためガールズレースはラインを考慮せず、軸は総合スコア順（本命＝1位、
+ * 対抗＝2位）のシンプルな2パターンだけを出す。
+ *
+ * 2・3着候補プールの並び順はtotalScore（総合スコア）ではなく
+ * racers.heikin_tokuten（素点・平均得点）順にする。2026-09-18の手動レビュー
+ * （◎的中でも2着がtotalScore非軸4〜7位圏外から来るケースが複数、青森2R
+ * race_id=27421等）を受けてscripts/diagnose-second-third-place-signal.tsで検証：
+ * ◎的中済みガールズレース(n=724)で、非軸を「2着・3着が両方とも上位3のプールに
+ * 収まるか」（フォーメーション的中の必要条件）で比較したところ、
+ *   totalScore(現行): 全体60.2%(train62.3%/test56.4%)
+ *   heikin_tokuten  : 全体63.1%(train66.0%/test58.0%) ← 3指標とも現行を上回る
+ *   rentairitu2/3、buildLineAwarePool流用（lineupOrderScore）は現行以下、
+ *   または train/test で方向が割れて不採用
+ * を確認した。さらに実際のgetDailyPicks選定（margin>=10・day-by-day top10/日、
+ * ability-gap除外込み）を再現したシミュレーションでも、ガールズ抽出分の回収率が
+ * 現行83.7%(train89.5%/test72.4%、両期間赤字)→heikin_tokuten順95.1%
+ * (train90.0%/test105.0%)に改善し、全体（非ガールズ含む）の回収率も
+ * 144.9%→147.0%（train119.1%→119.2%、test207.7%→215.0%）とどちらの期間でも
+ * 悪化しなかった。母数はガールズ抽出分でn=59（train39/test20）とやや薄いため
+ * 引き続き実績を monitor する前提で採用。
  */
 function generateGirlsScenarios(scored: ScoredEntry[]): RaceScenario[] {
   const budget = Math.floor(SANRENTAN_MAX_POINTS / Math.min(2, scored.length));
@@ -1557,13 +1575,23 @@ function generateGirlsScenarios(scored: ScoredEntry[]): RaceScenario[] {
     const axis = scored[axisIdx];
     const pool = [...scored]
       .filter((s) => s.entry.car_num !== axis.entry.car_num)
-      .sort((a, b) => b.totalScore - a.totalScore)
+      .sort((a, b) => {
+        // 素点(heikin_tokuten)欠損時はtotalScoreにフォールバックする
+        // （新人等で通算成績がまだ薄い選手向け、diagnose-second-third-place-signal.ts
+        // では欠損0件だったため実運用上のレアケース対応）。
+        const av = a.entry.heikin_tokuten;
+        const bv = b.entry.heikin_tokuten;
+        if (av == null && bv == null) return b.totalScore - a.totalScore;
+        if (av == null) return 1;
+        if (bv == null) return -1;
+        return bv - av;
+      })
       .map((s) => s.entry.car_num);
     return {
       label,
       axisCarNum: axis.entry.car_num,
       axisName: axis.entry.name,
-      reason: `ガールズケイリンはラインが無いため、総合スコア${axisIdx + 1}位を軸に採用（${axis.entry.class_rank ?? "-"}級）。2・3着候補も総合スコア順。`,
+      reason: `ガールズケイリンはラインが無いため、総合スコア${axisIdx + 1}位を軸に採用（${axis.entry.class_rank ?? "-"}級）。2・3着候補は素点（平均得点）順。`,
       formation: {
         betType: "3連単フォーメーション",
         combinations: formationFromPool(axis.entry.car_num, pool, budget),
