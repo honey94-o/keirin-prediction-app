@@ -1,0 +1,40 @@
+name: Backfill bank info
+
+# racesテーブルに登録済みだがbank_info未取得の開催場をまとめて取得する手動実行専用
+# ワークフロー。DB切替（Neon移行時など）で新規プロジェクトのbank_infoが空、または
+# 新しい開催場が初めてracesに現れた時に都度実行する。日次の自動取得には含めない
+# （KEIRIN.JPへの節度あるアクセスを保つため、必要な時だけ手動実行）。
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "既存データがある開催場も再取得するか"
+        required: false
+        default: "false"
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: scraper
+        run: |
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+
+      - name: Backfill bank_info
+        working-directory: scraper
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            python -u backfill_bank_info.py --force
+          else
+            python -u backfill_bank_info.py
+          fi
