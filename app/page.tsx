@@ -41,6 +41,16 @@ export const dynamic = "force-dynamic";
  * 翌日分のレース有無では判定しない――daily-syncは基本的に当日分しか事前取得しない
  * ため、日中に見ると翌日データが未取得で常に「最終日」になってしまう。
  */
+// 格の高い順に G1=赤 / G2=橙 / G3=金 / F1=紫 / F2=グレー（未知の区分もグレー）。
+// 日目バッジ(青/赤の半透明)・ステージバッジ(緑の半透明)とは色相か塗りで区別する。
+const GRADE_BADGE_CLASS: Record<string, string> = {
+  G1: "text-gold-ink bg-rose",
+  G2: "text-[#2a1200] bg-[#ff9a3d]",
+  G3: "text-gold-ink bg-gold",
+  F1: "text-[#0d0b2a] bg-[#a596ff]",
+  F2: "text-mist-2 bg-white/[.1]",
+};
+
 function eventDayLabel(groupRaces: RaceRow[]): string | null {
   const parsed = groupRaces.map((r) => parseEncp(r.encp)).find((p) => p != null);
   if (!parsed) return null;
@@ -574,7 +584,11 @@ export default async function Home({
                         </span>
                       )}
                       {first.grade_kbn && (
-                        <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-gold-ink bg-gold">
+                        <span
+                          className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
+                            GRADE_BADGE_CLASS[first.grade_kbn] ?? "text-mist-2 bg-white/[.1]"
+                          }`}
+                        >
                           {first.grade_kbn}
                         </span>
                       )}
