@@ -30,7 +30,7 @@ export function BottomTabBar() {
     >
       {TABS.map((tab) => {
         const active = isActive(pathname, tab.href);
-        const color = active ? "text-mint" : "text-mist-5";
+        const color = active ? "text-mint" : "text-mist-2";
         return (
           <Link
             key={tab.href}

@@ -248,7 +248,7 @@ export default async function Home({
             </div>
             <div className="flex flex-col leading-tight">
               <span className="text-base font-bold text-mist-0">競輪予想</span>
-              <span className="text-[10px] font-mono text-mist-4">
+              <span className="text-[10px] font-mono text-mist-3">
                 {formatDateStr(viewDate)}
                 {lastSyncedAt && ` ・ ${formatUtcAsJst(lastSyncedAt)} 更新`}
               </span>
@@ -296,7 +296,7 @@ export default async function Home({
               <div className="flex items-baseline gap-2">
                 <span className="font-mono text-[34px] font-medium text-mist-0 leading-none">
                   {todaySummary.hits}
-                  <span className="text-lg text-mist-4">/{todaySummary.total}</span>
+                  <span className="text-lg text-mist-3">/{todaySummary.total}</span>
                 </span>
                 <span className="text-[15px] font-bold text-mint">
                   {((todaySummary.hits / todaySummary.total) * 100).toFixed(0)}%
@@ -320,13 +320,13 @@ export default async function Home({
             <div className="flex items-center gap-2 px-1">
               <span className="w-1.5 h-1.5 rounded-full bg-gold" />
               <span className="text-sm font-bold text-mist-0">お気に入り選手</span>
-              <span className="text-[11px] text-mist-4 flex-1">{formatDateStr(viewDate)}の出走</span>
+              <span className="text-[11px] text-mist-3 flex-1">{formatDateStr(viewDate)}の出走</span>
               <Link href="/favorites" className="text-[11px] font-semibold text-gold whitespace-nowrap">
                 一覧を見る →
               </Link>
             </div>
             {favoriteEntries.length === 0 ? (
-              <p className="text-xs text-mist-4 px-1">この日の出走はありません</p>
+              <p className="text-xs text-mist-3 px-1">この日の出走はありません</p>
             ) : (
               favoriteEntries.map((f) => (
                 <Link
@@ -335,7 +335,7 @@ export default async function Home({
                   className="flex items-center gap-3 rounded-[18px] px-3.5 py-3 border border-gold/[.18] bg-ink-3"
                 >
                   <span className="text-[13px] text-gold">★</span>
-                  <span className="font-mono text-xs text-mist-4 w-11 shrink-0">
+                  <span className="font-mono text-xs text-mist-3 w-11 shrink-0">
                     {f.race.start_time ?? "--:--"}
                   </span>
                   <span className="text-sm font-bold text-mist-0 flex-1 truncate">
@@ -359,7 +359,7 @@ export default async function Home({
             <div className="flex items-center gap-2 px-1">
               <span className="w-1.5 h-1.5 rounded-full bg-rose" />
               <span className="text-sm font-bold text-mist-0">バリカタ</span>
-              <span className="text-[11px] text-mist-4 flex-1">単一の並び・1点買い想定</span>
+              <span className="text-[11px] text-mist-3 flex-1">単一の並び・1点買い想定</span>
               <span className="font-mono text-[11px] text-rose-soft">{barikataResults.length} races</span>
             </div>
             {barikataByTime.map(({ pick: p, finished, hit }) => (
@@ -369,7 +369,7 @@ export default async function Home({
                 className="flex flex-col gap-2.5 rounded-[18px] p-3.5 border border-rose/[.16] bg-ink-3"
               >
                 <div className="flex items-center gap-2.5">
-                  <span className="font-mono text-xs text-mist-4">{p.start_time ?? "--:--"}</span>
+                  <span className="font-mono text-xs text-mist-3">{p.start_time ?? "--:--"}</span>
                   <span className="text-[15px] font-bold text-mist-0">{p.keirinjo_name}</span>
                   <span className="font-mono text-[13px] text-mist-2">{p.race_no}R</span>
                   <span className="flex-1" />
@@ -384,13 +384,13 @@ export default async function Home({
                     {p.combo}
                   </span>
                   <div className="flex flex-col items-end">
-                    <span className="text-[10px] text-mist-4">スコア差</span>
+                    <span className="text-[10px] text-mist-3">スコア差</span>
                     <span className="font-mono text-[15px] text-mist-0">{p.margin.toFixed(1)}</span>
                   </div>
                 </div>
               </Link>
             ))}
-            <p className="text-[11px] leading-relaxed text-mist-4 px-1">
+            <p className="text-[11px] leading-relaxed text-mist-3 px-1">
               検証時点の的中率32.7%・平均オッズ4.13倍（1点買い回収率約140%／母数197件）。必ず的中するものではありません。
             </p>
           </section>
@@ -401,10 +401,10 @@ export default async function Home({
             <summary className="px-3.5 py-3.5 flex items-center gap-2 cursor-pointer select-none marker:content-none [&::-webkit-details-marker]:hidden">
               <span className="text-[13px] font-bold text-mist-2 flex-1">
                 参考：バリカタ候補漏れ
-                <span className="font-mono text-mist-4 font-normal"> {barikataNearMisses.length}</span>
+                <span className="font-mono text-mist-3 font-normal"> {barikataNearMisses.length}</span>
               </span>
-              <span className="text-[11px] text-mist-4 group-open:hidden">開く ⌄</span>
-              <span className="text-[11px] text-mist-4 hidden group-open:inline">閉じる ⌃</span>
+              <span className="text-[11px] text-mist-3 group-open:hidden">開く ⌄</span>
+              <span className="text-[11px] text-mist-3 hidden group-open:inline">閉じる ⌃</span>
             </summary>
             <div className="px-3.5 pb-3.5 flex flex-col gap-px">
               {nearMissesByTime.map(({ pick: n, finished, hit }) => (
@@ -413,18 +413,18 @@ export default async function Home({
                   href={`/races/${n.race_id}`}
                   className="flex items-center gap-2.5 py-2.5 border-t border-white/[.05]"
                 >
-                  <span className="font-mono text-[11px] text-mist-5 w-11 shrink-0">
+                  <span className="font-mono text-[11px] text-mist-2 w-11 shrink-0">
                     {n.start_time ?? "--:--"}
                   </span>
                   <span className="text-[13px] text-mist-2 flex-1 truncate">
                     {n.keirinjo_name} {n.race_no}R
                   </span>
                   <span className="font-mono text-[13px] text-mist-3">{n.combo}</span>
-                  <span className="font-mono text-[11px] text-mist-5">{n.margin.toFixed(1)}</span>
+                  <span className="font-mono text-[11px] text-mist-2">{n.margin.toFixed(1)}</span>
                   {finished && <ResultBadge hit={hit ?? false} />}
                 </Link>
               ))}
-              <p className="text-[11px] leading-relaxed text-mist-5 pt-2">
+              <p className="text-[11px] leading-relaxed text-mist-2 pt-2">
                 3着候補が他ラインのため、単一の並びとしての的中率は大きく下がります（同margin帯で同ライン決着の約1/3）。
               </p>
             </div>
@@ -436,10 +436,10 @@ export default async function Home({
             <summary className="px-3.5 py-3.5 flex items-center gap-2 cursor-pointer select-none marker:content-none [&::-webkit-details-marker]:hidden">
               <span className="text-[13px] font-bold text-mist-2 flex-1">
                 参考：中穴候補
-                <span className="font-mono text-mist-4 font-normal"> {nakaanaPicks.length}</span>
+                <span className="font-mono text-mist-3 font-normal"> {nakaanaPicks.length}</span>
               </span>
-              <span className="text-[11px] text-mist-4 group-open:hidden">開く ⌄</span>
-              <span className="text-[11px] text-mist-4 hidden group-open:inline">閉じる ⌃</span>
+              <span className="text-[11px] text-mist-3 group-open:hidden">開く ⌄</span>
+              <span className="text-[11px] text-mist-3 hidden group-open:inline">閉じる ⌃</span>
             </summary>
             <div className="px-3.5 pb-3.5 flex flex-col gap-px">
               {nakaanaByTime.map(({ pick: n, finished, hit }) => (
@@ -448,20 +448,20 @@ export default async function Home({
                   href={`/races/${n.race_id}`}
                   className="flex items-center gap-2.5 py-2.5 border-t border-white/[.05]"
                 >
-                  <span className="font-mono text-[11px] text-mist-5 w-11 shrink-0">
+                  <span className="font-mono text-[11px] text-mist-2 w-11 shrink-0">
                     {n.start_time ?? "--:--"}
                   </span>
                   <span className="text-[13px] text-mist-2 flex-1 truncate">
                     {n.keirinjo_name} {n.race_no}R
                   </span>
-                  <span className="text-[11px] text-mist-4 whitespace-nowrap">
+                  <span className="text-[11px] text-mist-3 whitespace-nowrap">
                     軸{n.honmei_car_num}-対抗{n.taikou_car_num}
                   </span>
-                  <span className="font-mono text-[11px] text-mist-5">{n.margin.toFixed(1)}</span>
+                  <span className="font-mono text-[11px] text-mist-2">{n.margin.toFixed(1)}</span>
                   {finished && <ResultBadge hit={hit ?? false} />}
                 </Link>
               ))}
-              <p className="text-[11px] leading-relaxed text-mist-5 pt-2">
+              <p className="text-[11px] leading-relaxed text-mist-2 pt-2">
                 margin8〜10・予想1-2-3位が他ライン混在のレース向けの試験的な買い目（◎→対抗固定→3-5位のいずれか、3点）。
                 過去検証（369件・約5.5ヶ月）では回収率190%台と有望でしたが、母数がまだ薄く「厳選」「バリカタ」ほどの
                 信頼度はありません。実績を見ながら判断してください。
@@ -475,7 +475,7 @@ export default async function Home({
             <div className="flex items-center gap-2 px-1">
               <span className="w-1.5 h-1.5 rounded-full bg-gold" />
               <span className="text-sm font-bold text-mist-0">厳選レース</span>
-              <span className="text-[11px] text-mist-4 flex-1">本命の信頼度が高い{pickResults.length}本</span>
+              <span className="text-[11px] text-mist-3 flex-1">本命の信頼度が高い{pickResults.length}本</span>
               <Link href={`/picks?date=${viewDate}`} className="text-[11px] font-semibold text-gold whitespace-nowrap">
                 すべて →
               </Link>
@@ -489,12 +489,12 @@ export default async function Home({
                     href={`/races/${p.race_id}`}
                     className="flex items-center gap-2.5 px-3.5 py-3.5 border-t border-white/[.05] first:border-t-0"
                   >
-                    <span className="font-mono text-xs text-mist-4 w-11 shrink-0">{p.start_time ?? "--:--"}</span>
+                    <span className="font-mono text-xs text-mist-3 w-11 shrink-0">{p.start_time ?? "--:--"}</span>
                     <div className="flex flex-col gap-0.5 flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="text-[15px] font-bold text-mist-0">{p.keirinjo_name}</span>
                         <span className="font-mono text-xs text-mist-2">{p.race_no}R</span>
-                        <span className="text-[10px] text-mist-4 truncate">
+                        <span className="text-[10px] text-mist-3 truncate">
                           軸{p.honmei_car_num}.{p.honmei_name}
                         </span>
                       </div>
@@ -502,7 +502,7 @@ export default async function Home({
                         <span className="font-mono text-[15px] font-medium text-gold truncate">{notation}</span>
                       )}
                     </div>
-                    <span className="font-mono text-[11px] text-mist-4 shrink-0">{p.margin.toFixed(1)}</span>
+                    <span className="font-mono text-[11px] text-mist-3 shrink-0">{p.margin.toFixed(1)}</span>
                     {finished ? (
                       <ResultBadge hit={hit ?? false} />
                     ) : (
@@ -529,7 +529,7 @@ export default async function Home({
             <div className="flex items-center gap-2 px-1">
               <span className="w-1.5 h-1.5 rounded-full bg-blue" />
               <span className="text-sm font-bold text-mist-0">開催場</span>
-              <span className="text-[11px] text-mist-4">{groupsByTime.length}場開催中</span>
+              <span className="text-[11px] text-mist-3">{groupsByTime.length}場開催中</span>
             </div>
             {groupsByTime.map(({ jocd, groupRaces, allFinished }) => {
               const first = groupRaces[0];
@@ -598,7 +598,7 @@ export default async function Home({
                         </span>
                       )}
                       {allFinished && (
-                        <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-mist-4 bg-white/[.07]">
+                        <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-mist-3 bg-white/[.07]">
                           終了
                         </span>
                       )}
@@ -608,7 +608,7 @@ export default async function Home({
                         {allFinished ? `全${groupRaces.length}R` : `${nearestRace.race_no}R / ${groupRaces.length}`}
                       </span>
                       {!allFinished && nearestRace.start_time && (
-                        <span className="text-[10px] text-mist-4 flex items-center gap-1">
+                        <span className="text-[10px] text-mist-3 flex items-center gap-1">
                           発走 {nearestRace.start_time}
                           <StartingSoonBadge
                             minutes={startingSoonMinutes(nearestRace.start_time, viewDate, todayStr, nowHHMM)}
@@ -616,8 +616,8 @@ export default async function Home({
                         </span>
                       )}
                     </div>
-                    <span className="text-[11px] text-mist-4 group-open:hidden shrink-0">開く ⌄</span>
-                    <span className="text-[11px] text-mist-4 hidden group-open:inline shrink-0">閉じる ⌃</span>
+                    <span className="text-[11px] text-mist-3 group-open:hidden shrink-0">開く ⌄</span>
+                    <span className="text-[11px] text-mist-3 hidden group-open:inline shrink-0">閉じる ⌃</span>
                   </summary>
                   <div className="px-3.5 pb-3.5 flex flex-col gap-px">
                     <Link
@@ -635,7 +635,7 @@ export default async function Home({
                         href={`/races/${race.id}`}
                         className="flex items-center gap-2.5 py-2.5 border-t border-white/[.05]"
                       >
-                        <span className="font-mono text-[11px] text-mist-4 w-9 shrink-0">{race.race_no}R</span>
+                        <span className="font-mono text-[11px] text-mist-3 w-9 shrink-0">{race.race_no}R</span>
                         <div className="flex-1 flex items-center gap-1.5 min-w-0">
                           {senkoIssha && (
                             <span className="text-[10px] font-bold text-blue bg-blue/[.14] px-1.5 py-0.5 rounded-full shrink-0 whitespace-nowrap">
@@ -645,7 +645,7 @@ export default async function Home({
                           {top3.length === 3 ? (
                             top3.map((r) => <CarNumberBadge key={r.car_num} carNum={r.car_num} size="sm" />)
                           ) : (
-                            <span className="text-[11px] text-mist-5 truncate">
+                            <span className="text-[11px] text-mist-2 truncate">
                               {race.start_time ? `発走 ${race.start_time}` : "結果未定"}
                             </span>
                           )}
@@ -663,7 +663,7 @@ export default async function Home({
                                 <span
                                   key={i}
                                   className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-                                    h.hit ? "text-mint-ink bg-mint" : "text-mist-4 bg-white/[.07]"
+                                    h.hit ? "text-mint-ink bg-mint" : "text-mist-3 bg-white/[.07]"
                                   }`}
                                 >
                                   {h.label}
@@ -672,7 +672,7 @@ export default async function Home({
                               ))}
                             </div>
                             {scenarioHitLabel && (
-                              <span className="text-[9px] text-mist-5 whitespace-nowrap">
+                              <span className="text-[9px] text-mist-2 whitespace-nowrap">
                                 実際は{scenarioHitLabel}が的中
                               </span>
                             )}

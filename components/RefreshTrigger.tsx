@@ -44,7 +44,7 @@ export function RefreshTrigger({ compact = false }: { compact?: boolean }) {
       {state && (
         <p className={`text-xs mt-2 ${state.ok ? "text-mint" : "text-rose-soft"}`}>{state.message}</p>
       )}
-      <p className="text-xs text-mist-4 mt-2">
+      <p className="text-xs text-mist-3 mt-2">
         全開催場のデータ取得を開始します（完了まで数分〜十数分ほどかかります）
       </p>
     </form>

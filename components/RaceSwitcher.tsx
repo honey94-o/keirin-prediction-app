@@ -39,7 +39,7 @@ export function RaceSwitcher({
               active
                 ? "bg-mint text-mint-ink"
                 : finished
-                  ? "bg-white/5 text-mist-5"
+                  ? "bg-white/5 text-mist-3"
                   : "bg-white/5 text-mist-2"
             }`}
           >

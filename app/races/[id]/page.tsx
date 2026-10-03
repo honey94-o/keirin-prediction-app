@@ -195,7 +195,7 @@ export default async function RaceDetailPage({
             <span className="text-base font-bold text-mist-0 leading-tight truncate">
               {race.keirinjo_name} {race.race_no}R
             </span>
-            <span className="text-[11px] font-mono text-mist-4">
+            <span className="text-[11px] font-mono text-mist-3">
               {formatDate(race.kaisai_date)} ・ {race.syumoku ?? ""} {race.grade_kbn ?? ""}
               {race.start_time ? ` 発走${race.start_time}` : ""}
             </span>
@@ -207,7 +207,7 @@ export default async function RaceDetailPage({
 
         <div className="flex items-center justify-between mt-3 mb-4 gap-2">
           {alreadyRecorded ? (
-            <p className="text-xs text-mist-4">
+            <p className="text-xs text-mist-3">
               この予想は記録済みです（
               <Link href="/history" className="underline text-mint-strong">
                 履歴を見る
@@ -318,7 +318,7 @@ export default async function RaceDetailPage({
                     const nameB = nameBySnum.get(snumB) ?? snumB;
                     return (
                       <details key={`${snumA}-${snumB}`} className="group">
-                        <summary className="text-[11px] text-mist-5 cursor-pointer select-none pl-1.5 border-l-2 border-white/[.08] marker:content-none [&::-webkit-details-marker]:hidden">
+                        <summary className="text-[11px] text-mist-2 cursor-pointer select-none pl-1.5 border-l-2 border-white/[.08] marker:content-none [&::-webkit-details-marker]:hidden">
                           <span className="inline-block w-3 text-center group-open:hidden">▶</span>
                           <span className="hidden w-3 text-center group-open:inline-block">▼</span>
                           {" "}対戦成績 {nameA} {winsA}-{winsB} {nameB}（同ライン{relevant.length}回）
@@ -331,7 +331,7 @@ export default async function RaceDetailPage({
                               .map((m) => `${nameBySnum.get(m.snum) ?? m.snum}${m.finishPos != null ? m.finishPos + "着" : ""}`)
                               .join(" ");
                             return (
-                              <li key={occ.raceId} className="text-[11px] text-mist-5">
+                              <li key={occ.raceId} className="text-[11px] text-mist-2">
                                 {formatDateStr(occ.kaisaiDate)} {occ.keirinjoName}
                                 {occ.raceNo}R 同ライン: {memberSummary}
                                 {url && (
@@ -346,7 +346,7 @@ export default async function RaceDetailPage({
                             );
                           })}
                           {relevant.length > 8 && (
-                            <li className="text-[11px] text-mist-5">ほか{relevant.length - 8}件（直近8件のみ表示）</li>
+                            <li className="text-[11px] text-mist-2">ほか{relevant.length - 8}件（直近8件のみ表示）</li>
                           )}
                         </ul>
                       </details>
@@ -357,7 +357,7 @@ export default async function RaceDetailPage({
             })}
             {soloEntries.length > 0 && (
               <div className="flex items-center gap-1.5 pt-1 border-t border-white/[.06]">
-                <span className="text-xs text-mist-4 shrink-0">単騎</span>
+                <span className="text-xs text-mist-3 shrink-0">単騎</span>
                 {soloEntries.map((s) => (
                   <CarNumberBadge key={s.entry.car_num} carNum={s.entry.car_num} size="sm" />
                 ))}
@@ -369,8 +369,8 @@ export default async function RaceDetailPage({
         <details className="rounded-[20px] bg-ink-2 border border-white/[.06] overflow-hidden mb-4 group">
           <summary className="px-4 py-3.5 flex items-center gap-2 cursor-pointer select-none marker:content-none [&::-webkit-details-marker]:hidden">
             <span className="text-[13px] font-bold text-mist-2 flex-1">全{scored.length}名のスコア内訳</span>
-            <span className="text-[11px] text-mist-4 group-open:hidden">開く ⌄</span>
-            <span className="text-[11px] text-mist-4 hidden group-open:inline">閉じる ⌃</span>
+            <span className="text-[11px] text-mist-3 group-open:hidden">開く ⌄</span>
+            <span className="text-[11px] text-mist-3 hidden group-open:inline">閉じる ⌃</span>
           </summary>
           <div className="px-4 pb-4 flex flex-col gap-3">
             {scored.map((s, i) => {
@@ -419,7 +419,7 @@ export default async function RaceDetailPage({
                     )}
                   </div>
                   {(soloWinRate || lineRankLabel || highStanding) && (
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-mist-5 mb-2">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-mist-2 mb-2">
                       {soloWinRate && (
                         <span>
                           単騎勝率{soloWinRate.winRate.toFixed(1)}%(n={soloWinRate.races})
@@ -473,13 +473,13 @@ export default async function RaceDetailPage({
             <ul className="flex flex-col gap-1">
               {top3Results.map((r) => (
                 <li key={r.car_num} className="flex items-center gap-2 text-sm">
-                  <span className="text-xs text-mist-4 w-8 shrink-0">{r.finish_pos}着</span>
+                  <span className="text-xs text-mist-3 w-8 shrink-0">{r.finish_pos}着</span>
                   <CarNumberBadge carNum={r.car_num} size="sm" />
                   <Link href={`/racers/${snumByCarNum.get(r.car_num)}`} className="text-mist-0 underline">
                     {nameByCarNum.get(r.car_num) ?? "-"}
                   </Link>
                   {r.finish_pos === 1 && r.kimarite && (
-                    <span className="text-xs text-mist-4 ml-auto">{r.kimarite}</span>
+                    <span className="text-xs text-mist-3 ml-auto">{r.kimarite}</span>
                   )}
                 </li>
               ))}
@@ -508,7 +508,7 @@ export default async function RaceDetailPage({
         <div className="flex items-center gap-2 px-1 mb-2.5">
           <span className="w-1.5 h-1.5 rounded-full bg-mint" />
           <span className="text-sm font-bold text-mist-0">買い目提案</span>
-          <span className="text-[11px] text-mist-4 flex-1">展開の分かれ目ごと（参考値）</span>
+          <span className="text-[11px] text-mist-3 flex-1">展開の分かれ目ごと（参考値）</span>
         </div>
 
         {scenarios.length === 0 ? (
@@ -542,7 +542,7 @@ export default async function RaceDetailPage({
                         {scenario.axisName}
                       </Link>
                     </span>
-                    <span className="font-mono text-xs text-mist-4">
+                    <span className="font-mono text-xs text-mist-3">
                       {scenario.formation.combinations.length}点
                     </span>
                     {scenarioHit != null && <ResultBadge hit={scenarioHit} />}
@@ -561,13 +561,13 @@ export default async function RaceDetailPage({
                     <p className="flex items-center gap-2 flex-wrap">
                       <span
                         className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                          scenario.likelyRank === 2 ? "text-gold-ink bg-gold" : "text-mist-4 bg-white/[.07]"
+                          scenario.likelyRank === 2 ? "text-gold-ink bg-gold" : "text-mist-3 bg-white/[.07]"
                         }`}
                       >
                         {scenario.likelyRank === 2 ? "このレースでは本命に次ぐ有力な展開" : "このレースでは可能性低め"}
                       </span>
                       {rankStat && rankStat.races > 0 && (
-                        <span className="text-[11px] text-mist-4">
+                        <span className="text-[11px] text-mist-3">
                           同じ有力度の過去実績: 的中率{rankStat.hitRate.toFixed(1)}%・回収率
                           {rankStat.roi?.toFixed(0) ?? "-"}%（{rankStat.races}件中{rankStat.hits}回）
                         </span>
@@ -579,7 +579,7 @@ export default async function RaceDetailPage({
 
                   {stat && stat.races > 0 && (
                     <p className="text-xs">
-                      <span className={stat.roi != null && stat.roi >= 100 ? "text-mint font-semibold" : "text-mist-4"}>
+                      <span className={stat.roi != null && stat.roi >= 100 ? "text-mint font-semibold" : "text-mist-3"}>
                         実績: 的中{stat.hitRate.toFixed(1)}%
                         {stat.roi != null ? ` / 回収率${stat.roi.toFixed(0)}%` : ""}（過去{stat.races}レース中{stat.hits}回的中）
                       </span>
@@ -589,7 +589,7 @@ export default async function RaceDetailPage({
                   {notation && (
                     <div className="flex flex-col gap-1">
                       <span className={`font-mono text-[28px] font-medium leading-none ${formulaColor}`}>{notation}</span>
-                      <span className="text-[10px] text-mist-5">軸 - 2着候補 - 3着候補（購入時そのまま入力可）</span>
+                      <span className="text-[10px] text-mist-2">軸 - 2着候補 - 3着候補（購入時そのまま入力可）</span>
                     </div>
                   )}
 
@@ -608,7 +608,7 @@ export default async function RaceDetailPage({
               <section className="rounded-[20px] bg-ink-3 border border-white/[.06] p-4 flex flex-col gap-3">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-bold text-mist-0 flex-1">{boxSuggestion.betType}</span>
-                  <span className="font-mono text-xs text-mist-4">{boxSuggestion.combinations.length}点</span>
+                  <span className="font-mono text-xs text-mist-3">{boxSuggestion.combinations.length}点</span>
                   {raceFinished && sortedActualTop3 != null && (
                     <ResultBadge hit={boxSuggestion.combinations.includes(sortedActualTop3)} />
                   )}
