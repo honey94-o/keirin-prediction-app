@@ -258,6 +258,14 @@ async function fetchBankInfo(jocd: string): Promise<BankInfoRow | undefined> {
   return result.rows[0] as unknown as BankInfoRow | undefined;
 }
 
+/** 開催場まとめページ（/venues）用。全場分のbank_info静的値を周長→場名順で返す。 */
+export async function getAllBankInfo(): Promise<BankInfoRow[]> {
+  const result = await getDb().execute(
+    "SELECT * FROM bank_info ORDER BY shuutyou, keirinjo_name"
+  );
+  return result.rows as unknown as BankInfoRow[];
+}
+
 /**
  * 開催場ごとの決まり手（逃/捲/差）割合を、自前のresults実績から直接算出する。
  * bank_info（KEIRIN.JPのjyoguideスクレイプ）はほとんどの開催場で未取得のため、

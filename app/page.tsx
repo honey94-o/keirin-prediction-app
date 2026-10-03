@@ -257,6 +257,12 @@ export default async function Home({
           <div className="flex items-center gap-2 shrink-0">
             <RefreshTrigger compact />
             <Link
+              href="/venues"
+              className="w-8 h-8 rounded-[11px] bg-white/5 flex items-center justify-center text-[11px] text-mist-2"
+            >
+              場
+            </Link>
+            <Link
               href="/history"
               className="w-8 h-8 rounded-[11px] bg-white/5 flex items-center justify-center text-[11px] text-mist-2"
             >
