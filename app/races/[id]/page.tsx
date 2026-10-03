@@ -231,7 +231,7 @@ export default async function RaceDetailPage({
             <div className="flex items-center">
               <span className="text-[13px] font-bold text-mist-0 flex-1">このバンクの決まり手</span>
               {kimariteSourceLabel && (
-                <span className="font-mono text-[11px] text-mist-4">{kimariteSourceLabel}</span>
+                <span className="font-mono text-[11px] text-mist-3">{kimariteSourceLabel}</span>
               )}
             </div>
             <div className="flex h-2 rounded-[5px] overflow-hidden gap-0.5">
@@ -254,7 +254,7 @@ export default async function RaceDetailPage({
                   </div>
                   <span className="font-mono text-[17px] text-mist-0">{pct.toFixed(0)}%</span>
                   {rank != null && kimariteRank && (
-                    <span className="text-[10px] text-mist-5">
+                    <span className="text-[10px] text-mist-2">
                       全{kimariteRank.totalVenues}場中{rank}位
                     </span>
                   )}
@@ -262,7 +262,7 @@ export default async function RaceDetailPage({
               ))}
             </div>
             {bankInfo?.feature_text && (
-              <p className="text-[11px] text-mist-4">{bankInfo.feature_text}</p>
+              <p className="text-[11px] text-mist-3">{bankInfo.feature_text}</p>
             )}
           </section>
         )}
