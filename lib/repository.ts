@@ -1,4 +1,5 @@
 import { getDb } from "./db";
+import { posCatOf, type PitRecord } from "./second-third-model";
 import type {
   BankInfoRow,
   BarikataNearMissResult,
@@ -671,6 +672,50 @@ async function fetchGirlsAgariAbility(
   return { avgRankPct: row.avg_rank_pct, races: row.races };
 }
 
+/**
+ * 2・3着モデル（lib/second-third-model.ts）の入力：各選手の、開催日より前の出走成績。
+ * 1レース分の選手をまとめて1クエリで取る。位置区分（先頭/番手/3番手以降/単騎）は
+ * その過去レースのentries（並び）から決めるため、entriesが無い走はposCat=null。
+ */
+export async function getPitHistories(snums: string[], beforeDate: string): Promise<Map<string, PitRecord[]>> {
+  const out = new Map<string, PitRecord[]>(snums.map((s) => [s, []]));
+  if (snums.length === 0) return out;
+  const result = await getDb().execute({
+    sql: `SELECT res.snum AS snum, ra.kaisai_date AS kaisai_date, res.finish_pos AS finish_pos,
+                 res.kimarite AS kimarite, e.line_position AS line_position, e.line_group AS line_group,
+                 (SELECT COUNT(*) FROM results r2 WHERE r2.race_id = res.race_id) AS field_size,
+                 (SELECT COUNT(*) FROM entries e2
+                   WHERE e2.race_id = e.race_id AND e2.line_group = e.line_group) AS line_size
+          FROM results res
+          JOIN races ra ON ra.id = res.race_id
+          LEFT JOIN entries e ON e.race_id = res.race_id AND e.car_num = res.car_num
+          WHERE res.snum IN (${snums.map(() => "?").join(",")})
+            AND ra.kaisai_date < ? AND res.finish_pos IS NOT NULL`,
+    args: [...snums, beforeDate],
+  });
+  for (const row of result.rows as unknown as {
+    snum: string;
+    kaisai_date: string;
+    finish_pos: number;
+    kimarite: string | null;
+    line_position: string | null;
+    line_group: number | null;
+    field_size: number;
+    line_size: number | null;
+  }[]) {
+    // entriesが無い走（LEFT JOINで結合できなかった走）は位置区分不明
+    const hasEntry = row.line_position != null || row.line_group != null;
+    out.get(row.snum)?.push({
+      date: row.kaisai_date,
+      finishPos: row.finish_pos,
+      fieldSize: row.field_size,
+      posCat: hasEntry ? posCatOf(row.line_position, row.line_group, row.line_size ?? 1) : null,
+      kimarite: row.kimarite,
+    });
+  }
+  return out;
+}
+
 const DEFAULT_WEIGHTS: ScoreWeights = { line: 0.35, kyakushitsu: 0.35, stats: 0.3 };
 
 export async function getScoreWeights(): Promise<ScoreWeights> {
@@ -1074,15 +1119,24 @@ export async function saveDailyPicks(
  * 大きく劣化しており過学習の疑いがあったため不採用）。ユーザー方針
  * 「本命の買い目を厳選する方向に舵を切りたい」とも合致するため、
  * margin>=10を採用する。
+ *
+ * 上限（DAILY_PICKS_MAX_MARGIN）：2026-10にレース時点の情報だけで再検証したところ
+ * （scripts/research/gensen-design-pit.ts）、margin16以上は◎が9割以上勝つ一方で
+ * 3連単が超低配当になり、どの買い方でも全期間で赤字（最大払戻1件除外の回収率
+ * 9〜55%）だったため厳選から外す。なお上の「91.3%」等の旧検証値は、選手成績が
+ * 最新値で上書きされたまま過去レースを検証していた（未来の成績を使っていた）ため
+ * 実際より良く出ている。
  */
 export const DAILY_PICKS_MIN_MARGIN = 10;
+export const DAILY_PICKS_MAX_MARGIN = 16;
 
 export async function getDailyPicks(kaisaiDate: string, limit = 10): Promise<DailyPickRow[]> {
   const result = await getDb().execute({
     sql: `SELECT race_id, kaisai_date, jocd, keirinjo_name, race_no, start_time, margin,
                  honmei_car_num, honmei_name, formation
-          FROM daily_picks WHERE kaisai_date = ? AND margin >= ? ORDER BY margin DESC LIMIT ?`,
-    args: [kaisaiDate, DAILY_PICKS_MIN_MARGIN, limit],
+          FROM daily_picks WHERE kaisai_date = ? AND margin >= ? AND margin < ?
+          ORDER BY margin DESC LIMIT ?`,
+    args: [kaisaiDate, DAILY_PICKS_MIN_MARGIN, DAILY_PICKS_MAX_MARGIN, limit],
   });
   const rows = result.rows as unknown as (Omit<DailyPickRow, "formation"> & { formation: string | null })[];
   return rows.map((r) => ({

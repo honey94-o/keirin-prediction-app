@@ -25,6 +25,7 @@ import {
   saveNakaanaPicks,
   enableReadCache,
   DAILY_PICKS_MIN_MARGIN,
+  DAILY_PICKS_MAX_MARGIN,
 } from "../lib/repository";
 import { todayJstStr, addDaysToDateStr } from "../lib/date";
 import { closeDb } from "../lib/db";
@@ -102,6 +103,8 @@ async function processDate(kaisaiDate: string): Promise<void> {
       const honmeiScenario = prediction.scenarios.find((s) => s.label === "本命");
       if (!honmeiScenario) return null;
       const margin = honmei.totalScore - taikou.totalScore;
+      // margin16以上は全ての買い方で赤字（DAILY_PICKS_MAX_MARGINのコメント参照）
+      if (margin >= DAILY_PICKS_MAX_MARGIN) return null;
 
       // ABILITY_GAP_THIN_THRESHOLDのコメント参照：margin>=10（厳選候補）でも、
       // ◎とraw地力(heikin_tokuten)で肉薄する最接近ライバル（scored[1]とは限らない）が
@@ -170,9 +173,14 @@ async function processDate(kaisaiDate: string): Promise<void> {
       const lg2 = scored[2].entry.line_group;
       const sameLine = lg0 != null && lg0 === lg1 && lg1 === lg2;
 
-      // 2-3着はスコア順ではなく隊列順で決める（orderBarikataSecondThirdのコメント参照）。
+      // 2-3着は2・3着モデル（lib/second-third-model.ts）の最上位ペア。1点のまま、
+      // レース時点の情報だけの時系列検証で全期間的中数が増えた（P2 24→26・P3 33→36、
+      // scripts/research/gensen-design-pit.ts）。モデルが無い場合は従来の隊列順補正。
+      const top = prediction.secondThird?.[0];
       const [second, third] = orderBarikataSecondThird(scored[1], scored[2], sameLine);
-      const combo = `${scored[0].entry.car_num}-${second.entry.car_num}-${third.entry.car_num}`;
+      const combo = top
+        ? `${scored[0].entry.car_num}-${top.second}-${top.third}`
+        : `${scored[0].entry.car_num}-${second.entry.car_num}-${third.entry.car_num}`;
       return {
         sameLine,
         pick: {

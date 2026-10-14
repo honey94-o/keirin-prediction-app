@@ -8,7 +8,16 @@ import {
   getSoloWinRate,
   getGirlsAgariAbility,
   getVenueKimariteRatesWithFallback,
+  getPitHistories,
 } from "./repository";
+import {
+  computeForm,
+  pairProbabilities,
+  PIT_MEN_COEFS,
+  PIT_PRIORS,
+  PIT_SHRINKAGE_K,
+  type PairProb,
+} from "./second-third-model";
 import { scoreRace, generateBetSuggestions, generateScenarios, HIGH_CONFIDENCE_MARGIN } from "./scoring";
 import type {
   BankInfoRow,
@@ -35,6 +44,8 @@ export interface RacePrediction {
    * この条件では単勝的中率81.7%以上を実績確認済み（scripts/diagnose-confidence.ts）。
    */
   winSuggestion: { carNum: number; name: string; margin: number } | null;
+  /** ◎1着時の(2着,3着)ペア確率・降順（lib/second-third-model.ts）。ガールズはnull。 */
+  secondThird: PairProb[] | null;
 }
 
 /**
@@ -93,7 +104,24 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
     soloWinRateBySnum,
     girlsAgariAbilityBySnum
   );
-  const scenarios = generateScenarios(scored, venueKimarite ?? bankInfo);
+  // 2・3着モデル（男子のみ。ガールズは旧並びの方が良かったため使わない）。
+  const isGirls = scored.some((s) => s.entry.class_rank?.startsWith("L"));
+  let secondThird: PairProb[] | null = null;
+  if (!isGirls && scored.length >= 3) {
+    const histories = await getPitHistories(
+      scored.map((s) => s.entry.snum),
+      race.kaisai_date
+    );
+    const pitEntries = scored.map((s) => ({
+      car: s.entry.car_num,
+      lineGroup: s.entry.line_group,
+      linePos: s.entry.line_position,
+      form: computeForm(histories.get(s.entry.snum) ?? [], race.kaisai_date, PIT_PRIORS, PIT_SHRINKAGE_K),
+    }));
+    secondThird = pairProbabilities(pitEntries, scored[0].entry.car_num, PIT_MEN_COEFS, { girls: false });
+  }
+
+  const scenarios = generateScenarios(scored, venueKimarite ?? bankInfo, secondThird);
   const boxSuggestion = generateBetSuggestions(scored).find(
     (s) => s.betType === "3連複ボックス"
   );
@@ -106,5 +134,5 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
     }
   }
 
-  return { race, bankInfo, venueKimarite, scored, scenarios, boxSuggestion, winSuggestion };
+  return { race, bankInfo, venueKimarite, scored, scenarios, boxSuggestion, winSuggestion, secondThird };
 }

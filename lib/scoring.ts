@@ -1,4 +1,5 @@
 import { nowJstHHMM } from "./date";
+import type { PairProb } from "./second-third-model";
 import type {
   BankInfoRow,
   BetSuggestion,
@@ -1207,49 +1208,26 @@ export const HIGH_CONFIDENCE_MARGIN = 10;
 const LOW_MARGIN_THRESHOLD = 5;
 
 /**
- * margin >= HIGH_CONFIDENCE_MARGIN（厳選対象）の中でも、この値以上は本命が
- * 抜けすぎていて3連単の当たり組が超低配当になり、点数を広げるほど回収率が
- * 下がる（買っても投資割れ）。scratchpad検証（predictions由来537件、
- * 開催日で2/3のtrain/test分割）：
- *   margin 10-13: 2着=プール上位2 / 3着=上位8 の約10点 → 回収率119%
- *                 （train118% / test122%、両期間で明確に黒字）
- *   margin 13-16: 現行の対称ボックス20点だと回収率52%まで悪化。
- *                 ◎→ライン先頭→3着2頭 の2点に絞ると回収率96%（ほぼ均衡）
- *   margin 16+  : 同2点で回収率101%
- * 現行の「margin>=10は一律20点」は全体では回収率105%だがtest期間は95.5%
- * （赤字）。帯で点数を変える新ルールにすると全体117% / test120%に改善。
+ * margin >= HIGH_CONFIDENCE_MARGIN（厳選対象）の本命買い目：◎→2着→3着の1点。
+ *
+ * 旧実装はmargin帯で点数を変える約2〜10点のフォーメーションで、「回収率119%」等の
+ * 検証値を根拠にしていたが、2026-10の再検証で (1) その数字は最大払戻1件（826倍）に
+ * 支えられており、(2) 選手成績が最新値で上書きされたまま過去レースを検証していた
+ * （未来の成績を使っていた）ことが判明した。レース時点の情報だけで時系列検証すると
+ * （scripts/research/gensen-design-pit.ts、厳選＝margin10〜16）、最大払戻1件を
+ * 除いた回収率は旧フォーメーション61%/50%/68%（期間P1/P2/P3）に対し、
+ * 2・3着モデルの最上位ペア1点が83%/82%/117%と全期間で上回った。
+ * ◎が抜けているレースは低配当の組が多く、点数を広げるほど当たっても投資割れする。
+ *
+ * 男子は2・3着モデル（lib/second-third-model.ts）の最上位ペア、ガールズはモデルが
+ * 旧並びを上回れなかったため旧並び（buildLineAwarePool）の上位2頭。
  */
-const HIGH_MARGIN_TIGHT_THRESHOLD = 13;
-
-/**
- * margin >= HIGH_CONFIDENCE_MARGIN の本命フォーメーション。
- * 「2着はデータ上位なだけでなくライン・展開で絞る（＝プール上位=軸と同ライン
- * を先頭に並べたbuildLineAwarePoolの上位）」というユーザー方針に沿い、
- * 2着を絞って3着を広めに取る非対称フォーメーションにする。
- * pool は buildLineAwarePool の戻り値（軸と同ラインが先頭、その後は隊列・
- * マーク率込みの順）を渡す前提。
- */
-function honmeiFormationHighMargin(axis: number, pool: number[], margin: number): string[] {
-  if (margin >= HIGH_MARGIN_TIGHT_THRESHOLD) {
-    // 本命が抜けている：◎→（同ライン先頭）→3着は次点2頭 の2点だけ
-    const second = pool[0];
-    if (second == null) return [];
-    return pool
-      .slice(1, 3)
-      .filter((third) => third !== second)
-      .map((third) => `${axis}-${second}-${third}`);
-  }
-  // margin 10-13：2着はプール上位2頭、3着はプール上位8頭（最大12点）
-  const seconds = pool.slice(0, 2);
-  const thirds = pool.slice(0, 8);
-  const combos: string[] = [];
-  for (const second of seconds) {
-    for (const third of thirds) {
-      if (second === third) continue;
-      combos.push(`${axis}-${second}-${third}`);
-    }
-  }
-  return combos.slice(0, 12);
+function highConfidenceOnePoint(scored: ScoredEntry[], secondThird: PairProb[] | null | undefined): string[] {
+  const axis = scored[0].entry.car_num;
+  const top = secondThird?.[0];
+  if (top) return [`${axis}-${top.second}-${top.third}`];
+  const pool = buildLineAwarePool(axis, scored[0].entry.line_group, scored);
+  return pool.length >= 2 ? [`${axis}-${pool[0]}-${pool[1]}`] : [];
 }
 
 /**
@@ -1264,7 +1242,7 @@ function honmeiFormationHighMargin(axis: number, pool: number[], margin: number)
  * 参考表示専用のnakaana_picksに保存する（本採用は実績が積み上がってから判断）。
  */
 export const NAKAANA_MIN_MARGIN = 8;
-export const NAKAANA_MAX_MARGIN = 10; // この値未満のみ対象（以上はhonmeiFormationHighMargin側の厳選が担当）
+export const NAKAANA_MAX_MARGIN = 10; // この値未満のみ対象（以上はhighConfidenceOnePoint側の厳選が担当）
 
 export function generateNakaanaCandidate(
   scored: ScoredEntry[]
@@ -1620,12 +1598,26 @@ function generateGirlsScenarios(scored: ScoredEntry[]): RaceScenario[] {
 // 判断し、コードごと削除した。再挑戦する場合は生成の前に必ずこの検証パターン
 // （leadLineが本命のラインと異なる場合に限定した的中率比較、train/test）を通すこと。
 
+/**
+ * secondThird: 2・3着モデルのペア確率（男子のみ、lib/predict.tsが計算して渡す）。
+ * margin>=HIGH_CONFIDENCE_MARGINの本命買い目（highConfidenceOnePoint）に使う。
+ */
 export function generateScenarios(
   scored: ScoredEntry[],
-  bankInfo: BankInfoRow | VenueKimariteRates | undefined | null
+  bankInfo: BankInfoRow | VenueKimariteRates | undefined | null,
+  secondThird?: PairProb[] | null
 ): RaceScenario[] {
   if (scored.length < 3) return [];
-  if (isGirlsRace(scored)) return generateGirlsScenarios(scored);
+  if (isGirlsRace(scored)) {
+    const girls = generateGirlsScenarios(scored);
+    const margin = scored[0].totalScore - scored[1].totalScore;
+    const honmei = girls.find((s) => s.label === "本命");
+    if (honmei && margin >= HIGH_CONFIDENCE_MARGIN) {
+      honmei.formation = { betType: "3連単フォーメーション", combinations: highConfidenceOnePoint(scored, null) };
+      honmei.reason += ` 対抗との差が${margin.toFixed(1)}点と本命が抜けているため、低配当の組で投資割れしないよう1点に絞っています。`;
+    }
+    return girls;
+  }
 
   const usedAxes = new Set<number>();
   type ScenarioSpec = {
@@ -1846,28 +1838,12 @@ export function generateScenarios(
   const honmeiScenario = result.find((s) => s.label === "本命");
   if (taikou && honmeiScenario) {
     if (margin >= HIGH_CONFIDENCE_MARGIN) {
-      // 厳選対象（margin>=10）。かつては「軸が堅い→2点」→検証で「20点が最良」と
-      // 二転三転したが、predictions由来537件をtrain/test分割で見直したところ、
-      // margin>=10を一律20点にすると全体の回収率は105%だがtest期間は95.5%（赤字）で、
-      // 実運用の厳選（毎日margin上位10件）に至っては平均15.8点・回収率30%・
-      // 33日で−12.6万円という状態だった（ユーザー指摘「厳選の回収率悪すぎる」）。
-      // 原因は、本命が抜けているレースほど3連単の当たり組が低配当で、
-      // 15〜20点も買うと当たっても投資割れすること。
-      // margin帯で点数と形を変える（honmeiFormationHighMarginのコメント参照）：
-      //   10-13点差: 2着=プール上位2 / 3着=上位8 の非対称 約10点 → 全体119%/test122%
-      //   13点差以上: ◎→同ライン先頭→3着2頭 の2点          → ほぼ均衡（96〜101%）
-      // これで margin>=10 全体が全体117%/test120%・平均6.8点に改善（総損益 +43k→+62k）。
-      // 2着を「データ上位なだけでなくラインで絞る」というユーザー方針も、
-      // buildLineAwarePool（軸と同ラインを先頭に並べる）の上位2頭に2着を限定する形で反映。
-      const pool = buildLineAwarePool(honmei.entry.car_num, honmei.entry.line_group, scored);
+      // 厳選対象（margin>=10）。highConfidenceOnePointのコメント参照。
       honmeiScenario.formation = {
         betType: "3連単フォーメーション",
-        combinations: honmeiFormationHighMargin(honmei.entry.car_num, pool, margin),
+        combinations: highConfidenceOnePoint(scored, secondThird),
       };
-      honmeiScenario.reason +=
-        margin >= HIGH_MARGIN_TIGHT_THRESHOLD
-          ? ` 対抗との差が${margin.toFixed(1)}点と本命が抜けており、当たっても低配当になりやすいため、◎→同ライン→3着2頭の2点に絞っています。`
-          : ` 対抗との差が${margin.toFixed(1)}点あり本命の信頼度が高い傾向です。2着は同ラインを中心に2頭、3着を広めに取った${honmeiScenario.formation.combinations.length}点にしています。`;
+      honmeiScenario.reason += ` 対抗との差が${margin.toFixed(1)}点と本命の信頼度は高い一方、点数を広げると低配当の組で投資割れしやすいため、ライン構成と直近成績から最も来やすい2・3着の1点に絞っています。`;
     } else if (margin < LOW_MARGIN_THRESHOLD) {
       // 本命・対抗が拮抗：1着・2着を入れ替え可能なボックス買いにする（例: 1=2-3）
       const thirdPool = buildLineAwarePool(honmei.entry.car_num, honmei.entry.line_group, scored).filter(
@@ -1898,8 +1874,8 @@ export function generateScenarios(
       // 増えてもいい」が的中）。6点に広げる。
       //
       // 2026-09、margin>=10側で「2着をbuildLineAwarePool上位2頭に絞り3着を
-      // 広める」非対称フォーメーションが効いた（honmeiFormationHighMargin
-      // 参照）ため、この中間帯にも同じ形（2着上位2×3着上位5、約8点）を
+      // 広める」非対称フォーメーションが効いたと判断していた（2026-10に未来の成績を
+      // 使った検証だったと判明し撤回済み）ため、この中間帯にも同じ形（2着上位2×3着上位5、約8点）を
       // 試した（n=1795、train/test分割）。しかし現行の対称box6点は
       // train100.4%/test112.0%と安定しているのに対し、非対称8点はtrain112.9%/
       // test88.9%と方向が逆転（典型的な過学習）。「2着を線内先頭固定×3着広め」
