@@ -56,8 +56,12 @@ db/backup/
 # scripts/fetch-venue-weather.tsのキャッシュ（大きい・日付範囲固定のスナップショット、
 # 再実行すればいつでも作り直せるため）。venue_coords.jsonは軽量かつ再利用価値があるため追跡する。
 scripts/data/venue_weather.json
+scripts/data/local.sqlite
+scripts/data/scored-cache.json
 
 .vercel
+.env*
+
 .env*
 
 .env*

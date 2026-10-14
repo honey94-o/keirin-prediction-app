@@ -144,6 +144,11 @@ async function runExecute(
 
 let client: DbClient | null = null;
 
+/** オフライン検証スクリプト専用：Neonの代わりにローカルDB（scripts/lib/local-db.ts）を差し込む。 */
+export function setDbClientForOfflineScripts(override: DbClient): void {
+  client = override;
+}
+
 export function getDb(): DbClient {
   if (!client) {
     client = {
