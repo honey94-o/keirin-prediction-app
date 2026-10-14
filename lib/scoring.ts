@@ -1450,14 +1450,18 @@ export function pickNearestRace(groupRaces: RaceRow[], viewDate: string, todaySt
   return sorted[sorted.length - 1];
 }
 
+// WINTICKETの種目名は「ガ予１」「二予Ｂ」「東予２」「チ準決」「ガ準」「ア決Ａ」「ガ般Ｂ」の
+// ような短縮表記が多く、「予選」「準決勝」の完全一致だけでは約700レースが
+// その他・一般に誤分類され、予選を除外するはずの厳選に混ざっていた（2026-10判明）。
+// 短縮表記を含めて判定するため、判定順（準々→準決→決勝→予選→選抜→一般）が重要。
 export function raceStage(syumoku: string | null): string {
   if (!syumoku) return "不明";
-  if (/決勝/.test(syumoku) && !/準々|準決/.test(syumoku)) return "決勝";
-  if (/準決勝/.test(syumoku)) return "準決勝";
-  if (/準々決勝/.test(syumoku)) return "準々決勝";
-  if (/選抜|特選/.test(syumoku)) return "選抜・特選";
-  if (/予選/.test(syumoku)) return "予選";
-  if (/一般/.test(syumoku)) return "一般";
+  if (/準々/.test(syumoku)) return "準々決勝";
+  if (/準決|ガ準/.test(syumoku)) return "準決勝";
+  if (/決/.test(syumoku)) return "決勝";
+  if (/予/.test(syumoku)) return "予選";
+  if (/選抜|特選|優秀|特秀/.test(syumoku)) return "選抜・特選";
+  if (/般/.test(syumoku)) return "一般";
   return "その他";
 }
 

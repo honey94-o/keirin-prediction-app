@@ -126,6 +126,22 @@ CREATE TABLE IF NOT EXISTS entries (
                                            -- 常にNULL（未使用カラム）。ギア比は同一選手でも
                                            -- レースごとに変わりうる（同日の変更は脚質転換の
                                            -- サインとされる）ため、race単位で持つ必要がある。
+    -- at_*: このレース時点の選手成績スナップショット（初回取得時の値を保持し上書きしない）。
+    -- racersは選手1行を上書きし続けるため、過去レースの検証にracersを使うと
+    -- レース後に判明した成績で予想することになる（2026-10に判明したリーク）。
+    at_heikin_tokuten        REAL,
+    at_class_rank            TEXT,
+    at_kyakushitsu           TEXT,
+    at_syouritu              REAL,
+    at_rentairitu2           REAL,
+    at_rentairitu3           REAL,
+    at_kimarite_nige_count   INTEGER,
+    at_kimarite_makuri_count INTEGER,
+    at_kimarite_sashi_count  INTEGER,
+    at_kimarite_mark_count   INTEGER,
+    at_standing_count        INTEGER,
+    at_home_lead_count       INTEGER,
+    at_back_lead_count       INTEGER,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (race_id, car_num)
 );

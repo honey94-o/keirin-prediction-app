@@ -572,16 +572,43 @@ def save_to_db(
                  e.get("kimarite_sashi_count"), e.get("kimarite_mark_count"),
                  e.get("standing_count"), e.get("home_lead_count"), e.get("back_lead_count")],
             ))
+            # at_*列はこのレース時点の選手成績のスナップショット。racersは選手1行を
+            # 上書きし続けるため、過去レースを後から検証するとレース後に判明した成績
+            # （競走得点など）で予想してしまう（2026-10の検証で判明したリーク）。
+            # 初回取得時の値だけを残し、レース後の再取得では上書きしない（COALESCE）。
             statements.append((
                 """INSERT INTO entries (race_id, snum, car_num, line_group, line_position, pref,
-                                        pre_race_comment, gear_ratio)
-                   VALUES (?,?,?,?,?,?,?,?)
+                                        pre_race_comment, gear_ratio,
+                                        at_heikin_tokuten, at_class_rank, at_kyakushitsu,
+                                        at_syouritu, at_rentairitu2, at_rentairitu3,
+                                        at_kimarite_nige_count, at_kimarite_makuri_count,
+                                        at_kimarite_sashi_count, at_kimarite_mark_count,
+                                        at_standing_count, at_home_lead_count, at_back_lead_count)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(race_id, car_num) DO UPDATE SET
                        snum=excluded.snum, line_group=excluded.line_group,
                        line_position=excluded.line_position, pref=excluded.pref,
-                       pre_race_comment=excluded.pre_race_comment, gear_ratio=excluded.gear_ratio""",
+                       pre_race_comment=excluded.pre_race_comment, gear_ratio=excluded.gear_ratio,
+                       at_heikin_tokuten=COALESCE(entries.at_heikin_tokuten, excluded.at_heikin_tokuten),
+                       at_class_rank=COALESCE(entries.at_class_rank, excluded.at_class_rank),
+                       at_kyakushitsu=COALESCE(entries.at_kyakushitsu, excluded.at_kyakushitsu),
+                       at_syouritu=COALESCE(entries.at_syouritu, excluded.at_syouritu),
+                       at_rentairitu2=COALESCE(entries.at_rentairitu2, excluded.at_rentairitu2),
+                       at_rentairitu3=COALESCE(entries.at_rentairitu3, excluded.at_rentairitu3),
+                       at_kimarite_nige_count=COALESCE(entries.at_kimarite_nige_count, excluded.at_kimarite_nige_count),
+                       at_kimarite_makuri_count=COALESCE(entries.at_kimarite_makuri_count, excluded.at_kimarite_makuri_count),
+                       at_kimarite_sashi_count=COALESCE(entries.at_kimarite_sashi_count, excluded.at_kimarite_sashi_count),
+                       at_kimarite_mark_count=COALESCE(entries.at_kimarite_mark_count, excluded.at_kimarite_mark_count),
+                       at_standing_count=COALESCE(entries.at_standing_count, excluded.at_standing_count),
+                       at_home_lead_count=COALESCE(entries.at_home_lead_count, excluded.at_home_lead_count),
+                       at_back_lead_count=COALESCE(entries.at_back_lead_count, excluded.at_back_lead_count)""",
                 [race_id, e["snum"], e["car_num"], e.get("line_group"), e.get("line_position"), e.get("pref"),
-                 e.get("pre_race_comment"), e.get("gear_ratio")],
+                 e.get("pre_race_comment"), e.get("gear_ratio"),
+                 e.get("heikin_tokuten"), e.get("class_rank"), e.get("kyakushitsu"),
+                 e.get("syouritu"), e.get("rentairitu2"), e.get("rentairitu3"),
+                 e.get("kimarite_nige_count"), e.get("kimarite_makuri_count"),
+                 e.get("kimarite_sashi_count"), e.get("kimarite_mark_count"),
+                 e.get("standing_count"), e.get("home_lead_count"), e.get("back_lead_count")],
             ))
 
         for r in race.results:
