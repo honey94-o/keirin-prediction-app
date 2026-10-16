@@ -262,24 +262,32 @@ def enrich_entries_with_history(entries: list[dict[str, Any]]) -> list[RacerHist
     鮮度をキャッシュする）。entriesのprev_class_rankはその場で書き換える。
     """
     all_histories: list[RacerHistoryEntry] = []
-    for entry in entries:
-        snum = entry.get("snum")
-        if not snum or not str(snum).startswith("wt") or "unknown" in str(snum):
-            continue
-        cyclist_id = str(snum)[2:]
+    targets = [
+        e for e in entries
+        if e.get("snum") and str(e["snum"]).startswith("wt") and "unknown" not in str(e["snum"])
+    ]
+    if not targets:
+        return all_histories
 
-        # 1クエリにまとめて鮮度チェックの往復回数を減らす（Turso側の502対策の一環）。
-        client = get_client()
-        try:
-            row = client.execute(
-                """SELECT
-                     (SELECT updated_at FROM racers WHERE snum=? AND prev_class_rank IS NOT NULL) as class_updated_at,
-                     (SELECT MAX(scraped_at) FROM racer_race_history WHERE snum=?) as history_updated_at""",
-                [snum, snum],
-            ).rows[0]
-        finally:
-            client.close()
-        class_updated_at, history_updated_at = row[0], row[1]
+    # 鮮度チェックをレース単位の1クエリにまとめる（以前は選手ごとに1往復×7〜9人）。
+    snums = [str(e["snum"]) for e in targets]
+    client = get_client()
+    try:
+        rows = client.execute(
+            f"""SELECT s.snum,
+                   (SELECT updated_at FROM racers WHERE snum = s.snum AND prev_class_rank IS NOT NULL),
+                   (SELECT MAX(scraped_at) FROM racer_race_history WHERE snum = s.snum)
+                FROM (VALUES {",".join("(?)" for _ in snums)}) AS s(snum)""",
+            snums,
+        ).rows
+    finally:
+        client.close()
+    freshness = {str(r[0]): (r[1], r[2]) for r in rows}
+
+    for entry in targets:
+        snum = str(entry["snum"])
+        cyclist_id = snum[2:]
+        class_updated_at, history_updated_at = freshness.get(snum, (None, None))
 
         need_class = class_updated_at is None
         history_age = _age_in_days(history_updated_at)
@@ -295,16 +303,69 @@ def enrich_entries_with_history(entries: list[dict[str, Any]]) -> list[RacerHist
     return all_histories
 
 
+# 月間日程ページ（開催場×月）のキャッシュ。日程は月単位で先まで公開されていて1日の
+# 中ではまず変わらないのに、毎回の同期で約55ページ（全リクエストの約半分）を取り直して
+# いた。JSTの日付が変わって最初の同期でだけ取り直し、それ以外はDBのキャッシュを使う。
+# 取得に失敗した時は古いキャッシュで代用し（取得日は更新しないので次回また取りに行く）、
+# キャッシュも無ければ従来どおり空扱い＋警告。
+_schedule_cache: dict[tuple[str, str], tuple[list[str], str]] = {}
+_schedule_cache_lock = threading.Lock()
+FORCE_SCHEDULE_REFRESH = False
+
+
+def _today_jst_str() -> str:
+    return datetime.datetime.now(JST).strftime("%Y%m%d")
+
+
+def load_schedule_cache() -> None:
+    client = get_client()
+    try:
+        client.execute(
+            """CREATE TABLE IF NOT EXISTS wt_schedule_cache (
+                   venue      TEXT NOT NULL,
+                   yyyymm     TEXT NOT NULL,
+                   cup_ids    TEXT NOT NULL,
+                   fetched_on TEXT NOT NULL,
+                   PRIMARY KEY (venue, yyyymm)
+               )"""
+        )
+        rows = client.execute("SELECT venue, yyyymm, cup_ids, fetched_on FROM wt_schedule_cache").rows
+    finally:
+        client.close()
+    with _schedule_cache_lock:
+        for venue, yyyymm, cup_ids, fetched_on in rows:
+            _schedule_cache[(str(venue), str(yyyymm))] = (json.loads(cup_ids), str(fetched_on))
+
+
 def discover_cup_ids(venue: str, yyyymm: str) -> list[str]:
     """開催場の月間日程ページから、その月に実際に開催された開催ID(cupId)一覧を返す。"""
+    today = _today_jst_str()
+    with _schedule_cache_lock:
+        cached = _schedule_cache.get((venue, yyyymm))
+    if cached is not None and cached[1] == today and not FORCE_SCHEDULE_REFRESH:
+        return cached[0]
+
     status, html = _get(f"https://winticket.jp/keirin/{venue}/schedule/{yyyymm}")
     _sleep()
     if status != 200:
         # 日程ページが取れないと、この開催場・この月は「開催が無かった」ことに
         # なって静かに丸ごと飛ぶ。気付けるよう必ず記録する。
-        print(f"  警告: 日程ページ取得失敗 status={status} {venue}/{yyyymm}")
-        return []
+        print(f"  警告: 日程ページ取得失敗 status={status} {venue}/{yyyymm}"
+              + ("（前回のキャッシュで代用）" if cached is not None else ""))
+        return cached[0] if cached is not None else []
     ids = sorted(set(re.findall(rf"/keirin/{venue}/racecard/(\d+)", html)))
+    client = get_client()
+    try:
+        client.execute(
+            """INSERT INTO wt_schedule_cache (venue, yyyymm, cup_ids, fetched_on) VALUES (?,?,?,?)
+               ON CONFLICT (venue, yyyymm) DO UPDATE SET
+                   cup_ids = excluded.cup_ids, fetched_on = excluded.fetched_on""",
+            [venue, yyyymm, json.dumps(ids), today],
+        )
+    finally:
+        client.close()
+    with _schedule_cache_lock:
+        _schedule_cache[(venue, yyyymm)] = (ids, today)
     return ids
 
 
@@ -642,6 +703,8 @@ def parse_sanrentan_payout(payout_table: Tag) -> list[dict[str, Any]]:
 
 
 JST = datetime.timezone(datetime.timedelta(hours=9))
+# (cup_id, day) → その日の最終レース番号（出走表のリンクから判明したもの）
+_day_race_counts: dict[tuple[str, int], int] = {}
 # 発走時刻からこの分数が経つまでは結果ページを見ない（確定前に取っても空のため）。
 RESULT_READY_AFTER_MIN = 5
 
@@ -676,6 +739,11 @@ def scrape_one_race(venue: str, cup_id: str, day: int, race_no: int) -> Any:
     if status != 200:
         print(f"  警告: racecard取得失敗 status={status} {venue}/{cup_id}/{day}/{race_no}")
         return None
+    # 出走表にはその日の全レース（1R〜最終R）へのリンクが並ぶので、最終レース番号が
+    # 分かる。以前は最終Rの次のレースを取りに行って404で打ち止めを判定していた。
+    race_nos = [int(n) for n in re.findall(rf"/racecard/{cup_id}/{day}/(\d+)", html)]
+    if race_nos:
+        _day_race_counts[(cup_id, day)] = max(race_nos)
     race = parse_racecard(html, cup_id, day, race_no)
     if race is None or not race.entries:
         # 解析できなかった場合も打ち止めとは限らないため None を返す
@@ -785,8 +853,16 @@ def scrape_cup(
         # cup_idの形式が想定外なら日付を推定できないので、スキップ判定は行わない
         cup_start = None
 
+    # 翌日(JST)より後の日程は出走表がまだ公開されておらず、取りに行っても404で
+    # 打ち止めを確認するだけの空振りになる。推定日が実際より早い（休催日がある）場合は
+    # 実際の日付も翌日より後なので、ここで打ち切っても取りこぼしは起きない。
+    tomorrow_str = (datetime.datetime.now(JST).date() + datetime.timedelta(days=1)).strftime("%Y%m%d")
+
     races: list[tuple[RaceData, list[RacerHistoryEntry]]] = []
     for day in range(1, max_days + 1):
+        if cup_start is not None:
+            if (cup_start + datetime.timedelta(days=day - 1)).strftime("%Y%m%d") > tomorrow_str:
+                break
         # 開催日は初日から連続しているものとして日付を推定し、その日が
         # 「全レースの着順が揃っている日」に該当するときだけ取得を省く。
         # 推定が外れて該当しなければ従来どおり取得するため、スキップ判定の
@@ -799,6 +875,10 @@ def scrape_cup(
         day_had_race = False
         day_ended_cleanly = False
         for race_no in range(1, max_races + 1):
+            last_race_no = _day_race_counts.get((cup_id, day))
+            if last_race_no is not None and race_no > last_race_no:
+                day_ended_cleanly = True
+                break
             if completed_races and f"{cup_id}/{day}/{race_no}" in completed_races:
                 day_had_race = True
                 continue
@@ -949,7 +1029,16 @@ def main() -> None:
         default=VENUE_CONCURRENCY,
         help=f"--all-venues時に同時処理する開催場数（デフォルト{VENUE_CONCURRENCY}）",
     )
+    parser.add_argument(
+        "--refresh-schedule",
+        action="store_true",
+        help="月間日程ページのキャッシュを使わず取り直す（通常はJSTの日付が変わって最初の実行で自動的に取り直す）",
+    )
     args = parser.parse_args()
+
+    global FORCE_SCHEDULE_REFRESH
+    FORCE_SCHEDULE_REFRESH = args.refresh_schedule
+    load_schedule_cache()
 
     since_date = datetime.date.today() - datetime.timedelta(days=args.days_back)
     venues = ALL_VENUE_SLUGS if args.all_venues else [args.venue]

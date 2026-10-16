@@ -104,10 +104,19 @@ class PgClient:
         return ExecuteResult(rows)
 
     def batch(self, statements: list[tuple[str, Sequence[Any]]]) -> None:
+        # 以前は1文ずつexecuteしており、1レースの保存で約30往復していた。各文の
+        # パラメータをpsycopg2のmogrifyで安全に埋め込んだ上で1回の送信にまとめる。
+        # autocommit下で複数文を1回で送るとPostgresが暗黙の1トランザクションとして
+        # 実行するため、途中で失敗してもレースの一部だけが保存される状態にもならない。
+        # 全文がupsert（ON CONFLICT）なので、再試行で丸ごと再送しても安全。
+        if not statements:
+            return
         with self._conn.cursor() as cur:
-            for sql, args in statements:
-                text = _translate_dialect(sql).replace("?", "%s")
-                _with_retry(cur.execute)(text, list(args))
+            parts = [
+                cur.mogrify(_translate_dialect(sql).replace("?", "%s"), list(args))
+                for sql, args in statements
+            ]
+            _with_retry(cur.execute)(b";\n".join(parts))
 
     def close(self) -> None:
         # プールへ返却する（接続自体は切らない。呼び出し側は引き続き

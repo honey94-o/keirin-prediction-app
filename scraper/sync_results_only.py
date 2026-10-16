@@ -100,9 +100,12 @@ def save_results_and_odds(race_id: int, results: list[dict], odds: list[dict]) -
         ))
     for o in odds:
         statements.append((
-            """INSERT INTO odds (race_id, bet_type, combination, odds_value)
-               VALUES (?,?,?,?)""",
-            [race_id, o["bet_type"], o["combination"], o["odds_value"]],
+            # 重複防止（keirin_scraper.save_to_dbの同じ箇所のコメント参照）。
+            # 人気(ninki)も以前はここで捨てていたため一緒に保存する。
+            """INSERT INTO odds (race_id, bet_type, combination, odds_value, ninki)
+               VALUES (?,?,?,?,?)
+               ON CONFLICT DO NOTHING""",
+            [race_id, o["bet_type"], o["combination"], o["odds_value"], o.get("ninki")],
         ))
     try:
         if statements:

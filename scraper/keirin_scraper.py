@@ -637,8 +637,12 @@ def save_to_db(
 
         for o in race.odds:
             statements.append((
+                # 以前は素のINSERTで、確定済みレースを再取得するたびに同じ払戻行が
+                # 重複して溜まっていた（最大38重複、全21,213行中7,392行が重複。2026-10判明）。
+                # 払戻は確定後に変わらないので既存があれば何もしない。
                 """INSERT INTO odds (race_id, bet_type, combination, odds_value, ninki)
-                   VALUES (?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?)
+                   ON CONFLICT DO NOTHING""",
                 [race_id, o["bet_type"], o["combination"], o["odds_value"], o.get("ninki")],
             ))
 

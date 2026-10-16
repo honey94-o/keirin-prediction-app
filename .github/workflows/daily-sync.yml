@@ -61,6 +61,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scraper/requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # Nodeの依存（約15秒）はスクレイピング（数十秒〜）と並行してバックグラウンドで
+      # 入れ、ピック計算の直前で完了を待つ（直列だとその分だけ毎回遅くなる）。
+      - name: Install Node dependencies (background)
+        run: |
+          (npm ci --no-audit --no-fund --prefer-offline > "$RUNNER_TEMP/npm-ci.log" 2>&1; echo $? > "$RUNNER_TEMP/npm-ci.exit") &
 
       - name: Install dependencies
         working-directory: scraper
@@ -76,14 +90,11 @@ jobs:
           # 途中経過として見えず、ハングと区別がつかなくなるため）。
           python -u winticket_scraper.py --all-venues --days-back ${{ github.event.inputs.days_back || '1' }}
 
-      # Node系のステップは全実行（朝・日中・夜・手動）で使うため無条件にする。
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Install Node dependencies
-        run: npm ci
+      - name: Wait for Node dependencies
+        run: |
+          for i in $(seq 1 600); do [ -f "$RUNNER_TEMP/npm-ci.exit" ] && break; sleep 1; done
+          tail -5 "$RUNNER_TEMP/npm-ci.log"
+          exit "$(cat "$RUNNER_TEMP/npm-ci.exit" 2>/dev/null || echo 1)"
 
       # 当日・翌日の厳選・バリカタ・中穴候補は日中のオッズ・並び予想更新も
       # 反映したいので、全実行（朝・日中・夜・手動リフレッシュ）で計算し直す。
