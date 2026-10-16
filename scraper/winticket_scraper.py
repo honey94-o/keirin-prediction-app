@@ -688,12 +688,53 @@ def load_completed_days(since_date: datetime.date) -> set[tuple[str, str]]:
     return {(str(row[0]), str(row[1])) for row in result.rows}
 
 
+def load_completed_races(since_date: datetime.date) -> set[str]:
+    """着順（3着まで）と3連単払戻が既に保存済みのレースを "cup_id/day/race_no" で返す。
+
+    load_completed_daysは「その日の全レースが確定」した日しか省けないため、開催中の
+    日は確定済みの前半レースも毎回出走表・結果ページを取り直していた（2026-10実測：
+    夕方の同期で四日市・別府の1〜6Rを再取得し、1レース10〜16秒×6を使っていた）。
+    確定後は内容が変わらないのでレース単位でも省く。
+    """
+    since_str = since_date.strftime("%Y%m%d")
+    client = get_client()
+    try:
+        result = client.execute(
+            """
+            SELECT ra.encp
+            FROM races ra
+            WHERE ra.kaisai_date >= ? AND substr(ra.encp, 1, 3) = 'wt:'
+              AND (SELECT COUNT(*) FROM results r
+                   WHERE r.race_id = ra.id AND r.finish_pos BETWEEN 1 AND 3) >= 3
+              AND EXISTS (SELECT 1 FROM odds o WHERE o.race_id = ra.id AND o.bet_type = '3連単')
+            """,
+            [since_str],
+        )
+    finally:
+        client.close()
+    return {str(row[0])[3:] for row in result.rows}
+
+
+def load_active_jocds(dates: list[str]) -> set[str]:
+    """指定日（当日・翌日）にレースがDBに登録済みの開催場コード。並列処理の先頭に回す。"""
+    client = get_client()
+    try:
+        result = client.execute(
+            f"SELECT DISTINCT jocd FROM races WHERE kaisai_date IN ({','.join('?' for _ in dates)})",
+            dates,
+        )
+    finally:
+        client.close()
+    return {str(row[0]) for row in result.rows}
+
+
 def scrape_cup(
     venue: str,
     cup_id: str,
     max_days: int = 7,
     max_races: int = 12,
     completed_days: set[tuple[str, str]] | None = None,
+    completed_races: set[str] | None = None,
 ) -> list[tuple[RaceData, list[RacerHistoryEntry]]]:
     jocd = cup_id[8:]
     try:
@@ -718,6 +759,9 @@ def scrape_cup(
         day_had_race = False
         day_ended_cleanly = False
         for race_no in range(1, max_races + 1):
+            if completed_races and f"{cup_id}/{day}/{race_no}" in completed_races:
+                day_had_race = True
+                continue
             result = scrape_one_race(venue, cup_id, day, race_no)
             if result is RACE_NOT_FOUND:
                 # race_no-1件で打ち止め（race_no==1ならこの日は開催なし）
@@ -786,6 +830,7 @@ def scrape_venue_recent(
     since_date: datetime.date,
     on_race=None,
     completed_days: set[tuple[str, str]] | None = None,
+    completed_races: set[str] | None = None,
 ) -> list[tuple[RaceData, list[RacerHistoryEntry]]]:
     """指定開催場について、since_date以降にレースがある開催(cup)を全て取得する。
 
@@ -809,12 +854,17 @@ def scrape_venue_recent(
     cup_ids = sorted(set(cup_ids))
 
     cup_since_str = cup_since.strftime("%Y%m%d")
-    target_cups = [c for c in cup_ids if c[:8] >= cup_since_str]
+    # 翌日より後に始まる開催はまだ出走表が出ていない（1Rが404で終わるだけの空振り
+    # アクセスになる）ので対象外。日付はGitHub ActionsのUTCではなくJSTで判定する。
+    cup_until_str = (datetime.datetime.now(JST).date() + datetime.timedelta(days=1)).strftime("%Y%m%d")
+    target_cups = [c for c in cup_ids if cup_since_str <= c[:8] <= cup_until_str]
 
     all_races: list[tuple[RaceData, list[RacerHistoryEntry]]] = []
     for cup_id in target_cups:
         print(f"開催 {venue}/{cup_id} を取得中...")
-        cup_races = scrape_cup(venue, cup_id, completed_days=completed_days)
+        cup_races = scrape_cup(
+            venue, cup_id, completed_days=completed_days, completed_races=completed_races
+        )
         for result in cup_races:
             if on_race is not None:
                 on_race(result)
@@ -823,7 +873,10 @@ def scrape_venue_recent(
 
 
 def _process_venue(
-    venue: str, since_date: datetime.date, completed_days: set[tuple[str, str]]
+    venue: str,
+    since_date: datetime.date,
+    completed_days: set[tuple[str, str]],
+    completed_races: set[str],
 ) -> int:
     print(f"=== {venue} ===")
 
@@ -832,7 +885,11 @@ def _process_venue(
         save_to_db(race, bank_info=None, histories=histories)
 
     races = scrape_venue_recent(
-        venue, since_date, on_race=save_one, completed_days=completed_days
+        venue,
+        since_date,
+        on_race=save_one,
+        completed_days=completed_days,
+        completed_races=completed_races,
     )
     print(f"{venue}: {len(races)}件保存")
     return len(races)
@@ -864,6 +921,16 @@ def main() -> None:
         since_date - datetime.timedelta(days=CUP_LOOKBACK_DAYS)
     )
     print(f"着順が揃っている開催日: {len(completed_days)}件（この日は取得をスキップする）")
+    completed_races = load_completed_races(since_date - datetime.timedelta(days=CUP_LOOKBACK_DAYS))
+    print(f"確定済みレース: {len(completed_races)}件（レース単位でも取得をスキップする）")
+
+    # 当日・翌日にレースがある開催場を先に処理する。以前はアルファベット順で、
+    # レースの無い開催場（日程ページを見るだけ）を先に何十場も処理してから
+    # 実際にレースのある開催場に着手しており、全体の所要時間を引き延ばしていた。
+    today_jst = datetime.datetime.now(JST).date()
+    active_dates = [(today_jst + datetime.timedelta(days=d)).strftime("%Y%m%d") for d in (0, 1)]
+    active_slugs = {JOCD_TO_WINTICKET_SLUG.get(j) for j in load_active_jocds(active_dates)}
+    venues = sorted(venues, key=lambda v: 0 if v in active_slugs else 1)
 
     # --venue（単一開催場）はconcurrency=1と同義になり、実質これまで通り逐次実行。
     concurrency = max(1, args.concurrency) if args.all_venues else 1
@@ -871,7 +938,7 @@ def main() -> None:
     total = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
         future_to_venue = {
-            executor.submit(_process_venue, venue, since_date, completed_days): venue
+            executor.submit(_process_venue, venue, since_date, completed_days, completed_races): venue
             for venue in venues
         }
         for future in concurrent.futures.as_completed(future_to_venue):
