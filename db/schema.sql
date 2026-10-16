@@ -346,6 +346,18 @@ CREATE INDEX IF NOT EXISTS idx_predictions_race ON predictions(race_id);
 CREATE INDEX IF NOT EXISTS idx_entries_race ON entries(race_id);
 CREATE INDEX IF NOT EXISTS idx_results_race ON results(race_id);
 CREATE INDEX IF NOT EXISTS idx_odds_race ON odds(race_id);
+-- 払戻の重複防止（再取得のたびに同じ行が溜まっていた。scripts/migrate-odds-dedupe.ts）
+CREATE UNIQUE INDEX IF NOT EXISTS idx_odds_unique ON odds(race_id, bet_type, combination);
+
+-- WINTICKETの月間日程ページのキャッシュ（scraper/winticket_scraper.pyが起動時に自動作成）。
+-- JSTの日付が変わって最初の同期でだけ取り直す。
+CREATE TABLE IF NOT EXISTS wt_schedule_cache (
+    venue      TEXT NOT NULL,
+    yyyymm     TEXT NOT NULL,
+    cup_ids    TEXT NOT NULL,   -- JSON配列
+    fetched_on TEXT NOT NULL,   -- 取得したJSTの日付 YYYYMMDD
+    PRIMARY KEY (venue, yyyymm)
+);
 CREATE INDEX IF NOT EXISTS idx_races_date_jocd ON races(kaisai_date, jocd);
 
 -- getPositionWinRates（lib/repository.ts）は WHERE e.snum = ? で entries を絞るが、
