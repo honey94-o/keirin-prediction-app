@@ -553,7 +553,12 @@ def save_to_db(
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(snum) DO UPDATE SET
                        name=excluded.name, pref=excluded.pref,
-                       class_rank=excluded.class_rank, prev_class_rank=excluded.prev_class_rank,
+                       class_rank=excluded.class_rank,
+                       -- WINTICKETの出走表には前期級班が無く常にNULLで来る。そのまま上書きすると
+                       -- 毎回NULLに戻り、次回の同期でプロフィールページを全選手ぶん取り直す
+                       -- （1回おきに全選手を再取得していた。2026-10判明）上、NULLの間は
+                       -- 級班変更の補正（determineClassChange）が効かなくなるため既存値を残す。
+                       prev_class_rank=COALESCE(excluded.prev_class_rank, racers.prev_class_rank),
                        kyakushitsu=excluded.kyakushitsu,
                        heikin_tokuten=excluded.heikin_tokuten, syouritu=excluded.syouritu,
                        rentairitu2=excluded.rentairitu2, rentairitu3=excluded.rentairitu3,
