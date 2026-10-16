@@ -1,5 +1,6 @@
-import { getDb } from "./db";
-import { posCatOf, type PitRecord } from "./second-third-model";
+import { getDb, type DbStatement } from "./db";
+import { posCatOf, PIT_FORM_N, PIT_WINDOW_DAYS, type PitRecord } from "./second-third-model";
+import { addDaysToDateStr } from "./date";
 import type {
   BankInfoRow,
   BarikataNearMissResult,
@@ -48,10 +49,19 @@ const girlsAgariAbilityCache = new Map<string, Promise<GirlsAgariAbility | null>
 const bankInfoCache = new Map<string, Promise<BankInfoRow | undefined>>();
 // getScoreWeights は引数を取らないので固定キーで1件だけ持つ。
 const scoreWeightsCache = new Map<string, Promise<ScoreWeights>>();
+// 以下3つは compute-picks / daily-summary の先読み（lib/predict.ts prefetchRaceInputs）で
+// 開催日単位にまとめて取った結果を、predictRace のレース単位の呼び出しに渡すためのもの。
+const raceCache = new Map<string, Promise<RaceRow | undefined>>();
+const entriesCache = new Map<string, Promise<EntryWithRacer[]>>();
+const pitHistoryCache = new Map<string, Promise<PitRecord[]>>();
 
 /** 1回のスクリプト実行の中だけ読取結果をメモ化する。Next.js からは呼ばないこと。 */
 export function enableReadCache(): void {
   readCacheEnabled = true;
+}
+
+export function isReadCacheEnabled(): boolean {
+  return readCacheEnabled;
 }
 
 /** メモ化した内容を捨てる（スクレイピング直後に再集計したい場合など）。 */
@@ -64,6 +74,9 @@ export function clearReadCache(): void {
   girlsAgariAbilityCache.clear();
   bankInfoCache.clear();
   scoreWeightsCache.clear();
+  raceCache.clear();
+  entriesCache.clear();
+  pitHistoryCache.clear();
 }
 
 // Promise をそのままキャッシュする。predict.ts が出走選手ぶんを Promise.all で
@@ -85,12 +98,84 @@ function memoized<T>(
   return pending;
 }
 
+/**
+ * 複数選手ぶんを1クエリでまとめて取り、(選手,日付)単位でメモ化する。
+ * predictRace は出走選手ごとに同じ形のクエリを発行していたため、1レースで
+ * 選手数×種類数（約30回）の往復になり、Neonでは往復ごとに列定義(RowDescription)も
+ * 返るぶん転送量も嵩んでいた。キャッシュ無効時（Next.js）は呼ぶたびにまとめて1クエリ、
+ * 有効時は未取得の選手だけを1クエリで取り、選手ごとのPromiseに分けてキャッシュする
+ * （単一選手版の getRacerHistory 等と同じキャッシュ・同じキーを共有する）。
+ * fetchMany は要求された全選手のキーを持つ Map を返すこと。
+ *
+ * fetchFromPrevDay を渡すと、前日カットオフ（beforeDate-1日）の値が既にキャッシュに
+ * ある選手は、全履歴を取り直さずに「前日〜beforeDate」の差分だけを取って合成する。
+ * compute-picksは当日→翌日、daily-summaryは連続する7日を順に予想するが、開催は
+ * 3〜4日続くため翌日の出走選手の約7割は当日も出走しており、カットオフが1日違う
+ * だけのほぼ同じ履歴を2回ずつ取っていた。合成結果は直接取った場合と同一であること
+ * （scripts/research/verify-fetch-optimization.tsで検証）。
+ */
+async function memoizedBySnum<T>(
+  cache: Map<string, Promise<T>>,
+  snums: string[],
+  beforeDate: string,
+  fetchMany: (snums: string[]) => Promise<Map<string, T>>,
+  fetchFromPrevDay?: (prev: Map<string, T>, prevDate: string) => Promise<Map<string, T>>
+): Promise<Map<string, T>> {
+  const unique = [...new Set(snums)];
+  if (unique.length === 0) return new Map();
+  if (!readCacheEnabled) return fetchMany(unique);
+  const missing = unique.filter((s) => !cache.has(`${s}|${beforeDate}`));
+  if (missing.length > 0) {
+    const prevDate = addDaysToDateStr(beforeDate, -1);
+    const derivable = fetchFromPrevDay ? missing.filter((s) => cache.has(`${s}|${prevDate}`)) : [];
+    const derivableSet = new Set(derivable);
+    const fresh = missing.filter((s) => !derivableSet.has(s));
+    const pending = Promise.all([
+      fresh.length > 0 ? fetchMany(fresh) : new Map<string, T>(),
+      derivable.length > 0 && fetchFromPrevDay
+        ? Promise.all(derivable.map((s) => cache.get(`${s}|${prevDate}`) as Promise<T>)).then((prevValues) =>
+            fetchFromPrevDay(new Map(derivable.map((s, i) => [s, prevValues[i]])), prevDate)
+          )
+        : new Map<string, T>(),
+    ]).then(([a, b]) => new Map([...a, ...b]));
+    for (const s of missing) {
+      const key = `${s}|${beforeDate}`;
+      const p = pending.then((m) => m.get(s) as T);
+      // 失敗を残すと以降ずっと同じエラーを返してしまうため、捨ててリトライ可能にする。
+      p.catch(() => cache.delete(key));
+      cache.set(key, p);
+    }
+  }
+  const values = await Promise.all(unique.map((s) => cache.get(`${s}|${beforeDate}`) as Promise<T>));
+  return new Map(unique.map((s, i) => [s, values[i]]));
+}
+
+/** IN句用の文字列チャンク分割（1クエリあたりのパラメータ数を抑えるため）。 */
+function chunkStrings(values: string[], size = 500): string[][] {
+  const chunks: string[][] = [];
+  for (let i = 0; i < values.length; i += size) chunks.push(values.slice(i, i + size));
+  return chunks;
+}
+
 export async function getRace(raceId: number): Promise<RaceRow | undefined> {
+  return memoized(raceCache, String(raceId), () => fetchRace(raceId));
+}
+
+async function fetchRace(raceId: number): Promise<RaceRow | undefined> {
   const result = await getDb().execute({
     sql: "SELECT * FROM races WHERE id = ?",
     args: [raceId],
   });
   return result.rows[0] as unknown as RaceRow | undefined;
+}
+
+/**
+ * スクリプト用：getRacesByDate等で既に取得済みのraces行（SELECT *、getRaceと同じ形）を
+ * getRaceのキャッシュに入れ、predictRaceが1レースずつ引き直さないようにする。
+ */
+export function primeRaceCache(races: RaceRow[]): void {
+  if (!readCacheEnabled) return;
+  for (const race of races) raceCache.set(String(race.id), Promise.resolve(race));
 }
 
 export async function getAllRaces(): Promise<RaceRow[]> {
@@ -219,9 +304,7 @@ export async function getFavoriteRacerEntriesForDate(
   }));
 }
 
-export async function getEntriesForRace(raceId: number): Promise<EntryWithRacer[]> {
-  const result = await getDb().execute({
-    sql: `SELECT e.id as entry_id, e.race_id, e.car_num, e.line_group, e.line_position,
+const ENTRY_WITH_RACER_COLUMNS = `e.id as entry_id, e.race_id, e.car_num, e.line_group, e.line_position,
                  e.pre_race_comment, e.gear_ratio as race_gear_ratio,
                  r.snum, r.name, COALESCE(e.pref, r.pref) as pref, r.class_rank, r.prev_class_rank, r.kyakushitsu, r.gear_ratio,
                  r.heikin_tokuten, r.syouritu, r.rentairitu2, r.rentairitu3,
@@ -229,7 +312,15 @@ export async function getEntriesForRace(raceId: number): Promise<EntryWithRacer[
                  r.kimarite_sashi_count, r.kimarite_mark_count,
                  r.standing_count, r.home_lead_count, r.back_lead_count,
                  r.debut_class, r.tt200_sec, r.tt400_sec, r.tt500_sec, r.tt2000_sec,
-                 r.tt1000_sec, r.tt3000_sec, r.kisokukai_grade
+                 r.tt1000_sec, r.tt3000_sec, r.kisokukai_grade`;
+
+export async function getEntriesForRace(raceId: number): Promise<EntryWithRacer[]> {
+  return memoized(entriesCache, String(raceId), () => fetchEntriesForRace(raceId));
+}
+
+async function fetchEntriesForRace(raceId: number): Promise<EntryWithRacer[]> {
+  const result = await getDb().execute({
+    sql: `SELECT ${ENTRY_WITH_RACER_COLUMNS}
           FROM entries e
           JOIN racers r ON e.snum = r.snum
           WHERE e.race_id = ?
@@ -237,6 +328,31 @@ export async function getEntriesForRace(raceId: number): Promise<EntryWithRacer[
     args: [raceId],
   });
   return result.rows as unknown as EntryWithRacer[];
+}
+
+/**
+ * 複数レースの出走表（getEntriesForRaceと同じ列・同じ車番順）をまとめて取る。
+ * 読取キャッシュ有効時はレースごとにgetEntriesForRaceのキャッシュへ入れる
+ * （compute-picks等の先読み用。1レース1クエリだと列数の多いRowDescriptionが
+ * レース数ぶん返り、それだけで1回の実行の転送量の1割近くを占めていた）。
+ */
+export async function getEntriesForRaces(raceIds: number[]): Promise<Map<number, EntryWithRacer[]>> {
+  const map = new Map<number, EntryWithRacer[]>(raceIds.map((id) => [id, []]));
+  for (const chunk of chunkIds(raceIds)) {
+    const result = await getDb().execute({
+      sql: `SELECT ${ENTRY_WITH_RACER_COLUMNS}
+            FROM entries e
+            JOIN racers r ON e.snum = r.snum
+            WHERE e.race_id IN (${chunk.map(() => "?").join(",")})
+            ORDER BY e.race_id, e.car_num`,
+      args: chunk,
+    });
+    for (const row of result.rows as unknown as EntryWithRacer[]) map.get(row.race_id)?.push(row);
+  }
+  if (readCacheEnabled) {
+    for (const [raceId, entries] of map) entriesCache.set(String(raceId), Promise.resolve(entries));
+  }
+  return map;
 }
 
 export async function getOddsForRace(raceId: number): Promise<OddsRow[]> {
@@ -474,13 +590,62 @@ export async function getRacerHistory(snum: string, beforeDate?: string): Promis
 async function fetchRacerHistory(snum: string, beforeDate?: string): Promise<RacerHistoryRow[]> {
   const dateFilter = beforeDate ? "AND race_date_full IS NOT NULL AND race_date_full < ?" : "";
   const args = beforeDate ? [snum, beforeDate] : [snum];
+  // 同じ日に別開催場の行が重複していることがあり（取得元データの都合）、その順序が
+  // 直近成績（calculateRecentFormScore、同日内は入力順）に効くため、idで順序を固定する
+  // （まとめ取り版 getRacerHistories と同じ順序になるようにする意味もある）。
   const result = await getDb().execute({
     sql: `SELECT race_date, venue_abbr, finish_positions FROM racer_race_history
           WHERE snum = ? ${dateFilter}
-          ORDER BY race_date_full DESC NULLS LAST, race_date DESC`,
+          ORDER BY race_date_full DESC NULLS LAST, race_date DESC, id`,
     args,
   });
   return result.rows as unknown as RacerHistoryRow[];
+}
+
+/** getRacerHistory（beforeDate指定）の複数選手まとめ取り版。選手ごとの行の並びも同じ。 */
+export async function getRacerHistories(
+  snums: string[],
+  beforeDate: string
+): Promise<Map<string, RacerHistoryRow[]>> {
+  return memoizedBySnum(
+    racerHistoryCache,
+    snums,
+    beforeDate,
+    (targets) => fetchRacerHistoriesBetween(targets, null, beforeDate),
+    // 差分（前日の行）は並び順（race_date_full降順）で前日カットオフの全行より必ず前に来るため、
+    // 先頭に連結するだけで直接取った場合と同じ並びになる。
+    async (prev, prevDate) => {
+      const delta = await fetchRacerHistoriesBetween([...prev.keys()], prevDate, beforeDate);
+      return new Map([...prev].map(([s, rows]) => [s, [...(delta.get(s) ?? []), ...rows]]));
+    }
+  );
+}
+
+/** racer_race_historyのうち race_date_full が [fromDate, beforeDate) の行（fromDate=nullなら下限なし）。 */
+async function fetchRacerHistoriesBetween(
+  snums: string[],
+  fromDate: string | null,
+  beforeDate: string
+): Promise<Map<string, RacerHistoryRow[]>> {
+  const out = new Map<string, RacerHistoryRow[]>(snums.map((s) => [s, []]));
+  for (const chunk of chunkStrings(snums)) {
+    const result = await getDb().execute({
+      sql: `SELECT snum, race_date, venue_abbr, finish_positions FROM racer_race_history
+            WHERE snum IN (${chunk.map(() => "?").join(",")})
+              AND race_date_full IS NOT NULL AND race_date_full < ? ${fromDate ? "AND race_date_full >= ?" : ""}
+            ORDER BY snum, race_date_full DESC NULLS LAST, race_date DESC, id`,
+      args: fromDate ? [...chunk, beforeDate, fromDate] : [...chunk, beforeDate],
+    });
+    for (const row of result.rows as unknown as (RacerHistoryRow & { snum: string })[]) {
+      // 単一選手版と同じ形（snum列なし）にそろえる
+      out.get(row.snum)?.push({
+        race_date: row.race_date,
+        venue_abbr: row.venue_abbr,
+        finish_positions: row.finish_positions,
+      });
+    }
+  }
+  return out;
 }
 
 /**
@@ -576,15 +741,19 @@ async function fetchPositionWinRates(snum: string, beforeDate?: string): Promise
           GROUP BY e.line_position`,
     args,
   });
-  const rows = result.rows as unknown as {
-    line_position: string;
-    races: number;
-    wins: number;
-    seconds: number;
-    thirds: number;
-  }[];
+  return (result.rows as unknown as PositionWinRateCountRow[]).map(toPositionWinRate);
+}
 
-  return rows.map((r) => ({
+interface PositionWinRateCountRow {
+  line_position: string;
+  races: number;
+  wins: number;
+  seconds: number;
+  thirds: number;
+}
+
+function toPositionWinRate(r: PositionWinRateCountRow): PositionWinRate {
+  return {
     line_position: r.line_position,
     races: r.races,
     wins: r.wins,
@@ -593,7 +762,81 @@ async function fetchPositionWinRates(snum: string, beforeDate?: string): Promise
     secondRate: r.races > 0 ? (r.seconds / r.races) * 100 : 0,
     thirds: r.thirds,
     thirdRate: r.races > 0 ? (r.thirds / r.races) * 100 : 0,
-  }));
+  };
+}
+
+/**
+ * getPositionWinRates（beforeDate指定）の複数選手まとめ取り版。
+ * 並び順は使う側（lib/scoring.ts）がline_positionでfindするだけなので意味を持たない。
+ */
+export async function getPositionWinRatesForRacers(
+  snums: string[],
+  beforeDate: string
+): Promise<Map<string, PositionWinRate[]>> {
+  return memoizedBySnum(
+    positionWinRatesCache,
+    snums,
+    beforeDate,
+    async (targets) => {
+      const counts = await fetchPositionCountsBetween(targets, null, beforeDate);
+      return new Map([...counts].map(([s, rows]) => [s, rows.map(toPositionWinRate)]));
+    },
+    // 件数（races/wins/seconds/thirds）は整数なので、前日カットオフの件数に差分を足せば
+    // 直接集計した場合と同じ値になる（率は足した件数から計算し直す）。
+    async (prev, prevDate) => {
+      const delta = await fetchPositionCountsBetween([...prev.keys()], prevDate, beforeDate);
+      return new Map(
+        [...prev].map(([s, rates]) => {
+          const merged = new Map<string, PositionWinRateCountRow>();
+          for (const r of [...rates, ...(delta.get(s) ?? [])]) {
+            const m = merged.get(r.line_position) ?? { line_position: r.line_position, races: 0, wins: 0, seconds: 0, thirds: 0 };
+            m.races += r.races;
+            m.wins += r.wins;
+            m.seconds += r.seconds;
+            m.thirds += r.thirds;
+            merged.set(r.line_position, m);
+          }
+          return [s, [...merged.values()].map(toPositionWinRate)];
+        })
+      );
+    }
+  );
+}
+
+/** 位置別の着順件数を ra.kaisai_date が [fromDate, beforeDate) のレースで集計する（fromDate=nullなら下限なし）。 */
+async function fetchPositionCountsBetween(
+  snums: string[],
+  fromDate: string | null,
+  beforeDate: string
+): Promise<Map<string, PositionWinRateCountRow[]>> {
+  const out = new Map<string, PositionWinRateCountRow[]>(snums.map((s) => [s, []]));
+  for (const chunk of chunkStrings(snums)) {
+    const result = await getDb().execute({
+      sql: `SELECT e.snum, e.line_position,
+                   COUNT(*) as races,
+                   SUM(CASE WHEN r.finish_pos = 1 THEN 1 ELSE 0 END) as wins,
+                   SUM(CASE WHEN r.finish_pos = 2 THEN 1 ELSE 0 END) as seconds,
+                   SUM(CASE WHEN r.finish_pos = 3 THEN 1 ELSE 0 END) as thirds
+            FROM entries e
+            JOIN results r ON r.race_id = e.race_id AND r.snum = e.snum
+            JOIN races ra ON ra.id = e.race_id
+            WHERE e.snum IN (${chunk.map(() => "?").join(",")})
+              AND e.line_position IS NOT NULL AND ra.kaisai_date < ? ${fromDate ? "AND ra.kaisai_date >= ?" : ""}
+            GROUP BY e.snum, e.line_position
+            ORDER BY e.snum, e.line_position`,
+      args: fromDate ? [...chunk, beforeDate, fromDate] : [...chunk, beforeDate],
+    });
+    for (const row of result.rows as unknown as (PositionWinRateCountRow & { snum: string })[]) {
+      out.get(row.snum)?.push({
+        line_position: row.line_position,
+        races: row.races,
+        wins: row.wins,
+        seconds: row.seconds,
+        thirds: row.thirds,
+      });
+    }
+  }
+  return out;
 }
 
 /**
@@ -674,35 +917,51 @@ async function fetchGirlsAgariAbility(
 
 /**
  * 2・3着モデル（lib/second-third-model.ts）の入力：各選手の、開催日より前の出走成績。
- * 1レース分の選手をまとめて1クエリで取る。位置区分（先頭/番手/3番手以降/単騎）は
+ * 複数選手（1レース分、先読み時は開催日の全出走選手）をまとめて1クエリで取る。位置区分（先頭/番手/3番手以降/単騎）は
  * その過去レースのentries（並び）から決めるため、entriesが無い走はposCat=null。
+ *
+ * computeFormが実際に読むのは「直近PIT_FORM_N(20)走」と「直近PIT_WINDOW_DAYS(120)日」の
+ * 走だけなので、その和集合だけを返す（以前は全履歴を返しており、1回のcompute-picksの
+ * 転送量の半分以上を占めていたうえ、データの蓄積とともに際限なく増えていた）。
+ * 20走の境界はRANK（同日は同順位）で切るため、同じ日付の走が境界をまたいでも
+ * 取りこぼさない。computeFormの結果は全履歴を渡した場合と同一
+ * （scripts/research/verify-fetch-optimization.tsで検証）。
  */
 export async function getPitHistories(snums: string[], beforeDate: string): Promise<Map<string, PitRecord[]>> {
-  const out = new Map<string, PitRecord[]>(snums.map((s) => [s, []]));
-  if (snums.length === 0) return out;
-  const result = await getDb().execute({
-    sql: `SELECT res.snum AS snum, ra.kaisai_date AS kaisai_date, res.finish_pos AS finish_pos,
-                 res.kimarite AS kimarite, e.line_position AS line_position, e.line_group AS line_group,
-                 (SELECT COUNT(*) FROM results r2 WHERE r2.race_id = res.race_id) AS field_size,
-                 (SELECT COUNT(*) FROM entries e2
-                   WHERE e2.race_id = e.race_id AND e2.line_group = e.line_group) AS line_size
-          FROM results res
-          JOIN races ra ON ra.id = res.race_id
-          LEFT JOIN entries e ON e.race_id = res.race_id AND e.car_num = res.car_num
-          WHERE res.snum IN (${snums.map(() => "?").join(",")})
-            AND ra.kaisai_date < ? AND res.finish_pos IS NOT NULL`,
-    args: [...snums, beforeDate],
-  });
-  for (const row of result.rows as unknown as {
-    snum: string;
-    kaisai_date: string;
-    finish_pos: number;
-    kimarite: string | null;
-    line_position: string | null;
-    line_group: number | null;
-    field_size: number;
-    line_size: number | null;
-  }[]) {
+  return memoizedBySnum(
+    pitHistoryCache,
+    snums,
+    beforeDate,
+    (targets) => fetchPitHistories(targets, beforeDate),
+    // 前日カットオフ分（直近20走∪120日窓）に前日の走を足した集合は、当日カットオフで
+    // 必要な行（直近20走∪当日から120日窓）を必ず含み、余分な行はcomputeFormが読まない
+    // （20走目より古く、かつ120日窓の外）ため、結果は直接取った場合と同一になる。
+    async (prev, prevDate) => {
+      const delta = await fetchPitHistoriesBetween([...prev.keys()], prevDate, beforeDate);
+      return new Map([...prev].map(([s, rows]) => [s, [...(delta.get(s) ?? []), ...rows]]));
+    }
+  );
+}
+
+// 位置区分（line_size）と頭数（field_size）はその過去レースの entries/results から数える
+const PIT_ROW_COLUMNS = `e.line_position AS line_position, e.line_group AS line_group,
+                   (SELECT COUNT(*) FROM entries e2
+                     WHERE e2.race_id = e.race_id AND e2.line_group = e.line_group) AS line_size`;
+
+interface PitHistoryRow {
+  snum: string;
+  kaisai_date: string;
+  finish_pos: number;
+  kimarite: string | null;
+  line_position: string | null;
+  line_group: number | null;
+  field_size: number;
+  line_size: number | null;
+}
+
+function pitRowsBySnum(snums: string[], rows: PitHistoryRow[], out = new Map<string, PitRecord[]>()) {
+  for (const s of snums) if (!out.has(s)) out.set(s, []);
+  for (const row of rows) {
     // entriesが無い走（LEFT JOINで結合できなかった走）は位置区分不明
     const hasEntry = row.line_position != null || row.line_group != null;
     out.get(row.snum)?.push({
@@ -712,6 +971,58 @@ export async function getPitHistories(snums: string[], beforeDate: string): Prom
       posCat: hasEntry ? posCatOf(row.line_position, row.line_group, row.line_size ?? 1) : null,
       kimarite: row.kimarite,
     });
+  }
+  return out;
+}
+
+async function fetchPitHistories(snums: string[], beforeDate: string): Promise<Map<string, PitRecord[]>> {
+  const out = new Map<string, PitRecord[]>();
+  const since = addDaysToDateStr(beforeDate, -PIT_WINDOW_DAYS);
+  for (const chunk of chunkStrings(snums)) {
+    const result = await getDb().execute({
+      sql: `WITH hist AS (
+              SELECT res.race_id, res.car_num, res.snum, ra.kaisai_date, res.finish_pos, res.kimarite,
+                     RANK() OVER (PARTITION BY res.snum ORDER BY ra.kaisai_date DESC) AS recency
+              FROM results res
+              JOIN races ra ON ra.id = res.race_id
+              WHERE res.snum IN (${chunk.map(() => "?").join(",")})
+                AND ra.kaisai_date < ? AND res.finish_pos IS NOT NULL
+            )
+            SELECT h.snum AS snum, h.kaisai_date AS kaisai_date, h.finish_pos AS finish_pos,
+                   h.kimarite AS kimarite,
+                   (SELECT COUNT(*) FROM results r2 WHERE r2.race_id = h.race_id) AS field_size,
+                   ${PIT_ROW_COLUMNS}
+            FROM hist h
+            LEFT JOIN entries e ON e.race_id = h.race_id AND e.car_num = h.car_num
+            WHERE h.recency <= ? OR h.kaisai_date >= ?`,
+      args: [...chunk, beforeDate, PIT_FORM_N, since],
+    });
+    pitRowsBySnum(chunk, result.rows as unknown as PitHistoryRow[], out);
+  }
+  return out;
+}
+
+/** 開催日が [fromDate, beforeDate) の出走成績（窓の絞り込みなし。前日からの差分取得用）。 */
+async function fetchPitHistoriesBetween(
+  snums: string[],
+  fromDate: string,
+  beforeDate: string
+): Promise<Map<string, PitRecord[]>> {
+  const out = new Map<string, PitRecord[]>();
+  for (const chunk of chunkStrings(snums)) {
+    const result = await getDb().execute({
+      sql: `SELECT res.snum AS snum, ra.kaisai_date AS kaisai_date, res.finish_pos AS finish_pos,
+                   res.kimarite AS kimarite,
+                   (SELECT COUNT(*) FROM results r2 WHERE r2.race_id = res.race_id) AS field_size,
+                   ${PIT_ROW_COLUMNS}
+            FROM results res
+            JOIN races ra ON ra.id = res.race_id
+            LEFT JOIN entries e ON e.race_id = res.race_id AND e.car_num = res.car_num
+            WHERE res.snum IN (${chunk.map(() => "?").join(",")})
+              AND ra.kaisai_date >= ? AND ra.kaisai_date < ? AND res.finish_pos IS NOT NULL`,
+      args: [...chunk, fromDate, beforeDate],
+    });
+    pitRowsBySnum(chunk, result.rows as unknown as PitHistoryRow[], out);
   }
   return out;
 }
@@ -758,31 +1069,84 @@ export async function savePrediction(
   scored: ScoredEntry[],
   honmeiFormation?: string[]
 ): Promise<void> {
-  const db = getDb();
-  const sql = `INSERT INTO predictions (race_id, car_num, snum, mark, total_score,
-                                         line_score, kyakushitsu_score, stats_score, formation)
-               VALUES (?,?,?,?,?,?,?,?,?)
-               ON CONFLICT(race_id, car_num) DO UPDATE SET
-                 mark=excluded.mark, total_score=excluded.total_score,
-                 line_score=excluded.line_score, kyakushitsu_score=excluded.kyakushitsu_score,
-                 stats_score=excluded.stats_score, formation=excluded.formation,
-                 predicted_at=datetime('now')`;
-  await db.batch(
-    scored.map((s, i) => ({
-      sql,
-      args: [
-        raceId,
-        s.entry.car_num,
-        s.entry.snum,
-        s.mark,
-        s.totalScore,
-        s.lineScore.score,
-        s.kyakushitsuScore.score,
-        s.statsScore.score,
-        i === 0 && honmeiFormation ? JSON.stringify(honmeiFormation) : null,
-      ],
-    }))
+  await savePredictions([{ raceId, scored, honmeiFormation }]);
+}
+
+/**
+ * 複数レース分の予想スナップショットをまとめて保存する（savePredictionの複数レース版）。
+ * 1行1文のdb.batchだとPostgresではBEGIN/COMMIT込みで行数+2回の往復になり、
+ * daily-summaryでは約500レース×11往復を順番に待つだけで数分かかっていたため、
+ * 複数行VALUESの1文にまとめる。
+ */
+export async function savePredictions(
+  items: { raceId: number; scored: ScoredEntry[]; honmeiFormation?: string[] }[]
+): Promise<void> {
+  const rows = items.flatMap(({ raceId, scored, honmeiFormation }) =>
+    scored.map((s, i) => [
+      raceId,
+      s.entry.car_num,
+      s.entry.snum,
+      s.mark,
+      s.totalScore,
+      s.lineScore.score,
+      s.kyakushitsuScore.score,
+      s.statsScore.score,
+      i === 0 && honmeiFormation ? JSON.stringify(honmeiFormation) : null,
+    ])
   );
+  await upsertMany(
+    `INSERT INTO predictions (race_id, car_num, snum, mark, total_score,
+                              line_score, kyakushitsu_score, stats_score, formation) VALUES`,
+    "(?,?,?,?,?,?,?,?,?)",
+    `ON CONFLICT(race_id, car_num) DO UPDATE SET
+       mark=excluded.mark, total_score=excluded.total_score,
+       line_score=excluded.line_score, kyakushitsu_score=excluded.kyakushitsu_score,
+       stats_score=excluded.stats_score, formation=excluded.formation,
+       predicted_at=datetime('now')`,
+    rows
+  );
+}
+
+/**
+ * INSERT ... VALUES (...),(...) ON CONFLICT ... を行のチャンクごとに1文にまとめて実行する。
+ * 全チャンクを1トランザクション（db.batch）で流すので、従来の1行1文のbatchと同じく
+ * 途中で失敗したら全部ロールバックされる。同じ衝突キーの行を1文に2回含めると
+ * Postgresではエラーになる（ON CONFLICT DO UPDATE command cannot affect row a second time）
+ * ため、呼び出し側でキーを一意にしておくこと。
+ */
+async function upsertMany(
+  insertPrefix: string,
+  rowPlaceholder: string,
+  conflictClause: string,
+  rows: unknown[][],
+  chunkSize = 300
+): Promise<void> {
+  if (rows.length === 0) return;
+  const statements: DbStatement[] = [];
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    statements.push({
+      sql: `${insertPrefix} ${chunk.map(() => rowPlaceholder).join(",")} ${conflictClause}`,
+      args: chunk.flat(),
+    });
+  }
+  await getDb().batch(statements);
+}
+
+/**
+ * 指定日のレースのうち、予想スナップショット（predictions）がまだ1行も無いもの。
+ * daily-summaryが「既に保存済みのレースを毎朝7日分も予想し直して上書きする」のを
+ * やめるために使う（発走前の予想を固定して残すというpredictionsの趣旨にも合う）。
+ */
+export async function getRacesWithoutPrediction(kaisaiDate: string): Promise<RaceRow[]> {
+  const result = await getDb().execute({
+    sql: `SELECT * FROM races ra
+          WHERE ra.kaisai_date = ?
+            AND NOT EXISTS (SELECT 1 FROM predictions p WHERE p.race_id = ra.id)
+          ORDER BY ra.keirinjo_name ASC, ra.race_no ASC`,
+    args: [kaisaiDate],
+  });
+  return result.rows as unknown as RaceRow[];
 }
 
 export async function getPredictionsForRace(raceId: number): Promise<PredictionRow[]> {
@@ -1062,6 +1426,36 @@ export async function getScenarioRankStats(): Promise<Record<number, ScenarioRan
  * レース」用のキャッシュとして使う。predictRaceの都度計算は重い（1レースあたり
  * DB約20回）ため、事前計算しておきホーム画面では読むだけにする。
  */
+/**
+ * 今回計算し直したレース（recomputedRaceIds）のうち、もう各ピックの条件を満たさなく
+ * なったレースの行を消す。保存はupsertだけだったため、朝は厳選だったレースが
+ * 並び予想の更新でmargin16以上・ability-gap除外等になっても朝の行が残り、厳選として
+ * 表示され続けていた（バリカタと候補漏れの両方に載ることもあった）。
+ * 発走済みで計算し直さなかったレースは対象外なので、発走前の最終スナップショットは残る。
+ */
+export async function deleteStalePicks(
+  recomputedRaceIds: number[],
+  keep: { daily: number[]; barikata: number[]; nearMiss: number[]; nakaana: number[] }
+): Promise<void> {
+  if (recomputedRaceIds.length === 0) return;
+  const tables: [string, number[]][] = [
+    ["daily_picks", keep.daily],
+    ["barikata_picks", keep.barikata],
+    ["barikata_near_misses", keep.nearMiss],
+    ["nakaana_picks", keep.nakaana],
+  ];
+  for (const [table, keepIds] of tables) {
+    const keepSet = new Set(keepIds);
+    const stale = recomputedRaceIds.filter((id) => !keepSet.has(id));
+    for (const chunk of chunkIds(stale)) {
+      await getDb().execute({
+        sql: `DELETE FROM ${table} WHERE race_id IN (${chunk.map(() => "?").join(",")})`,
+        args: chunk,
+      });
+    }
+  }
+}
+
 export async function saveDailyPicks(
   picks: {
     raceId: number;
@@ -1077,30 +1471,26 @@ export async function saveDailyPicks(
   }[]
 ): Promise<void> {
   if (picks.length === 0) return;
-  const db = getDb();
-  const sql = `INSERT INTO daily_picks (race_id, kaisai_date, jocd, keirinjo_name, race_no,
-                                         start_time, margin, honmei_car_num, honmei_name, formation, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'))
-               ON CONFLICT(race_id) DO UPDATE SET
+  await upsertMany(
+    `INSERT INTO daily_picks (race_id, kaisai_date, jocd, keirinjo_name, race_no,
+                                         start_time, margin, honmei_car_num, honmei_name, formation, updated_at) VALUES`,
+    "(?,?,?,?,?,?,?,?,?,?,datetime('now'))",
+    `ON CONFLICT(race_id) DO UPDATE SET
                  margin=excluded.margin, honmei_car_num=excluded.honmei_car_num,
                  honmei_name=excluded.honmei_name, start_time=excluded.start_time,
-                 formation=excluded.formation, updated_at=datetime('now')`;
-  await db.batch(
-    picks.map((p) => ({
-      sql,
-      args: [
-        p.raceId,
-        p.kaisaiDate,
-        p.jocd,
-        p.keirinjoName,
-        p.raceNo,
-        p.startTime,
-        p.margin,
-        p.honmeiCarNum,
-        p.honmeiName,
-        JSON.stringify(p.formation),
-      ],
-    }))
+                 formation=excluded.formation, updated_at=datetime('now')`,
+    picks.map((p) => [
+      p.raceId,
+      p.kaisaiDate,
+      p.jocd,
+      p.keirinjoName,
+      p.raceNo,
+      p.startTime,
+      p.margin,
+      p.honmeiCarNum,
+      p.honmeiName,
+      JSON.stringify(p.formation),
+    ])
   );
 }
 
@@ -1265,30 +1655,26 @@ export async function saveBarikataPicks(
   }[]
 ): Promise<void> {
   if (picks.length === 0) return;
-  const db = getDb();
-  const sql = `INSERT INTO barikata_picks (race_id, kaisai_date, jocd, keirinjo_name, race_no,
-                                            start_time, margin, combo, honmei_car_num, honmei_name, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'))
-               ON CONFLICT(race_id) DO UPDATE SET
+  await upsertMany(
+    `INSERT INTO barikata_picks (race_id, kaisai_date, jocd, keirinjo_name, race_no,
+                                            start_time, margin, combo, honmei_car_num, honmei_name, updated_at) VALUES`,
+    "(?,?,?,?,?,?,?,?,?,?,datetime('now'))",
+    `ON CONFLICT(race_id) DO UPDATE SET
                  margin=excluded.margin, combo=excluded.combo,
                  honmei_car_num=excluded.honmei_car_num, honmei_name=excluded.honmei_name,
-                 start_time=excluded.start_time, updated_at=datetime('now')`;
-  await db.batch(
-    picks.map((p) => ({
-      sql,
-      args: [
-        p.raceId,
-        p.kaisaiDate,
-        p.jocd,
-        p.keirinjoName,
-        p.raceNo,
-        p.startTime,
-        p.margin,
-        p.combo,
-        p.honmeiCarNum,
-        p.honmeiName,
-      ],
-    }))
+                 start_time=excluded.start_time, updated_at=datetime('now')`,
+    picks.map((p) => [
+      p.raceId,
+      p.kaisaiDate,
+      p.jocd,
+      p.keirinjoName,
+      p.raceNo,
+      p.startTime,
+      p.margin,
+      p.combo,
+      p.honmeiCarNum,
+      p.honmeiName,
+    ])
   );
 }
 
@@ -1328,30 +1714,26 @@ export async function saveBarikataNearMisses(
   }[]
 ): Promise<void> {
   if (picks.length === 0) return;
-  const db = getDb();
-  const sql = `INSERT INTO barikata_near_misses (race_id, kaisai_date, jocd, keirinjo_name, race_no,
-                                                  start_time, margin, combo, honmei_car_num, honmei_name, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'))
-               ON CONFLICT(race_id) DO UPDATE SET
+  await upsertMany(
+    `INSERT INTO barikata_near_misses (race_id, kaisai_date, jocd, keirinjo_name, race_no,
+                                                  start_time, margin, combo, honmei_car_num, honmei_name, updated_at) VALUES`,
+    "(?,?,?,?,?,?,?,?,?,?,datetime('now'))",
+    `ON CONFLICT(race_id) DO UPDATE SET
                  margin=excluded.margin, combo=excluded.combo,
                  honmei_car_num=excluded.honmei_car_num, honmei_name=excluded.honmei_name,
-                 start_time=excluded.start_time, updated_at=datetime('now')`;
-  await db.batch(
-    picks.map((p) => ({
-      sql,
-      args: [
-        p.raceId,
-        p.kaisaiDate,
-        p.jocd,
-        p.keirinjoName,
-        p.raceNo,
-        p.startTime,
-        p.margin,
-        p.combo,
-        p.honmeiCarNum,
-        p.honmeiName,
-      ],
-    }))
+                 start_time=excluded.start_time, updated_at=datetime('now')`,
+    picks.map((p) => [
+      p.raceId,
+      p.kaisaiDate,
+      p.jocd,
+      p.keirinjoName,
+      p.raceNo,
+      p.startTime,
+      p.margin,
+      p.combo,
+      p.honmeiCarNum,
+      p.honmeiName,
+    ])
   );
 }
 
@@ -1474,34 +1856,30 @@ export async function saveNakaanaPicks(
   }[]
 ): Promise<void> {
   if (picks.length === 0) return;
-  const db = getDb();
-  const sql = `INSERT INTO nakaana_picks (race_id, kaisai_date, jocd, keirinjo_name, race_no, start_time,
+  await upsertMany(
+    `INSERT INTO nakaana_picks (race_id, kaisai_date, jocd, keirinjo_name, race_no, start_time,
                                           margin, honmei_car_num, honmei_name, taikou_car_num, taikou_name,
-                                          formation, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
-               ON CONFLICT(race_id) DO UPDATE SET
+                                          formation, updated_at) VALUES`,
+    "(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))",
+    `ON CONFLICT(race_id) DO UPDATE SET
                  margin=excluded.margin, honmei_car_num=excluded.honmei_car_num,
                  honmei_name=excluded.honmei_name, taikou_car_num=excluded.taikou_car_num,
                  taikou_name=excluded.taikou_name, start_time=excluded.start_time,
-                 formation=excluded.formation, updated_at=datetime('now')`;
-  await db.batch(
-    picks.map((p) => ({
-      sql,
-      args: [
-        p.raceId,
-        p.kaisaiDate,
-        p.jocd,
-        p.keirinjoName,
-        p.raceNo,
-        p.startTime,
-        p.margin,
-        p.honmeiCarNum,
-        p.honmeiName,
-        p.taikouCarNum,
-        p.taikouName,
-        JSON.stringify(p.formation),
-      ],
-    }))
+                 formation=excluded.formation, updated_at=datetime('now')`,
+    picks.map((p) => [
+      p.raceId,
+      p.kaisaiDate,
+      p.jocd,
+      p.keirinjoName,
+      p.raceNo,
+      p.startTime,
+      p.margin,
+      p.honmeiCarNum,
+      p.honmeiName,
+      p.taikouCarNum,
+      p.taikouName,
+      JSON.stringify(p.formation),
+    ])
   );
 }
 

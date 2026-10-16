@@ -926,6 +926,8 @@ function calculateShukaiAdjustment(entry: EntryWithRacer, shukai: number | null 
  */
 const SOLO_STRONG_BONUS = 0;
 const SOLO_WEAK_PENALTY = 0;
+/** 単騎個人成績の加減点が有効か。無効な間はlib/predict.tsが重い集計クエリを省く。 */
+export const SOLO_ADJUSTMENT_ENABLED: boolean = SOLO_STRONG_BONUS !== 0 || SOLO_WEAK_PENALTY !== 0;
 export const SOLO_MIN_RACES = 5;
 
 /**
@@ -994,6 +996,8 @@ const GIRLS_AGARI_STRONG_CUT = 0.6; // 診断のCUTS[1]に合わせる（agariRa
 const GIRLS_AGARI_WEAK_CUT = 0.4; // 診断のCUTS[0]に合わせる
 const GIRLS_AGARI_BONUS = 0;
 const GIRLS_AGARI_PENALTY = 0;
+/** ガールズ上がり能力の加減点が有効か。無効な間はlib/predict.tsが重い集計クエリを省く。 */
+export const GIRLS_AGARI_ADJUSTMENT_ENABLED: boolean = GIRLS_AGARI_BONUS !== 0 || GIRLS_AGARI_PENALTY !== 0;
 
 function calculateGirlsAgariAdjustment(
   entry: EntryWithRacer,
