@@ -1,21 +1,19 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { predictRace } from "../../../lib/predict";
+import { cachedPredictRace } from "../../../lib/cache";
 import {
-  getPredictionsForRace,
-  getRacesForEvent,
-  getRacesByDate,
-  getResultsForRaces,
-  getResultsForRace,
-  getOddsForRace,
-  resolveActualCombo,
-  isRaceFinished,
-  getSoloWinRate,
-  getScenarioStats,
-  getScenarioRankStats,
-  getVenueKimariteRank,
-  getLinePartnershipHistory,
-} from "../../../lib/repository";
+  getRaceRow,
+  isPredictionRecorded,
+  getRaceOutcome,
+  getScenarioStatsBundle,
+  getEventRaceTabs,
+  getVenueOptionsForDate,
+  getVenueKimariteRankCached,
+  getLinePartnerships,
+  getSoloWinRates,
+} from "../../../lib/queries/race";
+import { resolveActualCombo, isRaceFinished } from "../../../lib/repository";
 import { recordPredictionAction } from "../../../lib/actions";
 import {
   isSoloInRace,
@@ -23,16 +21,23 @@ import {
   SOLO_MIN_RACES,
   STANDING_COUNT_HIGH_THRESHOLD,
   formatFormationNotation,
-  pickNearestRace,
 } from "../../../lib/scoring";
-import { todayJstStr, formatDateStr } from "../../../lib/date";
+import { formatDateStr } from "../../../lib/date";
+import type { LinePartnershipOccurrence, ScoredEntry, SoloWinRate } from "../../../lib/types";
 import { CarNumberBadge } from "../../../components/CarNumberBadge";
 import { MarkBadge } from "../../../components/MarkBadge";
 import { RecentFormBadge } from "../../../components/RecentFormBadge";
 import { ScoreBar } from "../../../components/ScoreBar";
 import { RaceSwitcher } from "../../../components/RaceSwitcher";
-import { VenueSwitcher, type VenueOption } from "../../../components/VenueSwitcher";
+import { VenueSwitcher } from "../../../components/VenueSwitcher";
 import { buildWinticketResultUrl } from "../../../lib/winticket";
+
+// 初回表示時に生成してCDNにキャッシュする（ISR）。中身はlib/queries/race.tsの
+// タグ付きキャッシュだけから組み立てるので、同期ジョブ・記録ボタンの失効で作り直される。
+// 現在時刻に依存する表示（開催場切り替えの飛び先）はクライアント側で決める。
+export function generateStaticParams(): { id: string }[] {
+  return [];
+}
 
 /** 配列から2要素の組み合わせを全て作る（3人ラインなら3ペア）。 */
 function pairCombinations<T>(arr: T[]): [T, T][] {
@@ -73,58 +78,40 @@ export default async function RaceDetailPage({
 }) {
   const { id } = await params;
   const raceId = Number(id);
-  const prediction = await predictRace(raceId);
-  if (!prediction) notFound();
+  if (!Number.isSafeInteger(raceId)) notFound();
+
+  // 互いに依存しない読み取りは予想計算（cachedPredictRace、キャッシュが無いと数往復かかる）と
+  // 並行して投げる。開催・開催日単位の読み取りはレース行が分かった時点で始める。
+  const [prediction, alreadyRecorded, outcome, scenarioStatsBundle, raceContext] = await Promise.all([
+    cachedPredictRace(raceId),
+    isPredictionRecorded(raceId),
+    getRaceOutcome(raceId),
+    getScenarioStatsBundle(),
+    getRaceRow(raceId).then((r) =>
+      r
+        ? Promise.all([
+            getEventRaceTabs(r.kaisai_date, r.jocd),
+            getVenueOptionsForDate(r.kaisai_date),
+            getVenueKimariteRankCached(r.jocd),
+          ])
+        : null
+    ),
+  ]);
+  if (!prediction || !raceContext) notFound();
+  const [eventRaces, venueOptions, kimariteRank] = raceContext;
 
   const { race, bankInfo, venueKimarite, scored, scenarios, boxSuggestion, winSuggestion } = prediction;
   const top4 = scored.slice(0, 4);
-  const alreadyRecorded = (await getPredictionsForRace(raceId)).length > 0;
   const recordPredictionForRace = recordPredictionAction.bind(null, raceId);
-  const eventRaces = await getRacesForEvent(race.kaisai_date, race.jocd);
-  const eventResults = await getResultsForRaces(eventRaces.map((r) => r.id));
-  const finishedRaceIds = new Set(
-    eventRaces.filter((r) => isRaceFinished(eventResults.get(r.id) ?? [])).map((r) => r.id)
-  );
-  const scenarioStats = await getScenarioStats();
+  const scenarioStats = scenarioStatsBundle.byLabel;
   // 本命以外のシナリオが実際に当たるかどうかは、シナリオ全体の累計実績（本命の
   // 母数が一番大きく常に最強に見える）ではなく、そのレースでの有力度＝likelyRank
   // 別の実績で見せる（scripts/diagnose-scenario-condition.tsで検証）。
-  const scenarioRankStats = await getScenarioRankStats();
-  const kimariteRank = await getVenueKimariteRank(race.jocd);
-
-  // 他の開催場へトップに戻らず移動できるドロップダウン用。同日の全レースを
-  // 開催場ごとにまとめ、各開催場の「今行くならこのレース」1件を選択肢にする
-  // （ホーム画面の開催場カードと同じpickNearestRaceのロジック）。
-  const todayStr = todayJstStr();
-  const racesOnSameDate = await getRacesByDate(race.kaisai_date);
-  const venueGroups = new Map<string, typeof racesOnSameDate>();
-  for (const r of racesOnSameDate) {
-    if (!venueGroups.has(r.jocd)) venueGroups.set(r.jocd, []);
-    venueGroups.get(r.jocd)!.push(r);
-  }
-  const venueOptions: VenueOption[] = [...venueGroups.entries()]
-    .map(([jocd, groupRaces]) => ({
-      jocd,
-      keirinjoName: groupRaces[0].keirinjo_name,
-      startTime: groupRaces[0].start_time,
-      targetRaceId: pickNearestRace(groupRaces, race.kaisai_date, todayStr).id,
-    }))
-    .sort((a, b) => (a.startTime ?? "").localeCompare(b.startTime ?? ""))
-    .map(({ jocd, keirinjoName, targetRaceId }) => ({ jocd, keirinjoName, targetRaceId }));
-
-  // 既に採用済みのスコア加点（単騎個人成績・ライン内格差）は現状totalScoreに
-  // 混ざったまま内訳が見えないため、実数値を表示用に別途計算する
-  // （lib/scoring.tsの計算ロジック自体は変更しない、表示のみの追加）。
-  const allEntries = scored.map((s) => s.entry);
-  const soloWinRates = await Promise.all(
-    scored.map((s) =>
-      isSoloInRace(s.entry, allEntries) ? getSoloWinRate(s.entry.snum, race.kaisai_date) : Promise.resolve(null)
-    )
-  );
+  const scenarioRankStats = scenarioStatsBundle.byRank;
 
   // レースが終わっていれば実際の着順・的中判定を表示する。actualComboの解決は
   // lib/accuracy.tsのcomputeRaceSummary・scripts/backtest.tsと同じロジック。
-  const [results, odds] = await Promise.all([getResultsForRace(raceId), getOddsForRace(raceId)]);
+  const { results, sanrentanOdds: odds } = outcome;
   const nameByCarNum = new Map(scored.map((s) => [s.entry.car_num, s.entry.name]));
   const snumByCarNum = new Map(scored.map((s) => [s.entry.car_num, s.entry.snum]));
 
@@ -149,13 +136,24 @@ export default async function RaceDetailPage({
         (LINE_POSITION_ORDER[b.entry.line_position ?? ""] ?? 9)
     )
   );
-  const linePartnerships = await Promise.all(
-    lines.map((members) =>
-      members.length >= 2
-        ? getLinePartnershipHistory(members.map((m) => m.entry.snum), race.kaisai_date)
-        : Promise.resolve([])
-    )
+
+  // 対戦成績と単騎勝率は補足情報なので、本体を先に表示して後から流し込む（Suspense）。
+  // 既に採用済みのスコア加点（単騎個人成績・ライン内格差）は現状totalScoreに
+  // 混ざったまま内訳が見えないため、実数値を表示用に別途計算する
+  // （lib/scoring.tsの計算ロジック自体は変更しない、表示のみの追加）。
+  const allEntries = scored.map((s) => s.entry);
+  const linePartnershipsPromise = getLinePartnerships(
+    lines.map((members) => members.map((m) => m.entry.snum)),
+    race.kaisai_date
   );
+  const soloWinRatesPromise = getSoloWinRates(
+    scored.filter((s) => isSoloInRace(s.entry, allEntries)).map((s) => s.entry.snum),
+    race.kaisai_date
+  );
+  // 失敗はSuspense内のawaitで表に出る。それまでの間に未処理のrejectionとして扱われないようにする。
+  linePartnershipsPromise.catch(() => {});
+  soloWinRatesPromise.catch(() => {});
+
   const finishOrder = results
     .filter((r) => r.finish_pos != null)
     .sort((a, b) => (a.finish_pos ?? 0) - (b.finish_pos ?? 0));
@@ -200,10 +198,10 @@ export default async function RaceDetailPage({
               {race.start_time ? ` 発走${race.start_time}` : ""}
             </span>
           </div>
-          <VenueSwitcher venues={venueOptions} currentJocd={race.jocd} />
+          <VenueSwitcher venues={venueOptions} currentJocd={race.jocd} viewDate={race.kaisai_date} />
         </div>
 
-        <RaceSwitcher races={eventRaces} currentRaceId={race.id} finishedRaceIds={finishedRaceIds} />
+        <RaceSwitcher races={eventRaces} currentRaceId={race.id} />
 
         <div className="flex items-center justify-between mt-3 mb-4 gap-2">
           {alreadyRecorded ? (
@@ -283,171 +281,15 @@ export default async function RaceDetailPage({
         </div>
 
         {lines.length > 0 && (
-          <section className="rounded-[20px] bg-ink-3 border border-white/[.06] p-4 flex flex-col gap-3 mb-4">
-            <span className="text-[13px] font-bold text-mist-0">ライン構成</span>
-            {lines.map((members, lineIdx) => {
-              const nameBySnum = new Map(members.map((s) => [s.entry.snum, s.entry.name]));
-              const occurrences = linePartnerships[lineIdx];
-              return (
-                <div key={members[0].entry.line_group} className="flex flex-col gap-1.5">
-                  <div className="flex items-center gap-1.5">
-                    {members.map((s) => (
-                      <CarNumberBadge key={s.entry.car_num} carNum={s.entry.car_num} size="sm" />
-                    ))}
-                    <span className="text-xs text-mist-3 ml-1 truncate">
-                      {members.map((s) => s.entry.name).join("・")}
-                    </span>
-                  </div>
-                  {pairCombinations(members.map((s) => s.entry.snum)).map(([snumA, snumB]) => {
-                    const relevant = occurrences.filter(
-                      (occ) =>
-                        occ.members.some((m) => m.snum === snumA) &&
-                        occ.members.some((m) => m.snum === snumB)
-                    );
-                    if (relevant.length === 0) return null;
-                    let winsA = 0;
-                    let winsB = 0;
-                    for (const occ of relevant) {
-                      const a = occ.members.find((m) => m.snum === snumA);
-                      const b = occ.members.find((m) => m.snum === snumB);
-                      if (a?.finishPos == null || b?.finishPos == null) continue;
-                      if (a.finishPos < b.finishPos) winsA++;
-                      else if (b.finishPos < a.finishPos) winsB++;
-                    }
-                    const nameA = nameBySnum.get(snumA) ?? snumA;
-                    const nameB = nameBySnum.get(snumB) ?? snumB;
-                    return (
-                      <details key={`${snumA}-${snumB}`} className="group">
-                        <summary className="text-[11px] text-mist-2 cursor-pointer select-none pl-1.5 border-l-2 border-white/[.08] marker:content-none [&::-webkit-details-marker]:hidden">
-                          <span className="inline-block w-3 text-center group-open:hidden">▶</span>
-                          <span className="hidden w-3 text-center group-open:inline-block">▼</span>
-                          {" "}対戦成績 {nameA} {winsA}-{winsB} {nameB}（同ライン{relevant.length}回）
-                        </summary>
-                        <ul className="flex flex-col gap-0.5 pl-1.5 border-l-2 border-white/[.08] ml-1.5 mt-0.5">
-                          {relevant.slice(0, 8).map((occ) => {
-                            const url = buildWinticketResultUrl({ jocd: occ.jocd, encp: occ.encp });
-                            const memberSummary = [...occ.members]
-                              .sort((a, b) => (a.finishPos ?? 99) - (b.finishPos ?? 99))
-                              .map((m) => `${nameBySnum.get(m.snum) ?? m.snum}${m.finishPos != null ? m.finishPos + "着" : ""}`)
-                              .join(" ");
-                            return (
-                              <li key={occ.raceId} className="text-[11px] text-mist-2">
-                                {formatDateStr(occ.kaisaiDate)} {occ.keirinjoName}
-                                {occ.raceNo}R 同ライン: {memberSummary}
-                                {url && (
-                                  <>
-                                    {" "}
-                                    <a href={url} target="_blank" rel="noopener noreferrer" className="underline text-mint-strong">
-                                      WINTICKET
-                                    </a>
-                                  </>
-                                )}
-                              </li>
-                            );
-                          })}
-                          {relevant.length > 8 && (
-                            <li className="text-[11px] text-mist-2">ほか{relevant.length - 8}件（直近8件のみ表示）</li>
-                          )}
-                        </ul>
-                      </details>
-                    );
-                  })}
-                </div>
-              );
-            })}
-            {soloEntries.length > 0 && (
-              <div className="flex items-center gap-1.5 pt-1 border-t border-white/[.06]">
-                <span className="text-xs text-mist-3 shrink-0">単騎</span>
-                {soloEntries.map((s) => (
-                  <CarNumberBadge key={s.entry.car_num} carNum={s.entry.car_num} size="sm" />
-                ))}
-              </div>
-            )}
-          </section>
+          <Suspense fallback={<LineSection lines={lines} soloEntries={soloEntries} partnerships={null} />}>
+            <LineSectionWithHistory lines={lines} soloEntries={soloEntries} partnershipsPromise={linePartnershipsPromise} />
+          </Suspense>
         )}
 
-        <details className="rounded-[20px] bg-ink-2 border border-white/[.06] overflow-hidden mb-4 group">
-          <summary className="px-4 py-3.5 flex items-center gap-2 cursor-pointer select-none marker:content-none [&::-webkit-details-marker]:hidden">
-            <span className="text-[13px] font-bold text-mist-2 flex-1">全{scored.length}名のスコア内訳</span>
-            <span className="text-[11px] text-mist-3 group-open:hidden">開く ⌄</span>
-            <span className="text-[11px] text-mist-3 hidden group-open:inline">閉じる ⌃</span>
-          </summary>
-          <div className="px-4 pb-4 flex flex-col gap-3">
-            {scored.map((s, i) => {
-              const soloWinRate = soloWinRates[i];
-              const senko = scored.find(
-                (x) => x.entry.line_group === s.entry.line_group && x.entry.line_position === "先頭"
-              );
-              const myClassScore = s.entry.class_rank ? CLASS_RANK_SCORES[s.entry.class_rank] : undefined;
-              const senkoClassScore = senko?.entry.class_rank ? CLASS_RANK_SCORES[senko.entry.class_rank] : undefined;
-              const lineRankLabel =
-                (s.entry.line_position === "番手" || s.entry.line_position === "3番手") &&
-                senko &&
-                senko.entry.snum !== s.entry.snum &&
-                myClassScore != null &&
-                senkoClassScore != null
-                  ? myClassScore > senkoClassScore
-                    ? "格上"
-                    : myClassScore < senkoClassScore
-                      ? "格下"
-                      : "同格"
-                  : null;
-              const isBantesu = s.entry.line_position === "番手" || s.entry.line_position === "3番手";
-              const highStanding =
-                isBantesu &&
-                s.entry.standing_count != null &&
-                s.entry.standing_count >= STANDING_COUNT_HIGH_THRESHOLD;
-              return (
-                <div key={s.entry.entry_id} className="pt-3 border-t border-white/[.06] first:border-t-0 first:pt-0">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <MarkBadge mark={s.mark} />
-                    <CarNumberBadge carNum={s.entry.car_num} />
-                    <Link href={`/racers/${s.entry.snum}`} className="font-bold flex-1 truncate text-mist-0 text-sm">
-                      {s.entry.name}
-                    </Link>
-                    <RecentFormBadge avgFinish={s.recentFormAvg} />
-                    <span className="font-mono text-lg font-bold text-mist-0">{s.totalScore.toFixed(1)}</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-mist-3 mb-1">
-                    <span>
-                      {s.entry.class_rank ?? "-"} / {s.entry.kyakushitsu ?? "-"}
-                    </span>
-                    {s.entry.line_group != null && (
-                      <span className="px-1.5 py-0.5 rounded bg-white/[.06]">
-                        ライングループ{s.entry.line_group} ・ {s.entry.line_position}
-                      </span>
-                    )}
-                  </div>
-                  {(soloWinRate || lineRankLabel || highStanding) && (
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-mist-2 mb-2">
-                      {soloWinRate && (
-                        <span>
-                          単騎勝率{soloWinRate.winRate.toFixed(1)}%(n={soloWinRate.races})
-                          {soloWinRate.races < SOLO_MIN_RACES ? "・母数少" : ""}（参考値・スコア未反映）
-                        </span>
-                      )}
-                      {lineRankLabel && (
-                        <span>
-                          先頭より{lineRankLabel}（{s.entry.class_rank} vs {senko?.entry.class_rank}）（参考値・スコア未反映）
-                        </span>
-                      )}
-                      {highStanding && (
-                        <span>
-                          好スタート実績{s.entry.standing_count}回・自分の先頭を上回る率47%台（下位は39%台、母数16,315件で実測。参考値・スコア未反映）
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex flex-col gap-1">
-                    <ScoreBar label="ライン" score={s.lineScore.score} />
-                    <ScoreBar label="脚質実力" score={s.kyakushitsuScore.score} />
-                    <ScoreBar label="データ統計" score={s.statsScore.score} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </details>
+        {/* 内訳は閉じた状態で表示されるため、取得中は見出しだけ出しておけば見た目は変わらない */}
+        <Suspense fallback={<ScoreBreakdownShell count={scored.length} />}>
+          <ScoreBreakdownWithSolo scored={scored} soloWinRatesPromise={soloWinRatesPromise} />
+        </Suspense>
 
         {raceFinished && (
           <section className="rounded-[20px] bg-ink-2 border border-white/[.06] p-4 flex flex-col gap-2 mb-4">
@@ -640,5 +482,223 @@ export default async function RaceDetailPage({
         </a>
       )}
     </main>
+  );
+}
+
+async function LineSectionWithHistory({
+  partnershipsPromise,
+  ...props
+}: {
+  lines: ScoredEntry[][];
+  soloEntries: ScoredEntry[];
+  partnershipsPromise: Promise<LinePartnershipOccurrence[][]>;
+}) {
+  return <LineSection {...props} partnerships={await partnershipsPromise} />;
+}
+
+/** ライン構成。partnerships=null の間（取得中）は対戦成績の行を出さずに並びだけ表示する。 */
+function LineSection({
+  lines,
+  soloEntries,
+  partnerships,
+}: {
+  lines: ScoredEntry[][];
+  soloEntries: ScoredEntry[];
+  partnerships: LinePartnershipOccurrence[][] | null;
+}) {
+  return (
+    <section className="rounded-[20px] bg-ink-3 border border-white/[.06] p-4 flex flex-col gap-3 mb-4">
+      <span className="text-[13px] font-bold text-mist-0">ライン構成</span>
+      {lines.map((members, lineIdx) => {
+        const nameBySnum = new Map(members.map((s) => [s.entry.snum, s.entry.name]));
+        const occurrences = partnerships?.[lineIdx] ?? [];
+        return (
+          <div key={members[0].entry.line_group} className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-1.5">
+              {members.map((s) => (
+                <CarNumberBadge key={s.entry.car_num} carNum={s.entry.car_num} size="sm" />
+              ))}
+              <span className="text-xs text-mist-3 ml-1 truncate">
+                {members.map((s) => s.entry.name).join("・")}
+              </span>
+            </div>
+            {pairCombinations(members.map((s) => s.entry.snum)).map(([snumA, snumB]) => {
+              const relevant = occurrences.filter(
+                (occ) =>
+                  occ.members.some((m) => m.snum === snumA) &&
+                  occ.members.some((m) => m.snum === snumB)
+              );
+              if (relevant.length === 0) return null;
+              let winsA = 0;
+              let winsB = 0;
+              for (const occ of relevant) {
+                const a = occ.members.find((m) => m.snum === snumA);
+                const b = occ.members.find((m) => m.snum === snumB);
+                if (a?.finishPos == null || b?.finishPos == null) continue;
+                if (a.finishPos < b.finishPos) winsA++;
+                else if (b.finishPos < a.finishPos) winsB++;
+              }
+              const nameA = nameBySnum.get(snumA) ?? snumA;
+              const nameB = nameBySnum.get(snumB) ?? snumB;
+              return (
+                <details key={`${snumA}-${snumB}`} className="group">
+                  <summary className="text-[11px] text-mist-2 cursor-pointer select-none pl-1.5 border-l-2 border-white/[.08] marker:content-none [&::-webkit-details-marker]:hidden">
+                    <span className="inline-block w-3 text-center group-open:hidden">▶</span>
+                    <span className="hidden w-3 text-center group-open:inline-block">▼</span>
+                    {" "}対戦成績 {nameA} {winsA}-{winsB} {nameB}（同ライン{relevant.length}回）
+                  </summary>
+                  <ul className="flex flex-col gap-0.5 pl-1.5 border-l-2 border-white/[.08] ml-1.5 mt-0.5">
+                    {relevant.slice(0, 8).map((occ) => {
+                      const url = buildWinticketResultUrl({ jocd: occ.jocd, encp: occ.encp });
+                      const memberSummary = [...occ.members]
+                        .sort((a, b) => (a.finishPos ?? 99) - (b.finishPos ?? 99))
+                        .map((m) => `${nameBySnum.get(m.snum) ?? m.snum}${m.finishPos != null ? m.finishPos + "着" : ""}`)
+                        .join(" ");
+                      return (
+                        <li key={occ.raceId} className="text-[11px] text-mist-2">
+                          {formatDateStr(occ.kaisaiDate)} {occ.keirinjoName}
+                          {occ.raceNo}R 同ライン: {memberSummary}
+                          {url && (
+                            <>
+                              {" "}
+                              <a href={url} target="_blank" rel="noopener noreferrer" className="underline text-mint-strong">
+                                WINTICKET
+                              </a>
+                            </>
+                          )}
+                        </li>
+                      );
+                    })}
+                    {relevant.length > 8 && (
+                      <li className="text-[11px] text-mist-2">ほか{relevant.length - 8}件（直近8件のみ表示）</li>
+                    )}
+                  </ul>
+                </details>
+              );
+            })}
+          </div>
+        );
+      })}
+      {soloEntries.length > 0 && (
+        <div className="flex items-center gap-1.5 pt-1 border-t border-white/[.06]">
+          <span className="text-xs text-mist-3 shrink-0">単騎</span>
+          {soloEntries.map((s) => (
+            <CarNumberBadge key={s.entry.car_num} carNum={s.entry.car_num} size="sm" />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+async function ScoreBreakdownWithSolo({
+  scored,
+  soloWinRatesPromise,
+}: {
+  scored: ScoredEntry[];
+  soloWinRatesPromise: Promise<Record<string, SoloWinRate | null>>;
+}) {
+  return <ScoreBreakdown scored={scored} soloWinRates={await soloWinRatesPromise} />;
+}
+
+function ScoreBreakdownShell({ count, children }: { count: number; children?: React.ReactNode }) {
+  return (
+    <details className="rounded-[20px] bg-ink-2 border border-white/[.06] overflow-hidden mb-4 group">
+      <summary className="px-4 py-3.5 flex items-center gap-2 cursor-pointer select-none marker:content-none [&::-webkit-details-marker]:hidden">
+        <span className="text-[13px] font-bold text-mist-2 flex-1">全{count}名のスコア内訳</span>
+        <span className="text-[11px] text-mist-3 group-open:hidden">開く ⌄</span>
+        <span className="text-[11px] text-mist-3 hidden group-open:inline">閉じる ⌃</span>
+      </summary>
+      {children}
+    </details>
+  );
+}
+
+/** 全選手のスコア内訳（初期状態は閉じている）。 */
+function ScoreBreakdown({
+  scored,
+  soloWinRates,
+}: {
+  scored: ScoredEntry[];
+  soloWinRates: Record<string, SoloWinRate | null>;
+}) {
+  return (
+    <ScoreBreakdownShell count={scored.length}>
+      <div className="px-4 pb-4 flex flex-col gap-3">
+        {scored.map((s) => {
+          const soloWinRate = soloWinRates[s.entry.snum] ?? null;
+          const senko = scored.find(
+            (x) => x.entry.line_group === s.entry.line_group && x.entry.line_position === "先頭"
+          );
+          const myClassScore = s.entry.class_rank ? CLASS_RANK_SCORES[s.entry.class_rank] : undefined;
+          const senkoClassScore = senko?.entry.class_rank ? CLASS_RANK_SCORES[senko.entry.class_rank] : undefined;
+          const lineRankLabel =
+            (s.entry.line_position === "番手" || s.entry.line_position === "3番手") &&
+            senko &&
+            senko.entry.snum !== s.entry.snum &&
+            myClassScore != null &&
+            senkoClassScore != null
+              ? myClassScore > senkoClassScore
+                ? "格上"
+                : myClassScore < senkoClassScore
+                  ? "格下"
+                  : "同格"
+              : null;
+          const isBantesu = s.entry.line_position === "番手" || s.entry.line_position === "3番手";
+          const highStanding =
+            isBantesu &&
+            s.entry.standing_count != null &&
+            s.entry.standing_count >= STANDING_COUNT_HIGH_THRESHOLD;
+          return (
+            <div key={s.entry.entry_id} className="pt-3 border-t border-white/[.06] first:border-t-0 first:pt-0">
+              <div className="flex items-center gap-2 mb-1.5">
+                <MarkBadge mark={s.mark} />
+                <CarNumberBadge carNum={s.entry.car_num} />
+                <Link href={`/racers/${s.entry.snum}`} className="font-bold flex-1 truncate text-mist-0 text-sm">
+                  {s.entry.name}
+                </Link>
+                <RecentFormBadge avgFinish={s.recentFormAvg} />
+                <span className="font-mono text-lg font-bold text-mist-0">{s.totalScore.toFixed(1)}</span>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-mist-3 mb-1">
+                <span>
+                  {s.entry.class_rank ?? "-"} / {s.entry.kyakushitsu ?? "-"}
+                </span>
+                {s.entry.line_group != null && (
+                  <span className="px-1.5 py-0.5 rounded bg-white/[.06]">
+                    ライングループ{s.entry.line_group} ・ {s.entry.line_position}
+                  </span>
+                )}
+              </div>
+              {(soloWinRate || lineRankLabel || highStanding) && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-mist-2 mb-2">
+                  {soloWinRate && (
+                    <span>
+                      単騎勝率{soloWinRate.winRate.toFixed(1)}%(n={soloWinRate.races})
+                      {soloWinRate.races < SOLO_MIN_RACES ? "・母数少" : ""}（参考値・スコア未反映）
+                    </span>
+                  )}
+                  {lineRankLabel && (
+                    <span>
+                      先頭より{lineRankLabel}（{s.entry.class_rank} vs {senko?.entry.class_rank}）（参考値・スコア未反映）
+                    </span>
+                  )}
+                  {highStanding && (
+                    <span>
+                      好スタート実績{s.entry.standing_count}回・自分の先頭を上回る率47%台（下位は39%台、母数16,315件で実測。参考値・スコア未反映）
+                    </span>
+                  )}
+                </div>
+              )}
+              <div className="flex flex-col gap-1">
+                <ScoreBar label="ライン" score={s.lineScore.score} />
+                <ScoreBar label="脚質実力" score={s.kyakushitsuScore.score} />
+                <ScoreBar label="データ統計" score={s.statsScore.score} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </ScoreBreakdownShell>
   );
 }

@@ -8,6 +8,11 @@ const zenKaku = Zen_Kaku_Gothic_New({
   variable: "--font-zen-kaku",
   subsets: ["latin"],
   weight: ["400", "500", "700", "900"],
+  // 日本語フォントはGoogle側で文字範囲ごとに百数十ファイルへ分割されており、既定の
+  // preloadだと全ページのHTMLに約360本の<link rel="preload">が入り、初回表示で計4MB超を
+  // 先に取りに行っていた（静的ページではクライアント遷移のたびのRSCにも同数のヒントが載る）。
+  // preloadしなくても@font-faceのunicode-rangeで、画面に出る文字の分だけが読み込まれる。
+  preload: false,
 });
 
 const dmMono = DM_Mono({

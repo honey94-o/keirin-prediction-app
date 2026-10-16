@@ -18,6 +18,7 @@ loadDotEnvLocal();
 import { predictRace, prefetchRaceInputs } from "../lib/predict";
 import {
   getRacesByDate,
+  getScoreWeights,
   saveDailyPicks,
   saveBarikataPicks,
   saveBarikataNearMisses,
@@ -27,6 +28,7 @@ import {
 } from "../lib/repository";
 import { todayJstStr, addDaysToDateStr, nowJstHHMM } from "../lib/date";
 import { closeDb } from "../lib/db";
+import { saveRaceSnapshots, snapshotFromPrediction } from "../lib/race-snapshot";
 import { buildPicks, hasRaceStarted } from "./lib/picks";
 
 /**
@@ -64,13 +66,26 @@ async function processDate(kaisaiDate: string, nowHHMM: string | null): Promise<
   await prefetchRaceInputs(races);
   const predictions = await Promise.all(races.map((race) => predictRace(race.id)));
   const { dailyPicks, barikataPicks, barikataNearMisses, nakaanaPicks } = buildPicks(races, predictions);
+  // 全レースの予想スナップショット（lib/race-snapshot.ts）。ホーム・/picks・開催場ページが
+  // 表示のたびにpredictRaceを実行しないで済むよう、同じ予想結果からついでに保存する。
+  // 重みはpredictRaceが使ったのと同じ値（読取キャッシュ済みなので追加のクエリは無い）。
+  const weights = await getScoreWeights();
+  const snapshots = races.flatMap((race, i) => {
+    const prediction = predictions[i];
+    return prediction ? [snapshotFromPrediction(race.id, prediction, weights)] : [];
+  });
 
-  // 4テーブルは互いに独立なので、往復待ちを直列に積まないよう同時に書く
+  // 各テーブルは互いに独立なので、往復待ちを直列に積まないよう同時に書く
   await Promise.all([
     saveDailyPicks(dailyPicks),
     saveBarikataPicks(barikataPicks),
     saveBarikataNearMisses(barikataNearMisses),
     saveNakaanaPicks(nakaanaPicks),
+    // テーブル（scripts/migrate-race-snapshots.tsで作る）が未作成でも厳選等の保存・削除は
+    // 止めない（画面側は行が無ければpredictRaceで代替表示する）。
+    saveRaceSnapshots(kaisaiDate, snapshots).catch((err) =>
+      console.warn(`  race_snapshotsの保存に失敗（マイグレーション未実行？）: ${err instanceof Error ? err.message : err}`)
+    ),
   ]);
   await deleteStalePicks(
     races.map((r) => r.id),
@@ -83,7 +98,8 @@ async function processDate(kaisaiDate: string, nowHHMM: string | null): Promise<
   );
   console.log(
     `  厳選: ${dailyPicks.length}件 / バリカタ: ${barikataPicks.length}件 / ` +
-      `候補漏れ: ${barikataNearMisses.length}件 / 中穴候補: ${nakaanaPicks.length}件`
+      `候補漏れ: ${barikataNearMisses.length}件 / 中穴候補: ${nakaanaPicks.length}件 / ` +
+      `予想スナップショット: ${snapshots.length}件`
   );
 }
 

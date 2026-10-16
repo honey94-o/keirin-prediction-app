@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { getAllBankInfo } from "../../lib/repository";
+import { getAllBankInfoCached } from "../../lib/queries/home";
+import { IntentLink } from "../../components/IntentLink";
 
-export const dynamic = "force-dynamic";
+// 開催場の静的データ（bank_info）だけの画面。ISR（app/page.tsxと同じ秒数）でCDNから配信する。
+export const revalidate = 600;
 
 const KIMARITE_BAR_COLORS: Record<string, string> = {
   逃げ: "#5B9CFF",
@@ -24,7 +26,7 @@ function decodeHtmlText(text: string): string {
 }
 
 export default async function VenuesPage() {
-  const venues = await getAllBankInfo();
+  const venues = await getAllBankInfoCached();
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
@@ -41,7 +43,7 @@ export default async function VenuesPage() {
           const hasRates = v.nige_pct != null && v.makuri_pct != null && v.sashi_pct != null;
           return (
             <li key={v.jocd}>
-              <Link
+              <IntentLink
                 href={`/venues/${v.jocd}`}
                 className="block rounded-[18px] bg-ink-3 border border-white/[.06] p-3.5 active:bg-ink-2"
               >
@@ -91,7 +93,7 @@ export default async function VenuesPage() {
                     {decodeHtmlText(v.feature_text)}
                   </p>
                 )}
-              </Link>
+              </IntentLink>
             </li>
           );
         })}

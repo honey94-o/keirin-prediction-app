@@ -28,7 +28,7 @@ import type {
  * 的中点のオッズはpredictions保存時点近辺で記録されたoddsスナップショットを使う。
  * 公式の確定払戻金ではない参考値である点に注意。
  */
-function computeRaceSummary(
+export function computeRaceSummary(
   race: RaceRow,
   predictions: PredictionRow[],
   results: ResultRow[],
@@ -153,7 +153,7 @@ export async function getBulkRaceSummaries(raceIds: number[]): Promise<RaceResul
   return summaries;
 }
 
-function aggregateAccuracyStats(summaries: RaceResultSummary[]): AccuracyStats {
+export function aggregateAccuracyStats(summaries: RaceResultSummary[]): AccuracyStats {
   const withHonmei = summaries.filter((s) => s.honmeiHit != null);
   const withSanrentan = summaries.filter((s) => s.sanrentanHit != null);
   const withRoi = summaries.filter((s) => s.roi != null);
@@ -219,7 +219,7 @@ export function yesterdayJst(): string {
  * 保存済みpredictions/results/oddsをバルク取得するだけの軽い処理になる
  * （毎回predictRaceで再計算すると1日分でもレース数が多く重いため）。
  */
-function buildDailySummary(statDate: string, summaries: RaceResultSummary[]): DailySummary {
+export function buildDailySummary(statDate: string, summaries: RaceResultSummary[]): DailySummary {
   const stats = aggregateAccuracyStats(summaries);
 
   const topPayouts = summaries

@@ -1,8 +1,14 @@
 import { notFound } from "next/navigation";
-import { getRacer, getRacerHistory, getPositionWinRates, isFavoriteRacer } from "../../../lib/repository";
+import { getRacerProfile, getIsFavoriteRacer } from "../../../lib/queries/race";
 import { determineClassChange } from "../../../lib/scoring";
 import { toggleFavoriteRacerAction } from "../../../lib/actions";
 import { BackButton } from "../../../components/BackButton";
+
+// 初回表示時に生成してCDNにキャッシュする（ISR）。お気に入りのトグルはServer Action内の
+// updateTag(favorites)で失効し、同じ応答で最新状態が描画される。
+export function generateStaticParams(): { snum: string }[] {
+  return [];
+}
 
 export default async function RacerDetailPage({
   params,
@@ -10,12 +16,10 @@ export default async function RacerDetailPage({
   params: Promise<{ snum: string }>;
 }) {
   const { snum } = await params;
-  const racer = await getRacer(snum);
-  if (!racer) notFound();
+  const [profile, isFavorite] = await Promise.all([getRacerProfile(snum), getIsFavoriteRacer(snum)]);
+  if (!profile) notFound();
 
-  const history = await getRacerHistory(snum);
-  const positionWinRates = await getPositionWinRates(snum);
-  const isFavorite = await isFavoriteRacer(snum);
+  const { racer, history, positionWinRates } = profile;
   const classChange = determineClassChange(racer);
   const toggleFavorite = toggleFavoriteRacerAction.bind(null, snum, isFavorite);
 

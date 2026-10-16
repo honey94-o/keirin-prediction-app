@@ -1,12 +1,24 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { nowJstHHMM, todayJstStr } from "../lib/date";
+import type { VenueRaceOption } from "../lib/queries/race";
 
-export interface VenueOption {
-  jocd: string;
-  keirinjoName: string;
-  /** 選択時に飛ぶ先（その開催場の「今行くならこのレース」1件、lib/scoring.tsのpickNearestRace参照）。 */
-  targetRaceId: number;
+/**
+ * 選択した開催場で「今行くならこのレース」を選ぶ（lib/scoring.ts pickNearestRace と同じ規則）。
+ * 当日ならまだ発走していない一番近いレース（無ければ最終レース）、翌日以降なら最初のレース、
+ * 前日以前なら最終レース。races は発走時刻順。
+ * 現在時刻で決まるため、キャッシュされるサーバー側のHTMLではなく選択した時点で端末側で決める。
+ */
+function pickTargetRaceId(races: VenueRaceOption["races"], viewDate: string): number {
+  const todayStr = todayJstStr();
+  if (viewDate === todayStr) {
+    const now = nowJstHHMM();
+    const upcoming = races.find(([, startTime]) => (startTime ?? "") >= now);
+    return (upcoming ?? races[races.length - 1])[0];
+  }
+  if (viewDate > todayStr) return races[0][0];
+  return races[races.length - 1][0];
 }
 
 /**
@@ -17,9 +29,12 @@ export interface VenueOption {
 export function VenueSwitcher({
   venues,
   currentJocd,
+  viewDate,
 }: {
-  venues: VenueOption[];
+  venues: VenueRaceOption[];
   currentJocd: string;
+  /** 表示中のレースの開催日（YYYYMMDD）。 */
+  viewDate: string;
 }) {
   const router = useRouter();
 
@@ -30,7 +45,7 @@ export function VenueSwitcher({
       value={currentJocd}
       onChange={(e) => {
         const target = venues.find((v) => v.jocd === e.target.value);
-        if (target) router.push(`/races/${target.targetRaceId}`);
+        if (target) router.push(`/races/${pickTargetRaceId(target.races, viewDate)}`);
       }}
       className="text-xs font-semibold bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-mist-2 shrink-0 max-w-[8rem]"
     >

@@ -337,6 +337,23 @@ CREATE TABLE IF NOT EXISTS nakaana_picks (
 );
 CREATE INDEX IF NOT EXISTS idx_nakaana_picks_date ON nakaana_picks(kaisai_date, margin DESC);
 
+-- 全レースの予想スナップショット（lib/race-snapshot.ts）。scripts/compute-picks.tsが
+-- 厳選等と同じ実行・同じ予想結果から保存する（発走済みのレースは計算し直さないため、
+-- 発走前の最終の予想が残る）。ホームの「実際は○○が的中」・/picksの上位4車と本命の
+-- 買い目・開催場ページの「高信頼度」バッジは、表示のたびにpredictRaceを実行せずここを読む。
+-- 行が無い・保存後に重み設定が変わった場合だけ画面側でpredictRaceを使う。
+-- Postgres（Neon）には scripts/migrate-race-snapshots.ts で作る（marginはDOUBLE PRECISION）。
+CREATE TABLE IF NOT EXISTS race_snapshots (
+    race_id        INTEGER PRIMARY KEY REFERENCES races(id) ON DELETE CASCADE,
+    kaisai_date    TEXT NOT NULL,
+    margin         REAL,               -- ◎と対抗の総合スコア差（出走2車未満はNULL）
+    top_entries    TEXT NOT NULL,      -- 総合スコア上位4車（JSON配列 [{carNum,name,mark}]）
+    scenarios      TEXT NOT NULL,      -- 展開シナリオ（JSON配列 [{label,combinations}]、generateScenariosの順）
+    honmei_reason  TEXT,               -- 本命シナリオの説明文（本命シナリオが無ければNULL）
+    weights        TEXT NOT NULL,      -- 計算に使ったスコア重み（JSON {line,kyakushitsu,stats}）
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- お気に入り選手登録。個人利用アプリのためユーザー区分なし（単一グローバルリスト）。
 CREATE TABLE IF NOT EXISTS favorite_racers (
     snum        TEXT PRIMARY KEY REFERENCES racers(snum) ON DELETE CASCADE,

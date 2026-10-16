@@ -1,16 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { MarkBadge } from "./MarkBadge";
 import { CarNumberBadge } from "./CarNumberBadge";
 import { formatFormationNotation } from "../lib/scoring";
-import type { RacePrediction } from "../lib/predict";
+import type { SnapshotEntry } from "../lib/race-snapshot";
 import type { DailyPickRow } from "../lib/types";
+import { IntentLink } from "./IntentLink";
 
-interface PickItem {
+// 予想全体（RacePrediction）ではなく表示に使う分だけを受け取る（以前は10レース分の
+// 予想を丸ごとクライアントへ送っていた）。中身はlib/race-snapshot.tsのスナップショット。
+export interface PickItem {
   pick: DailyPickRow;
-  prediction: RacePrediction;
+  race: { id: number; keirinjo_name: string; race_no: number; start_time: string | null };
+  /** 総合スコア上位4車。 */
+  top: SnapshotEntry[];
+  /** 「本命」シナリオ（無ければnull）。 */
+  honmei: { reason: string; combinations: string[] } | null;
 }
 
 // 「厳選レース」10件を発走時刻順のタブで切り替えて見られるようにするクライアント
@@ -19,11 +25,8 @@ interface PickItem {
 export function PicksTabs({ items }: { items: PickItem[] }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const active = items[Math.min(activeIndex, items.length - 1)];
-  const { pick, prediction } = active;
-  const { race, scored, scenarios } = prediction;
-  const honmeiScenario = scenarios.find((s) => s.label === "本命");
-  const notation = honmeiScenario ? formatFormationNotation(honmeiScenario.formation.combinations) : null;
-  const top4 = scored.slice(0, 4);
+  const { pick, race, top: top4, honmei: honmeiScenario } = active;
+  const notation = honmeiScenario ? formatFormationNotation(honmeiScenario.combinations) : null;
 
   return (
     <div>
@@ -66,12 +69,12 @@ export function PicksTabs({ items }: { items: PickItem[] }) {
         <div className="flex gap-2 mb-4 flex-wrap">
           {top4.map((s) => (
             <div
-              key={s.entry.entry_id}
+              key={s.carNum}
               className="flex items-center gap-1 bg-gray-50 rounded-full pl-1 pr-2 py-1 dark:bg-gray-700"
             >
               <MarkBadge mark={s.mark} />
-              <CarNumberBadge carNum={s.entry.car_num} size="sm" />
-              <span className="text-sm dark:text-gray-100">{s.entry.name}</span>
+              <CarNumberBadge carNum={s.carNum} size="sm" />
+              <span className="text-sm dark:text-gray-100">{s.name}</span>
             </div>
           ))}
         </div>
@@ -83,7 +86,7 @@ export function PicksTabs({ items }: { items: PickItem[] }) {
                 本命
               </span>
               <span className="text-xs text-gray-400 ml-auto dark:text-gray-400">
-                {honmeiScenario.formation.combinations.length}点
+                {honmeiScenario.combinations.length}点
               </span>
             </div>
             <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{honmeiScenario.reason}</p>
@@ -100,7 +103,7 @@ export function PicksTabs({ items }: { items: PickItem[] }) {
             )}
 
             <div className="flex flex-wrap gap-2 mb-4">
-              {honmeiScenario.formation.combinations.map((combo) => (
+              {honmeiScenario.combinations.map((combo) => (
                 <span
                   key={combo}
                   className="px-2 py-1 rounded bg-gray-100 text-sm tabular-nums font-mono dark:bg-gray-700 dark:text-gray-100"
@@ -112,9 +115,9 @@ export function PicksTabs({ items }: { items: PickItem[] }) {
           </>
         )}
 
-        <Link href={`/races/${race.id}`} className="text-sm text-[#0d5c3f] underline dark:text-emerald-400">
+        <IntentLink href={`/races/${race.id}`} className="text-sm text-[#0d5c3f] underline dark:text-emerald-400">
           他のシナリオ・出走表を見る →
-        </Link>
+        </IntentLink>
       </section>
 
       <div className="flex justify-between mt-3">

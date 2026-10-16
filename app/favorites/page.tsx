@@ -1,19 +1,23 @@
 import Link from "next/link";
-import { getFavoriteRacers, getFavoriteRacerEntriesForDate } from "../../lib/repository";
-import { todayJstStr, formatDateStr } from "../../lib/date";
-import { yesterdayJst } from "../../lib/accuracy";
+import { getFavoriteRacersCached, getFavoriteEntriesForDate } from "../../lib/queries/home";
+import { todayJstStr, formatDateStr, addDaysToDateStr } from "../../lib/date";
+import { StaleDateGuard } from "../../components/StaleDateGuard";
 import type { FavoriteRacerEntry } from "../../lib/types";
+import { IntentLink } from "../../components/IntentLink";
 
-export const dynamic = "force-dynamic";
+// ISR（app/page.tsxと同じ理由・同じ秒数）。お気に入りの登録・解除はServer Actionの
+// updateTag(favorites)で即時に反映される。「昨日」「本日」は描画した日で決まるため、
+// 日付をまたいだ古い描画はStaleDateGuardが取り直す。
+export const revalidate = 600;
 
 export default async function FavoritesPage() {
   const todayStr = todayJstStr();
-  const yesterdayStr = yesterdayJst();
+  const yesterdayStr = addDaysToDateStr(todayStr, -1);
 
   const [favorites, todayEntries, yesterdayEntries] = await Promise.all([
-    getFavoriteRacers(),
-    getFavoriteRacerEntriesForDate(todayStr),
-    getFavoriteRacerEntriesForDate(yesterdayStr),
+    getFavoriteRacersCached(),
+    getFavoriteEntriesForDate(todayStr),
+    getFavoriteEntriesForDate(yesterdayStr),
   ]);
 
   const todayBySnum = new Map<string, FavoriteRacerEntry[]>();
@@ -31,6 +35,7 @@ export default async function FavoritesPage() {
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
+      <StaleDateGuard renderedToday={todayStr} />
       <Link href="/" className="text-sm text-[#0d5c3f] mb-2 inline-block dark:text-emerald-400">
         ← ホームに戻る
       </Link>
@@ -72,13 +77,13 @@ export default async function FavoritesPage() {
                     <ul className="flex flex-col gap-1">
                       {yesterdays.map((e) => (
                         <li key={e.race.id} className="flex items-center gap-2 text-sm">
-                          <Link
+                          <IntentLink
                             href={`/races/${e.race.id}`}
                             className="flex-1 truncate text-gray-700 dark:text-gray-300"
                           >
                             {e.race.keirinjo_name}
                             {e.race.race_no}R
-                          </Link>
+                          </IntentLink>
                           {e.finishPos != null ? (
                             <span
                               className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
@@ -110,7 +115,7 @@ export default async function FavoritesPage() {
                     <ul className="flex flex-col gap-1">
                       {todays.map((e) => (
                         <li key={e.race.id}>
-                          <Link
+                          <IntentLink
                             href={`/races/${e.race.id}`}
                             className="flex items-center gap-2 text-sm bg-yellow-50 rounded px-2 py-1.5 active:bg-yellow-100 dark:bg-yellow-950 dark:active:bg-yellow-900"
                           >
@@ -124,7 +129,7 @@ export default async function FavoritesPage() {
                             <span className="text-xs text-yellow-700 tabular-nums dark:text-yellow-400">
                               {e.carNum}番
                             </span>
-                          </Link>
+                          </IntentLink>
                         </li>
                       ))}
                     </ul>

@@ -1,13 +1,12 @@
 import Link from "next/link";
-import { getScoreWeights, getFavoriteRacers } from "../../lib/repository";
+import { getScoreWeightsCached, getFavoriteRacersCached } from "../../lib/queries/race";
 import { toggleFavoriteRacerAction } from "../../lib/actions";
 import { WeightSettingsForm } from "../../components/WeightSettingsForm";
 
-export const dynamic = "force-dynamic";
-
+// 静的生成してCDNから返す。重み・お気に入りはタグ付きキャッシュから読むので、
+// 保存・解除のServer Action（updateTag）で作り直される。
 export default async function SettingsPage() {
-  const weights = await getScoreWeights();
-  const favorites = await getFavoriteRacers();
+  const [weights, favorites] = await Promise.all([getScoreWeightsCached(), getFavoriteRacersCached()]);
 
   return (
     <main className="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
