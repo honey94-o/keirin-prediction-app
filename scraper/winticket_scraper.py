@@ -47,7 +47,9 @@ REQUEST_INTERVAL_SEC = 1.5
 # 応答待ち）かかっていたため、開催場単位の並列化で待ち時間そのものを
 # 重ねられる。詳細はdb.pyのThreadedConnectionPool移行コメント参照
 # （スレッド間でDB接続を共有しないための前提条件）。
-VENUE_CONCURRENCY = 5
+# 2026-10に発走前レースの結果ページ取得を省いて総リクエスト数が減ったため5→8に
+# 上げた（1開催場あたりの間隔は変えないので、開催場単位の負荷は従来と同じ）。
+VENUE_CONCURRENCY = 8
 
 # 開催(cup)は3〜4日、GIなど大きい開催では6日程度続く。cup_idの先頭8桁は
 # 「開催初日」なので、取得対象を初日だけで判定すると対象期間より前に始まった
@@ -589,6 +591,25 @@ def parse_sanrentan_payout(payout_table: Tag) -> list[dict[str, Any]]:
     return odds
 
 
+JST = datetime.timezone(datetime.timedelta(hours=9))
+# 発走時刻からこの分数が経つまでは結果ページを見ない（確定前に取っても空のため）。
+RESULT_READY_AFTER_MIN = 5
+
+
+def _not_started_yet(race: RaceData) -> bool:
+    """発走時刻+RESULT_READY_AFTER_MIN分より前ならTrue。時刻が読めなければFalse（従来通り取得）。"""
+    if not race.start_time or not race.kaisai_date:
+        return False
+    try:
+        start = datetime.datetime.strptime(
+            f"{race.kaisai_date} {race.start_time}", "%Y%m%d %H:%M"
+        ).replace(tzinfo=JST)
+    except ValueError:
+        return False
+    ready = start + datetime.timedelta(minutes=RESULT_READY_AFTER_MIN)
+    return datetime.datetime.now(JST) < ready
+
+
 def scrape_one_race(venue: str, cup_id: str, day: int, race_no: int) -> Any:
     """1レース分を取得する。
 
@@ -611,10 +632,14 @@ def scrape_one_race(venue: str, cup_id: str, day: int, race_no: int) -> Any:
         return None
     race.interviews = parse_interviews(html)
 
-    status, html = _get(f"https://winticket.jp/keirin/{venue}/raceresult/{cup_id}/{day}/{race_no}")
-    _sleep()
-    if status == 200:
-        parse_raceresult(html, race)
+    # 発走前のレースは結果ページがまだ無いので取りに行かない。朝の同期では取得
+    # レースの約8割が発走前で、結果ページへの無駄なアクセスとその待ち時間が
+    # 同期時間の大半を占めていた（2026-10実測：78レース中60レースが結果0件）。
+    if not _not_started_yet(race):
+        status, html = _get(f"https://winticket.jp/keirin/{venue}/raceresult/{cup_id}/{day}/{race_no}")
+        _sleep()
+        if status == 200:
+            parse_raceresult(html, race)
 
     histories = enrich_entries_with_history(race.entries)
 

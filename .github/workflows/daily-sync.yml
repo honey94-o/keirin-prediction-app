@@ -37,6 +37,10 @@ on:
         description: "何日前まで遡るか（埋め戻し時のみ増やす。全43開催場×日数ぶんアクセスするため、常用せず節度を保つこと）"
         required: false
         default: "1"
+      run_summary:
+        description: "前日サマリーも再計算するか（通常は朝の定期実行だけで十分）"
+        required: false
+        default: "false"
   schedule:
     - cron: "23 18 * * *"  # 予定JST 3:23 → 遅延込みで朝5時着地
     - cron: "37 23 * * *"  # 予定JST 8:37 → 遅延込みで10時着地
@@ -81,23 +85,25 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
-      # 前日サマリー集計は朝の実行（前日分の結果が出揃った後）だけでよいので、
-      # 手動実行時と朝のスケジュールに限定する。
-      # ★ここは上の schedule の cron 文字列と完全一致で比較している。cronを変えたら
-      #   必ずこの文字列も合わせること。不一致だと条件が永久に偽になり、前日サマリーが
-      #   スケジュール実行で一切走らなくなる（エラーも出ないので気付きにくい）。
-      - name: Compute previous day's summary
-        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '23 18 * * *'
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: npx tsx scripts/daily-summary.ts
-
       # 当日・翌日の厳選・バリカタ・中穴候補は日中のオッズ・並び予想更新も
       # 反映したいので、全実行（朝・日中・夜・手動リフレッシュ）で計算し直す。
       # 元はdaily-picks.ts/barikata-picks.tsの2ステップだったが、どちらも同じ
       # レース群にpredictRaceを独立に呼んでおり計算が重複していたため
       # （データ更新の高速化調査、2026-09）、1本のscripts/compute-picks.tsに統合した。
+      # 前日サマリー（約10分かかる）より先に実行し、ピックを先に画面へ出す。
       - name: Compute today's/tomorrow's picks (厳選/バリカタ/中穴候補)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npx tsx scripts/compute-picks.ts
+
+      # 前日サマリー集計は1日1回（朝、前日分の結果が出揃った後）だけでよい。
+      # 以前は手動実行（アプリの「今すぐ更新」ボタン含む）のたびにも走り、
+      # 毎回約10分とNeonの転送量を余計に使っていたため、手動時は明示指定のみにする。
+      # ★ここは上の schedule の cron 文字列と完全一致で比較している。cronを変えたら
+      #   必ずこの文字列も合わせること。不一致だと条件が永久に偽になり、前日サマリーが
+      #   スケジュール実行で一切走らなくなる（エラーも出ないので気付きにくい）。
+      - name: Compute previous day's summary
+        if: github.event.inputs.run_summary == 'true' || github.event.schedule == '23 18 * * *'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx tsx scripts/daily-summary.ts
