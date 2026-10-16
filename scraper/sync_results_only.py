@@ -18,6 +18,7 @@ DB書き込みはresults/oddsのみに限定する。racers/entriesは一切触�
 from __future__ import annotations
 
 import datetime
+import os
 import re
 import time
 
@@ -187,9 +188,15 @@ def check_due_races(kaisai_date: str) -> tuple[int, int]:
 
 def main() -> None:
     kaisai_date = today_jst_str()
+    saved_total = 0
 
     for round_no in range(1, MAX_ROUNDS + 1):
         checked, saved = check_due_races(kaisai_date)
+        saved_total += saved
+        # GitHub Actionsの次のステップ（画面用キャッシュの失効）に保存件数を渡す
+        if os.environ.get("GITHUB_OUTPUT"):
+            with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+                f.write(f"saved_total={saved_total}\n")
         print(f"[{round_no}/{MAX_ROUNDS}] 発走済みで着順未確定のレース{checked}件中 {saved}件を反映")
         if checked == 0 or checked == saved:
             break  # 見に行くべきレースが無い/全部反映できた

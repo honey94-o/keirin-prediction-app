@@ -1,6 +1,7 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
+import { CACHE_TAGS } from "./cache";
 import { predictRace } from "./predict";
 import { savePrediction, setScoreWeights, addFavoriteRacer, removeFavoriteRacer } from "./repository";
 import type { ScoreWeights } from "./types";
@@ -95,6 +96,7 @@ export async function recordPredictionAction(raceId: number): Promise<void> {
   if (!prediction) return;
   const honmeiFormation = prediction.scenarios.find((s) => s.label === "本命")?.formation.combinations;
   await savePrediction(raceId, prediction.scored, honmeiFormation);
+  updateTag(CACHE_TAGS.picks);
   revalidatePath(`/races/${raceId}`);
   revalidatePath("/history");
 }
@@ -109,6 +111,7 @@ export async function toggleFavoriteRacerAction(
   } else {
     await addFavoriteRacer(snum);
   }
+  updateTag(CACHE_TAGS.favorites);
   revalidatePath(`/racers/${snum}`);
   revalidatePath("/");
   revalidatePath("/settings");
@@ -130,6 +133,7 @@ export async function updateWeightsAction(formData: FormData): Promise<void> {
       : { line: 1 / 3, kyakushitsu: 1 / 3, stats: 1 / 3 };
 
   await setScoreWeights(weights);
+  updateTag(CACHE_TAGS.settings);
   revalidatePath("/settings");
   revalidatePath("/", "layout");
 }

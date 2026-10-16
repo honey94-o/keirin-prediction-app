@@ -73,3 +73,13 @@ jobs:
           if [ "${INPUT_DRY_RUN}" = "true" ]; then ARGS+=(--dry-run); fi
           # -u: 標準出力をバッファリングしない（進捗ログを途中経過として見るため）
           python -u repair_gaps.py "${ARGS[@]}"
+
+      # 補修したデータをすぐ画面に出す（lib/cache.ts、失敗しても10分で自動更新される）
+      - name: Refresh app cache
+        if: always()
+        env:
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+        run: |
+          curl -fsS -X POST "https://keirin-prediction-app.vercel.app/api/revalidate" \
+            -H "Authorization: Bearer $REVALIDATE_SECRET" -H "Content-Type: application/json" \
+            -d '{"tags":["races","results"]}' || echo "警告: キャッシュ失効に失敗（10分以内に自動更新される）"
