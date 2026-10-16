@@ -133,6 +133,8 @@ jobs:
             -d '{"tags":["races","results","picks"]}' || echo "警告: キャッシュ失効に失敗（10分以内に自動更新される）"
           # 失効直後の最初の表示はページの作り直しを待つ（1〜2.6秒）ため、よく開くページを
           # ここで先に作り直しておく（暖機）。ユーザーが開く時にはキャッシュ済みになる。
+          # 失効が全体に行き渡る前に開くと古いキャッシュを受け取るだけなので少し待つ。
+          sleep 5
           curl -s -o /dev/null "https://keirin-prediction-app.vercel.app/" || true
           curl -s -o /dev/null "https://keirin-prediction-app.vercel.app/picks" || true
           curl -s -o /dev/null "https://keirin-prediction-app.vercel.app/history" || true
