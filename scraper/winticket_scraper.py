@@ -24,11 +24,11 @@ import concurrent.futures
 import datetime
 import json
 import re
+import threading
 import time
-import urllib.error
-import urllib.request
 from typing import Any
 
+import requests
 from bs4 import BeautifulSoup, Tag
 
 from db import get_client
@@ -38,17 +38,24 @@ USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "keirin-prediction-app/0.1 (personal use, non-commercial backtest tool)"
 )
-REQUEST_INTERVAL_SEC = 1.5
+# WINTICKETへのアクセス間隔は「全スレッド合計で、リクエスト開始の間隔を最低この秒数
+# 空ける」形で守る（以前は各スレッドが取得のたびに1.5秒寝ていたため、スレッド数を
+# 増やすほど全体の頻度が上がり、逆にスレッドが少ないと待ち時間が無駄になっていた）。
+# 0.4秒＝全体で最大2.5リクエスト/秒。
+GLOBAL_MIN_REQUEST_INTERVAL_SEC = 0.4
 
-# --all-venuesで同時に処理する開催場数。各開催場は自分のリクエスト間隔
-# （REQUEST_INTERVAL_SEC）を守ったまま独立して進むため、WINTICKETへの
-# 見かけ上の同時接続数はこの数までしか増えない（1開催場あたりの頻度は変えない）。
-# 実測: 1レースあたり約23秒（うちスリープは3秒分のみ、残りはWINTICKET側の
-# 応答待ち）かかっていたため、開催場単位の並列化で待ち時間そのものを
-# 重ねられる。詳細はdb.pyのThreadedConnectionPool移行コメント参照
-# （スレッド間でDB接続を共有しないための前提条件）。
+# 旧来の「1回ごとの待機」。間隔はGLOBAL_MIN_REQUEST_INTERVAL_SECで_get内で一元管理する
+# ようにしたため0（_sleep()は各backfillスクリプトからimportされているので関数は残す）。
+REQUEST_INTERVAL_SEC = 0.0
+
+# WINTICKETは winticket.jp → www.winticket.jp に毎回301リダイレクトしていた（1リクエスト
+# ごとに余計な往復＋別ホストへの接続）。最初からwwwに向ける。
+WINTICKET_BASE = "https://www.winticket.jp"
+
+# --all-venuesで同時に処理する開催場数（＝同時に処理中のリクエスト数の上限）。
 # 2026-10に8へ上げたところ、開始直後に8開催場が同時に日程ページを取りに行った
 # 瞬間にWINTICKETから429（リクエスト過多）が14件返ったため5に戻した（5では0件）。
+# 現在は上のGLOBAL_MIN_REQUEST_INTERVAL_SECで開始間隔も空けるため同時発射は起きない。
 VENUE_CONCURRENCY = 5
 
 # 開催(cup)は3〜4日、GIなど大きい開催では6日程度続く。cup_idの先頭8桁は
@@ -73,6 +80,35 @@ def _sleep() -> None:
     time.sleep(REQUEST_INTERVAL_SEC)
 
 
+_thread_local = threading.local()
+_throttle_lock = threading.Lock()
+_next_request_at = 0.0
+
+
+def _session() -> requests.Session:
+    """スレッドごとに1つの接続を使い回す（keep-alive＋gzip）。以前はurllibで毎回
+    新しいTCP/TLS接続を張り、圧縮なしで全文を受け取っていたため、GitHub Actions
+    （米国）から1ページ数秒かかっていた。requests.Sessionはスレッド間で共有しない。"""
+    session = getattr(_thread_local, "session", None)
+    if session is None:
+        session = requests.Session()
+        session.headers.update({"User-Agent": USER_AGENT, "Accept-Encoding": "gzip, deflate"})
+        _thread_local.session = session
+    return session
+
+
+def _throttle() -> None:
+    """全スレッド合計で、リクエスト開始の間隔をGLOBAL_MIN_REQUEST_INTERVAL_SEC以上空ける。"""
+    global _next_request_at
+    with _throttle_lock:
+        now = time.monotonic()
+        start_at = max(now, _next_request_at)
+        _next_request_at = start_at + GLOBAL_MIN_REQUEST_INTERVAL_SEC
+    wait = start_at - now
+    if wait > 0:
+        time.sleep(wait)
+
+
 def _get(url: str) -> tuple[int, str]:
     """URLを取得して (status, body) を返す。
 
@@ -81,26 +117,30 @@ def _get(url: str) -> tuple[int, str]:
     HTTP_MAX_RETRIES回まで再試行する。
     再試行し切っても失敗した場合はstatusに最後のコード（通信エラーなら0）を返す。
     """
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    url = url.replace("https://winticket.jp/", f"{WINTICKET_BASE}/")
+    session = _session()
     last_status = 0
     for attempt in range(HTTP_MAX_RETRIES + 1):
+        _throttle()
         try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                return resp.status, resp.read().decode("utf-8", errors="replace")
-        except urllib.error.HTTPError as e:
-            if e.code == 429:
+            resp = session.get(url, timeout=(10, 20))
+            status = resp.status_code
+            if status == 200:
+                # requestsの文字コード推測は使わず、従来どおりUTF-8で読む
+                return status, resp.content.decode("utf-8", errors="replace")
+            if status == 429:
                 # リクエスト過多。即座に諦めると開催場ごと未取得になるため、
                 # Retry-After（無ければ段階的に長く）待ってから再試行する。
-                last_status = e.code
+                last_status = status
                 if attempt < HTTP_MAX_RETRIES:
-                    retry_after = e.headers.get("Retry-After") if e.headers else None
+                    retry_after = resp.headers.get("Retry-After")
                     wait = float(retry_after) if retry_after and retry_after.isdigit() else 10.0 * (attempt + 1)
                     time.sleep(wait)
                 continue
-            if e.code < 500:
-                return e.code, ""
-            last_status = e.code
-        except (urllib.error.URLError, TimeoutError) as e:
+            if status < 500:
+                return status, ""
+            last_status = status
+        except requests.RequestException as e:
             # 以前はここで例外が伝播して実行全体が落ちていた。逐次保存しているので
             # 取得済み分は残るが、残りの開催場が全て未処理になるため捕まえる。
             print(f"  警告: 通信エラー {e} ({url})")
