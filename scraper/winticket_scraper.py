@@ -47,9 +47,9 @@ REQUEST_INTERVAL_SEC = 1.5
 # 応答待ち）かかっていたため、開催場単位の並列化で待ち時間そのものを
 # 重ねられる。詳細はdb.pyのThreadedConnectionPool移行コメント参照
 # （スレッド間でDB接続を共有しないための前提条件）。
-# 2026-10に発走前レースの結果ページ取得を省いて総リクエスト数が減ったため5→8に
-# 上げた（1開催場あたりの間隔は変えないので、開催場単位の負荷は従来と同じ）。
-VENUE_CONCURRENCY = 8
+# 2026-10に8へ上げたところ、開始直後に8開催場が同時に日程ページを取りに行った
+# 瞬間にWINTICKETから429（リクエスト過多）が14件返ったため5に戻した（5では0件）。
+VENUE_CONCURRENCY = 5
 
 # 開催(cup)は3〜4日、GIなど大きい開催では6日程度続く。cup_idの先頭8桁は
 # 「開催初日」なので、取得対象を初日だけで判定すると対象期間より前に始まった
@@ -77,7 +77,8 @@ def _get(url: str) -> tuple[int, str]:
     """URLを取得して (status, body) を返す。
 
     4xxは再試行しても変わらないので即座に返す（404はレース不存在の判定に使う）。
-    5xxとネットワーク由来の一時的な失敗はHTTP_MAX_RETRIES回まで再試行する。
+    ただし429（リクエスト過多）と5xx・ネットワーク由来の一時的な失敗は
+    HTTP_MAX_RETRIES回まで再試行する。
     再試行し切っても失敗した場合はstatusに最後のコード（通信エラーなら0）を返す。
     """
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
@@ -87,6 +88,15 @@ def _get(url: str) -> tuple[int, str]:
             with urllib.request.urlopen(req, timeout=20) as resp:
                 return resp.status, resp.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as e:
+            if e.code == 429:
+                # リクエスト過多。即座に諦めると開催場ごと未取得になるため、
+                # Retry-After（無ければ段階的に長く）待ってから再試行する。
+                last_status = e.code
+                if attempt < HTTP_MAX_RETRIES:
+                    retry_after = e.headers.get("Retry-After") if e.headers else None
+                    wait = float(retry_after) if retry_after and retry_after.isdigit() else 10.0 * (attempt + 1)
+                    time.sleep(wait)
+                continue
             if e.code < 500:
                 return e.code, ""
             last_status = e.code
