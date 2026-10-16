@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS races (
     encp          TEXT,                   -- サイト側のレース識別トークン（再取得用）
     tenki         TEXT,                   -- 天候（レース終了後のみ取得可能。実績値であり事前予報ではない）
     husoku        REAL,                   -- 不足（風速等、レース結果パネルの値をそのまま保持）
+    cancelled     INTEGER NOT NULL DEFAULT 0, -- 中止レース=1。着順が永久に入らないので取得対象から外す
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (kaisai_date, jocd, race_no)
 );

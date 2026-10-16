@@ -577,6 +577,64 @@ def parse_racecard(html: str, cup_id: str, day: int, race_no: int) -> RaceData |
 _PRELOADED_STATE_MARKER = "window.__PRELOADED_STATE__ = "
 
 
+def load_preloaded_state(html: str) -> Any | None:
+    """ページに埋め込まれたReact Queryのキャッシュ(window.__PRELOADED_STATE__)を読む。"""
+    idx = html.find(_PRELOADED_STATE_MARKER)
+    if idx == -1:
+        return None
+    try:
+        state, _ = json.JSONDecoder().raw_decode(html, idx + len(_PRELOADED_STATE_MARKER))
+    except ValueError:
+        return None
+    return state
+
+
+def iter_state_dicts(node: Any):
+    # 再帰だと巨大なstateで再帰上限に触れうるため、明示的なスタックで辿る
+    stack = [node]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, dict):
+            yield cur
+            stack.extend(cur.values())
+        elif isinstance(cur, list):
+            stack.extend(cur)
+
+
+def state_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
+
+
+def parse_race_cancelled(html: str, kaisai_date: str, jocd: str, race_no: int) -> bool | None:
+    """ページのstateからそのレースの中止フラグを読む（読めなければNone）。
+
+    中止レースは着順が永久に入らないため、記録しておかないと「未完了のレース」として
+    毎回の同期で取り直し続けてしまう（静岡9/19 3Rを37回取り直していた。2026-10判明）。
+    レースの scheduleId は「開催日(YYYYMMDD)+開催場コード」。"""
+    state = load_preloaded_state(html)
+    if state is None:
+        return None
+    sid = f"{kaisai_date}{jocd}"
+    for node in iter_state_dicts(state):
+        if str(node.get("scheduleId")) == sid and state_int(node.get("number")) == race_no and "cancel" in node:
+            return bool(node["cancel"])
+    return None
+
+
+def mark_race_cancelled(encp: str) -> None:
+    client = get_client()
+    try:
+        client.execute("UPDATE races SET cancelled = 1 WHERE encp = ?", [encp])
+    finally:
+        client.close()
+
+
 def parse_interviews(html: str) -> list[dict[str, Any]]:
     """出走表ページに埋め込まれたReact Queryキャッシュ(window.__PRELOADED_STATE__)から
     前検日インタビュー(queryKeyに"INSPECTION_DAY_INTERVIEW_LIST"を含むエントリ)の
@@ -749,6 +807,10 @@ def scrape_one_race(venue: str, cup_id: str, day: int, race_no: int) -> Any:
         # 解析できなかった場合も打ち止めとは限らないため None を返す
         return None
     race.interviews = parse_interviews(html)
+    # 中止レースは結果ページを見ても何も無い。保存時にcancelledを立てて以後の取得対象から外す。
+    race.cancelled = bool(parse_race_cancelled(html, race.kaisai_date, race.jocd, race.race_no))
+    if race.cancelled:
+        return race, enrich_entries_with_history(race.entries)
 
     # 発走前のレースは結果ページがまだ無いので取りに行かない。朝の同期では取得
     # レースの約8割が発走前で、結果ページへの無駄なアクセスとその待ち時間が
@@ -773,7 +835,8 @@ def load_completed_days(since_date: datetime.date) -> set[tuple[str, str]]:
 
     注意：判定は着順(results.finish_pos)の有無だけを見ている。着順は揃って
     いるがオッズが欠けている日はスキップ対象になるため、この経路ではオッズの
-    後追い補完はされない。
+    後追い補完はされない（repair_gaps.pyが日次で拾う）。中止レース（cancelled=1）は
+    着順が永久に入らないので完了扱いにする（でないとその日を毎回取り直し続ける）。
     """
     since_str = since_date.strftime("%Y%m%d")
     client = get_client()
@@ -787,7 +850,7 @@ def load_completed_days(since_date: datetime.date) -> set[tuple[str, str]]:
             ) res ON res.race_id = ra.id
             WHERE ra.kaisai_date >= ?
             GROUP BY ra.jocd, ra.kaisai_date
-            HAVING COUNT(*) = COUNT(res.race_id)
+            HAVING COUNT(*) = SUM(CASE WHEN res.race_id IS NOT NULL OR ra.cancelled = 1 THEN 1 ELSE 0 END)
             """,
             [since_str],
         )
@@ -812,9 +875,10 @@ def load_completed_races(since_date: datetime.date) -> set[str]:
             SELECT ra.encp
             FROM races ra
             WHERE ra.kaisai_date >= ? AND substr(ra.encp, 1, 3) = 'wt:'
-              AND (SELECT COUNT(*) FROM results r
-                   WHERE r.race_id = ra.id AND r.finish_pos BETWEEN 1 AND 3) >= 3
-              AND EXISTS (SELECT 1 FROM odds o WHERE o.race_id = ra.id AND o.bet_type = '3連単')
+              AND (ra.cancelled = 1 OR (
+                (SELECT COUNT(*) FROM results r
+                  WHERE r.race_id = ra.id AND r.finish_pos BETWEEN 1 AND 3) >= 3
+                AND EXISTS (SELECT 1 FROM odds o WHERE o.race_id = ra.id AND o.bet_type = '3連単')))
             """,
             [since_str],
         )
@@ -1003,6 +1067,8 @@ def _process_venue(
     def save_one(result: tuple[RaceData, list[RacerHistoryEntry]]) -> None:
         race, histories = result
         save_to_db(race, bank_info=None, histories=histories)
+        if getattr(race, "cancelled", False):
+            mark_race_cancelled(race.encp)
 
     races = scrape_venue_recent(
         venue,

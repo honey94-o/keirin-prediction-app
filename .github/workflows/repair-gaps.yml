@@ -1,0 +1,75 @@
+name: Repair data gaps (re-fetch anything missed)
+
+# daily-sync.yml / sync-results.yml は速さ優先で、取得に失敗したデータを後から
+# 取り直す経路が無かった（窓より古いレースの結果欠け、日の途中で切れた取得、
+# 開催まるごとの取りこぼし、払戻だけの欠け、出走表(entries)の欠けなど）。
+# 直近30日を対象にDBへ2回問い合わせて欠損を検出し、必要なページだけWINTICKETから
+# 取り直す（詳細・DB書き込み範囲の制限は scraper/repair_gaps.py 参照）。
+# 欠損が無ければ開催のレース一覧の確認（1開催につき出走表1ページ）だけで数十リクエストで終わる。
+#
+# 【実行時刻】daily-sync.ymlのコメントの通り、このリポジトリのscheduleは+64〜211分
+# （中央値125分）遅れて起動するため、狙った着地時刻から約2時間前倒しし、:00/:15/:30/:45を外す。
+#   15:13 UTC (=JST 0:13 予定) → 遅延込みで JST 1:15〜3:45 に着地。ミッドナイトの最終レース
+#       （23時半頃発走）が確定した後で、朝の daily-sync（JST 4:30〜7:00 着地。前日サマリーを
+#       計算する回）より前に前日分の欠けを埋める。
+#   01:47 UTC (=JST 10:47 予定) → 遅延込みで JST 11:50〜14:20 に着地。夜の回で直らなかった分の
+#       再試行と、午前中のレースの取りこぼし。daily-syncの10時・15時着地の回の間に入れる。
+#
+# 補修できない欠損が2日以上残るとジョブを失敗させる（GitHubの失敗通知で気付けるように）。
+# 中止レース・落車等でWINTICKET側にも結果が無いものは失敗に数えない。
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "何日前まで見るか"
+        required: false
+        default: "30"
+      sweep_all:
+        description: "巡回を待たず期間内の全開催をレース一覧と突き合わせる（true/false）"
+        required: false
+        default: "false"
+      dry_run:
+        description: "検出だけ行いDBに書かない（true/false）"
+        required: false
+        default: "false"
+  schedule:
+    - cron: "13 15 * * *"  # 予定JST 0:13 → 遅延込みで1〜4時着地（朝のdaily-syncより前）
+    - cron: "47 1 * * *"   # 予定JST 10:47 → 遅延込みで12〜14時着地
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # 遅延で2回が近づいても同時には走らせない（同じ欠損を二重に取りに行かないため）。
+    # 冪等なので後続はキューで待たせ、前の回の結果を踏まえて残りだけ処理させる。
+    concurrency:
+      group: repair-gaps
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scraper/requirements.txt
+
+      - name: Install dependencies
+        working-directory: scraper
+        run: pip install -r requirements.txt
+
+      - name: Detect and repair gaps
+        working-directory: scraper
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # 手動実行の入力はシェルに直接埋め込まず環境変数で渡す（scheduleでは空になる）
+          INPUT_DAYS: ${{ github.event.inputs.days }}
+          INPUT_SWEEP_ALL: ${{ github.event.inputs.sweep_all }}
+          INPUT_DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          ARGS=(--days "${INPUT_DAYS:-30}")
+          case "${INPUT_DAYS:-30}" in ''|*[!0-9]*) echo "days は数値で指定してください"; exit 1;; esac
+          if [ "${INPUT_SWEEP_ALL}" = "true" ]; then ARGS+=(--sweep-all); fi
+          if [ "${INPUT_DRY_RUN}" = "true" ]; then ARGS+=(--dry-run); fi
+          # -u: 標準出力をバッファリングしない（進捗ログを途中経過として見るため）
+          python -u repair_gaps.py "${ARGS[@]}"

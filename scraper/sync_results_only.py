@@ -23,7 +23,14 @@ import time
 
 from db import get_client
 from keirin_scraper import RaceData
-from winticket_scraper import JOCD_TO_WINTICKET_SLUG, _get, _sleep, parse_raceresult
+from winticket_scraper import (
+    JOCD_TO_WINTICKET_SLUG,
+    _get,
+    _sleep,
+    mark_race_cancelled,
+    parse_race_cancelled,
+    parse_raceresult,
+)
 
 ENCP_RE = re.compile(r"^wt:(\d{10})/(\d+)/(\d+)$")
 
@@ -66,6 +73,7 @@ def fetch_unfinished_races(kaisai_date: str) -> list[tuple]:
             FROM races r
             WHERE r.kaisai_date = ?
               AND r.encp IS NOT NULL
+              AND r.cancelled = 0
               AND (SELECT COUNT(*) FROM results res
                    WHERE res.race_id = r.id AND res.finish_pos IS NOT NULL) < 3
             ORDER BY r.start_time
@@ -132,30 +140,47 @@ def check_due_races(kaisai_date: str) -> tuple[int, int]:
         cup_id, day, encp_race_no = parsed
         checked += 1
 
-        status, html = _get(
-            f"https://winticket.jp/keirin/{slug}/raceresult/{cup_id}/{day}/{encp_race_no}"
-        )
-        _sleep()
-        if status != 200:
-            continue
+        # 1レースの失敗（DBエラー等）で、この回の残りのレースを全部取り逃さないようにする。
+        try:
+            status, html = _get(
+                f"https://winticket.jp/keirin/{slug}/raceresult/{cup_id}/{day}/{encp_race_no}"
+            )
+            _sleep()
+            if status != 200:
+                continue
 
-        entries_rows = fetch_entries(race_id)
-        race = RaceData(
-            kaisai_date=kaisai_date, jocd=jocd, keirinjo_name=keirinjo_name,
-            race_no=race_no, encp=encp,
-        )
-        race.entries = [{"car_num": car_num, "snum": snum} for car_num, snum in entries_rows]
+            if parse_race_cancelled(html, kaisai_date, jocd, race_no):
+                # 中止は着順が永久に入らない。記録して以後の確認対象から外す。
+                mark_race_cancelled(encp)
+                checked -= 1
+                print(f"  中止: {keirinjo_name} {race_no}R")
+                continue
 
-        parse_raceresult(html, race)
-        finished_count = sum(1 for r in race.results if r["finish_pos"] is not None)
-        if finished_count < 3:
-            # 発走時刻は過ぎているがWINTICKET側の結果反映がまだ（数分ラグがある）。
-            # このラウンドでは保存せず、次のラウンド（または次回cron）で再チェックする。
-            continue
+            entries_rows = fetch_entries(race_id)
+            race = RaceData(
+                kaisai_date=kaisai_date, jocd=jocd, keirinjo_name=keirinjo_name,
+                race_no=race_no, encp=encp,
+            )
+            race.entries = [{"car_num": car_num, "snum": snum} for car_num, snum in entries_rows]
+            entry_cars = {car_num for car_num, _ in entries_rows}
 
-        save_results_and_odds(race_id, race.results, race.odds)
-        saved += 1
-        print(f"  結果反映: {keirinjo_name} {race_no}R ({finished_count}着分、オッズ{len(race.odds)}件)")
+            parse_raceresult(html, race)
+            finished_count = sum(1 for r in race.results if r["finish_pos"] is not None)
+            if finished_count < 3:
+                # 発走時刻は過ぎているがWINTICKET側の結果反映がまだ（数分ラグがある）。
+                # このラウンドでは保存せず、次のラウンド（または次回cron）で再チェックする。
+                continue
+            if any(r["car_num"] not in entry_cars for r in race.results):
+                # 出走表(entries)に無い車番の着順がある＝出走表が欠けている。results.snumは
+                # racersへの外部キーなので書けない。出走表ごと取り直すのはdaily-sync/repair_gaps側。
+                print(f"  警告: {keirinjo_name} {race_no}R は出走表が欠けているため結果を保存しない")
+                continue
+
+            save_results_and_odds(race_id, race.results, race.odds)
+            saved += 1
+            print(f"  結果反映: {keirinjo_name} {race_no}R ({finished_count}着分、オッズ{len(race.odds)}件)")
+        except Exception as exc:  # noqa: BLE001 - 1レースの失敗で残りを止めない
+            print(f"  警告: {keirinjo_name} {race_no}R の処理中に例外: {exc}")
 
     return checked, saved
 
