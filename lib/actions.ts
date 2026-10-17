@@ -58,7 +58,7 @@ export async function triggerDailySyncAction(): Promise<TriggerSyncResult> {
   if (await isDailySyncRunning(token)) {
     return {
       ok: true,
-      message: "既に更新中です。完了まで（数分〜十数分）お待ちください。",
+      message: "既に更新中です。完了すると自動で最新の表示に切り替わります。",
     };
   }
 
@@ -83,11 +83,51 @@ export async function triggerDailySyncAction(): Promise<TriggerSyncResult> {
     // 大幅に楽観的すぎたため訂正した）。
     return {
       ok: true,
-      message: "更新を開始しました。全開催場の取得には数分〜十数分かかります。少し時間を置いてから開き直してください。",
+      message: "更新を開始しました（約2分）。完了すると自動で最新の表示に切り替わります。",
     };
   }
   const body = await res.text();
   return { ok: false, message: `更新開始に失敗しました (${res.status}): ${body.slice(0, 200)}` };
+}
+
+export interface DailySyncStatus {
+  /** 実行中・キュー待ちのdaily-syncがあるか */
+  running: boolean;
+  /** 直近に完了した実行の完了時刻（ISO8601、UTC）と結果 */
+  lastFinishedAt: string | null;
+  lastConclusion: string | null;
+}
+
+/**
+ * 「今すぐ更新」を押した後の進み具合表示用。daily-sync.ymlの直近の実行状況を返す
+ * （GitHub APIを見るだけでDBには触れない）。取得できない場合はrunning=falseで返す。
+ */
+export async function getDailySyncStatusAction(): Promise<DailySyncStatus> {
+  const token = process.env.GITHUB_TOKEN;
+  const empty: DailySyncStatus = { running: false, lastFinishedAt: null, lastConclusion: null };
+  if (!token) return empty;
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/workflows/daily-sync.yml/runs?per_page=5`,
+      {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
+        cache: "no-store",
+      }
+    );
+    if (!res.ok) return empty;
+    const data = (await res.json()) as {
+      workflow_runs?: { status: string; conclusion: string | null; updated_at: string }[];
+    };
+    const runs = data.workflow_runs ?? [];
+    const lastDone = runs.find((r) => r.status === "completed");
+    return {
+      running: runs.some((r) => r.status !== "completed"),
+      lastFinishedAt: lastDone?.updated_at ?? null,
+      lastConclusion: lastDone?.conclusion ?? null,
+    };
+  } catch {
+    return empty;
+  }
 }
 
 /** 現在のスコアを発走前の予想としてスナップショット保存する。 */

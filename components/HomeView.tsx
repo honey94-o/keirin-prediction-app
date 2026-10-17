@@ -231,7 +231,7 @@ export async function HomeView({
               <span className="text-base font-bold text-mist-0">競輪予想</span>
               <span className="text-[10px] font-mono text-mist-3">
                 {formatDateStr(viewDate)}
-                {lastSyncedAt && ` ・ ${formatUtcAsJst(lastSyncedAt)} 更新`}
+                {lastSyncedAt && ` ・ 最終更新 ${formatUtcAsJst(lastSyncedAt)}`}
               </span>
             </div>
           </div>
