@@ -303,7 +303,7 @@ export async function legacyPredictRace(raceId: number): Promise<RacePrediction 
       winSuggestion = { carNum: scored[0].entry.car_num, name: scored[0].entry.name, margin };
     }
   }
-  return { race, bankInfo, venueKimarite, scored, scenarios, boxSuggestion, winSuggestion, secondThird };
+  return { race, bankInfo, venueKimarite, scored, scenarios, boxSuggestion, winSuggestion, secondThird, honmeiWinProb: null };
 }
 
 /** 変更前の savePrediction（1行1文のbatch）。転送量・往復数の比較計測用。 */

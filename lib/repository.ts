@@ -1652,16 +1652,18 @@ export async function saveBarikataPicks(
     combo: string;
     honmeiCarNum: number;
     honmeiName: string;
+    confidence: number | null;
   }[]
 ): Promise<void> {
   if (picks.length === 0) return;
   await upsertMany(
     `INSERT INTO barikata_picks (race_id, kaisai_date, jocd, keirinjo_name, race_no,
-                                            start_time, margin, combo, honmei_car_num, honmei_name, updated_at) VALUES`,
-    "(?,?,?,?,?,?,?,?,?,?,datetime('now'))",
+                                            start_time, margin, combo, honmei_car_num, honmei_name, confidence, updated_at) VALUES`,
+    "(?,?,?,?,?,?,?,?,?,?,?,datetime('now'))",
     `ON CONFLICT(race_id) DO UPDATE SET
                  margin=excluded.margin, combo=excluded.combo,
                  honmei_car_num=excluded.honmei_car_num, honmei_name=excluded.honmei_name,
+                 confidence=excluded.confidence,
                  start_time=excluded.start_time, updated_at=datetime('now')`,
     picks.map((p) => [
       p.raceId,
@@ -1674,6 +1676,7 @@ export async function saveBarikataPicks(
       p.combo,
       p.honmeiCarNum,
       p.honmeiName,
+      p.confidence,
     ])
   );
 }
@@ -1688,7 +1691,7 @@ export async function saveBarikataPicks(
 export async function getBarikataPicks(kaisaiDate: string, limit = 100): Promise<BarikataPickRow[]> {
   const result = await getDb().execute({
     sql: `SELECT race_id, kaisai_date, jocd, keirinjo_name, race_no, start_time, margin, combo,
-                 honmei_car_num, honmei_name
+                 honmei_car_num, honmei_name, confidence
           FROM barikata_picks WHERE kaisai_date = ? ORDER BY margin DESC LIMIT ?`,
     args: [kaisaiDate, limit],
   });

@@ -284,6 +284,7 @@ CREATE TABLE IF NOT EXISTS barikata_picks (
     combo          TEXT NOT NULL,      -- 予想1-2-3位の並び（例: "4-7-1"）。単一の3連単の買い目。
     honmei_car_num INTEGER NOT NULL,
     honmei_name    TEXT NOT NULL,
+    confidence     REAL,               -- この1点が当たる確率の見積もり（◎1着確率×2・3着ペア確率）
     updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_barikata_picks_date ON barikata_picks(kaisai_date, margin DESC);

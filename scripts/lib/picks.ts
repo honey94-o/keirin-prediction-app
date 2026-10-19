@@ -142,6 +142,9 @@ export function buildPicks(races: RaceRow[], predictions: (RacePrediction | null
       const combo = top
         ? `${scored[0].entry.car_num}-${top.second}-${top.third}`
         : `${scored[0].entry.car_num}-${second.entry.car_num}-${third.entry.car_num}`;
+      // この1点が当たる確率の見積もり（◎の1着確率×2・3着ペアの確率）。BARIKATA_HIGH_CONFIDENCE
+      // 以上に画面で「確度高」の印を付ける（lib/second-third-model.ts winProbabilities参照）。
+      const confidence = top && prediction.honmeiWinProb != null ? prediction.honmeiWinProb * top.p : null;
       return {
         sameLine,
         pick: {
@@ -155,6 +158,7 @@ export function buildPicks(races: RaceRow[], predictions: (RacePrediction | null
           combo,
           honmeiCarNum: honmei.entry.car_num,
           honmeiName: honmei.entry.name,
+          confidence,
         },
       };
     })

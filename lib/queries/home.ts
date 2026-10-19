@@ -211,9 +211,9 @@ async function fetchPicksHistory(viewDate: string, windowDays: number): Promise<
     }),
     db.execute({
       sql: `SELECT race_id, kaisai_date, jocd, keirinjo_name, race_no, start_time, margin, combo,
-                   honmei_car_num, honmei_name
+                   honmei_car_num, honmei_name, confidence
             FROM (SELECT race_id, kaisai_date, jocd, keirinjo_name, race_no, start_time, margin, combo,
-                         honmei_car_num, honmei_name,
+                         honmei_car_num, honmei_name, confidence,
                          ROW_NUMBER() OVER (PARTITION BY kaisai_date ORDER BY margin DESC) AS rn
                   FROM barikata_picks
                   WHERE kaisai_date >= ? AND kaisai_date <= ?) t

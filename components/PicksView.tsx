@@ -10,6 +10,12 @@ import { addDaysToDateStr, formatDateStr } from "../lib/date";
 import { PicksTabs, type PickItem } from "./PicksTabs";
 import { StaleDateGuard } from "./StaleDateGuard";
 import { IntentLink } from "./IntentLink";
+import { BARIKATA_HIGH_CONFIDENCE } from "../lib/second-third-model";
+
+/** この1点が当たる確率の見積もりが高い（lib/second-third-model.ts）バリカタか。旧データはnull。 */
+function isHighConfidence(confidence: number | null | undefined): boolean {
+  return confidence != null && confidence >= BARIKATA_HIGH_CONFIDENCE;
+}
 
 const PERFORMANCE_WINDOW_DAYS = 30;
 
@@ -166,6 +172,7 @@ export async function PicksView({
                     {r.pick.race_no}R
                   </span>
                   <span className="font-mono font-bold text-rose-700 dark:text-rose-400">{r.pick.combo}</span>
+                  {isHighConfidence(r.pick.confidence) && <span className="px-1 py-0.5 rounded text-[10px] font-bold bg-amber-400 text-amber-950 shrink-0">確度高</span>}
                   {r.finished ? (
                     <span
                       className={`ml-auto px-1.5 py-0.5 rounded-full font-semibold ${
@@ -205,6 +212,7 @@ export async function PicksView({
                     {p.keirinjo_name}
                     {p.race_no}R
                   </span>
+                  {isHighConfidence(p.confidence) && <span className="px-1 py-0.5 rounded text-[10px] font-bold bg-amber-400 text-amber-950 shrink-0">確度高</span>}
                   <span className="font-mono font-bold text-rose-700 dark:text-rose-400">{p.combo}</span>
                   <span className="text-xs text-rose-700 tabular-nums dark:text-rose-400">
                     差{p.margin.toFixed(1)}

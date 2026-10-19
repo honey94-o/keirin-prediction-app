@@ -16,6 +16,7 @@ import {
 import {
   computeForm,
   pairProbabilities,
+  winProbabilities,
   PIT_MEN_COEFS,
   PIT_PRIORS,
   PIT_SHRINKAGE_K,
@@ -58,6 +59,8 @@ export interface RacePrediction {
   winSuggestion: { carNum: number; name: string; margin: number } | null;
   /** ◎1着時の(2着,3着)ペア確率・降順（lib/second-third-model.ts）。ガールズはnull。 */
   secondThird: PairProb[] | null;
+  /** ◎（scored[0]）が1着になる確率（ライン構成と時点成績だけの1着モデル）。ガールズはnull。 */
+  honmeiWinProb: number | null;
 }
 
 /**
@@ -125,6 +128,7 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
   // 2・3着モデル（男子のみ。ガールズは旧並びの方が良かったため使わない）。
   const isGirls = scored.some((s) => s.entry.class_rank?.startsWith("L"));
   let secondThird: PairProb[] | null = null;
+  let honmeiWinProb: number | null = null;
   if (!isGirls && scored.length >= 3) {
     const histories =
       prefetchedPitHistories ??
@@ -139,6 +143,7 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
       form: computeForm(histories.get(s.entry.snum) ?? [], race.kaisai_date, PIT_PRIORS, PIT_SHRINKAGE_K),
     }));
     secondThird = pairProbabilities(pitEntries, scored[0].entry.car_num, PIT_MEN_COEFS, { girls: false });
+    honmeiWinProb = winProbabilities(pitEntries).get(scored[0].entry.car_num) ?? null;
   }
 
   const scenarios = generateScenarios(scored, venueKimarite ?? bankInfo, secondThird);
@@ -154,7 +159,7 @@ export async function predictRace(raceId: number): Promise<RacePrediction | null
     }
   }
 
-  return { race, bankInfo, venueKimarite, scored, scenarios, boxSuggestion, winSuggestion, secondThird };
+  return { race, bankInfo, venueKimarite, scored, scenarios, boxSuggestion, winSuggestion, secondThird, honmeiWinProb };
 }
 
 /**

@@ -358,6 +358,8 @@ export interface BarikataPickRow {
   combo: string; // "4-7-1"形式
   honmei_car_num: number;
   honmei_name: string;
+  /** この1点が当たる確率の見積もり（◎1着確率×2・3着ペア確率）。旧データ・ガールズはnull */
+  confidence: number | null;
 }
 
 export interface BarikataPickResult {

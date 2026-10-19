@@ -273,3 +273,53 @@ export function posCatOf(linePosition: string | null, lineGroup: number | null, 
   if (linePosition === "番手") return "S";
   return "T";
 }
+
+// ---------------------------------------------------------------- 1着モデル（バリカタの確度）
+/**
+ * 出走全員の「1着になる確率」（男子のみ）。特徴はライン構成と時点成績（PitForm）だけで、
+ * racersの最新成績スナップショットや総合スコア（=◎かどうか）は使わない。
+ * バリカタ（3連単1点）が当たる確率の見積もり
+ *   confidence = P(◎が1着) × p(2着・3着の最上位ペア | ◎1着)
+ * に使う。scripts/research/barikata-hitrate.ts で検証（時期を分けたwalk-forward）：
+ * 現行バリカタ候補のうち confidence >= BARIKATA_HIGH_CONFIDENCE（約1件/日）の的中率は
+ * P2 48.5%・P3 49.2%（候補全体は31.6%・38.7%、落とした側は18.6%・25.0%）。
+ * 係数は男子9車除外の全期間（2026-04〜10）で学習した値。
+ */
+const WIN_PURE_COEFS = [
+  0.06888, -0.32059, -0.59772, 0.47523, 0.93993, 0.2011, 2.61938, 1.5479, -0.19001, -2.32164, 1.27989,
+  0.61509, 0.50411, 0.51708, -0.29173, -1.78166, 0.50022, 0.03656, -1.08459, 1.04688, 1.09292, -0.55504,
+];
+
+/** バリカタに「確度高」の印を付けるconfidenceの下限（研究時の全期間で約1.0件/日）。 */
+export const BARIKATA_HIGH_CONFIDENCE = 0.14;
+
+function winFeatureVector(c: PitEntry, entries: PitEntry[], lineSize: Map<number, number>): number[] {
+  const f = c.form;
+  const ls = c.lineGroup != null ? lineSize.get(c.lineGroup) ?? 1 : 1;
+  const cat: PosCat = ls <= 1 ? "K" : c.linePos === "先頭" ? "L" : c.linePos === "番手" ? "S" : "T";
+  const L = cat === "L" ? 1 : 0;
+  const S = cat === "S" ? 1 : 0;
+  const T = cat === "T" ? 1 : 0;
+  // 番手・3番手以降は「すぐ前を走る同ライン選手」の調子も効く
+  const front =
+    cat === "S" || cat === "T"
+      ? entries.find((o) => o.lineGroup === c.lineGroup && posNum(o.linePos) === posNum(c.linePos) - 1)
+      : undefined;
+  return [
+    L, S, T, L * (ls >= 3 ? 1 : 0), S * (ls >= 3 ? 1 : 0), c.car <= 3 ? 1 : 0,
+    f.win, f.top2, f.top3, f.finNorm, f.rec3, f.posTop2[cat], f.nige, f.makuri, f.sashi, f.mark, f.leadFreq,
+    f.nPrior < 5 ? 1 : 0,
+    L * f.nige, S * (front ? front.form.top2 : 0), S * (front ? front.form.nige : 0), S * f.sashi,
+  ];
+}
+
+/** 出走全員の1着確率（車番 → 確率、合計1）。男子レースのみで使う。 */
+export function winProbabilities(entries: PitEntry[]): Map<number, number> {
+  const lineSize = new Map<number, number>();
+  for (const e of entries) if (e.lineGroup != null) lineSize.set(e.lineGroup, (lineSize.get(e.lineGroup) ?? 0) + 1);
+  const utilities = entries.map((c) =>
+    winFeatureVector(c, entries, lineSize).reduce((sum, x, i) => sum + x * WIN_PURE_COEFS[i], 0)
+  );
+  const probs = softmax(utilities);
+  return new Map(entries.map((e, i) => [e.car, probs[i]]));
+}

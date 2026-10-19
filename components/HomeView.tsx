@@ -22,6 +22,7 @@ import { StaleDateGuard } from "./StaleDateGuard";
 import { raceStage, formatFormationNotation } from "../lib/scoring";
 import type { RaceRow } from "../lib/types";
 import { IntentLink } from "./IntentLink";
+import { BARIKATA_HIGH_CONFIDENCE } from "../lib/second-third-model";
 
 // 格の高い順に G1=赤 / G2=橙 / G3=金 / F1=紫 / F2=グレー（未知の区分もグレー）。
 // 日目バッジ(青/赤の半透明)・ステージバッジ(緑の半透明)とは色相か塗りで区別する。
@@ -357,6 +358,9 @@ export async function HomeView({
                   <span className="font-mono text-xs text-mist-3">{p.start_time ?? "--:--"}</span>
                   <span className="text-[15px] font-bold text-mist-0">{p.keirinjo_name}</span>
                   <span className="font-mono text-[13px] text-mist-2">{p.race_no}R</span>
+                  {p.confidence != null && p.confidence >= BARIKATA_HIGH_CONFIDENCE && (
+                    <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-gold-ink bg-gold">確度高</span>
+                  )}
                   <span className="flex-1" />
                   {finished ? (
                     <ResultBadge hit={hit ?? false} />
@@ -376,7 +380,8 @@ export async function HomeView({
               </IntentLink>
             ))}
             <p className="text-[11px] leading-relaxed text-mist-3 px-1">
-              検証時点の的中率32.7%・平均オッズ4.13倍（1点買い回収率約140%／母数197件）。必ず的中するものではありません。
+              的中率の目安：全体 約32〜39%、「確度高」（この1点が当たる確率の見積もりが高いもの、1日約1件）約45〜49%
+              （2026年6〜10月の時系列検証。実際はやや低めに出る見込み）。必ず的中するものではありません。
             </p>
           </section>
         )}
