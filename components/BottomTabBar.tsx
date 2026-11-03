@@ -7,6 +7,7 @@ const TABS = [
   { href: "/", icon: "◉", label: "ホーム" },
   { href: "/picks", icon: "◈", label: "厳選" },
   { href: "/history", icon: "≡", label: "履歴" },
+  { href: "/odds-guess", icon: "¥", label: "オッズ" },
   { href: "/settings", icon: "⚙", label: "設定" },
 ] as const;
 
@@ -25,7 +26,7 @@ export function BottomTabBar() {
   const pathname = usePathname();
   return (
     <nav
-      className="fixed bottom-0 inset-x-0 z-20 grid grid-cols-4 bg-ink-1/90 backdrop-blur border-t border-white/[.06] pt-2 px-2"
+      className="fixed bottom-0 inset-x-0 z-20 grid grid-cols-5 bg-ink-1/90 backdrop-blur border-t border-white/[.06] pt-2 px-2"
       style={{ paddingBottom: "max(0.45rem, env(safe-area-inset-bottom))" }}
     >
       {TABS.map((tab) => {
